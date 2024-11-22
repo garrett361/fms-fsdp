@@ -16,9 +16,7 @@ def main(load_path):
     prefix = "Once upon a time, in a land far away,"
 
     # Tokenize the input prefix
-    input_ids = tokenizer.encode(prefix, return_tensors="pt").to(
-        device="cuda", dtype=torch.bfloat16
-    )
+    input_ids = tokenizer.encode(prefix, return_tensors="pt").to(device="cuda")
 
     # Generate text
     output = model.generate(

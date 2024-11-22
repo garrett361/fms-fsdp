@@ -9,7 +9,7 @@ Super minimal chat code for sanity checking
 """
 
 
-def main(load_path):
+def main(load_path, prefix: str = "Once upon a time, in a land far away,"):
     print(f"Loading model from {load_path}")
     tokenizer = AutoTokenizer.from_pretrained(load_path)
     model = MambaLMHeadModel.from_pretrained(
@@ -18,7 +18,6 @@ def main(load_path):
     print(f"Loaded {model=}")
 
     # Define the input prefix
-    prefix = "Once upon a time, in a land far away,"
 
     # Tokenize the input prefix
     input_ids = tokenizer.encode(prefix, return_tensors="pt").to(device="cuda")

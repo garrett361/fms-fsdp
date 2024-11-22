@@ -4,6 +4,11 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from transformers import AutoTokenizer
 
 
+"""
+Super minimal chat code for sanity checking
+"""
+
+
 def main(load_path):
     print(f"Loading model from {load_path}")
     tokenizer = AutoTokenizer.from_pretrained(load_path)

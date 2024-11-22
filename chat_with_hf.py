@@ -9,7 +9,13 @@ Super minimal chat code for sanity checking
 """
 
 
-def main(load_path, prefix: str = "Once upon a time, in a land far away,"):
+def main(
+    load_path,
+    prefix: str = "Once upon a time, in a land far away,",
+    max_length: int = 512,
+    temperature: float = 1.0,
+    top_k: int = 5,
+):
     print(f"Loading model from {load_path}")
     tokenizer = AutoTokenizer.from_pretrained(load_path)
     model = MambaLMHeadModel.from_pretrained(
@@ -25,8 +31,9 @@ def main(load_path, prefix: str = "Once upon a time, in a land far away,"):
     # Generate text
     output = model.generate(
         input_ids,
-        max_length=100,
-        temperature=1,
+        max_length=max_length,
+        temperature=temperature,
+        top_k=top_k,
     )
 
     # Decode the generated tokens back to text

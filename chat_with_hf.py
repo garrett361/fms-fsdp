@@ -18,12 +18,8 @@ def main(load_path):
     # Generate text
     output = model.generate(
         input_ids,
-        max_length=100,  # Adjust as needed
-        num_return_sequences=1,
-        no_repeat_ngram_size=2,
-        top_k=50,
-        top_p=0.95,
-        temperature=0.7,
+        max_length=100,
+        temperature=1,
     )
 
     # Decode the generated tokens back to text

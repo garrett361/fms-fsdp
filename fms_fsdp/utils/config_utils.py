@@ -1,5 +1,3 @@
-from fms.models.llama import LLaMAConfig
-
 from fms_fsdp.config import train_config
 
 
@@ -116,6 +114,30 @@ def get_model_config(model_variant):
             "fused_add_norm": True,
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
+        }
+    elif model_variant == "mamba_hybrid_test":
+        config_data = {
+            "d_model": 2048,
+            "d_intermediate": 8192,
+            "n_layer": 16,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [4, 12],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 64,
+                "num_heads": 32,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": True,
         }
     else:
         raise ValueError(f"model variant {model_variant} not supported.")

@@ -29,7 +29,9 @@ def main(load_path):
     generated_text = tokenizer.decode(output[0].cpu(), skip_special_tokens=True)
 
     # Print the generated text
-    print(generated_text)
+    print(80 * "*")
+    print(f"{prefix=}\n\n")
+    print(f"{generated_text=}")
 
 
 if __name__ == "__main__":

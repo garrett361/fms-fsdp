@@ -6,6 +6,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from tqdm import tqdm
 from pathlib import Path
 import argparse
+from mup_mambs import apply_mup_init
 
 
 def get_transformer_and_config(
@@ -43,6 +44,7 @@ def get_transformer_and_config(
         tie_embeddings=False,
     )
     model = MambaLMHeadModel(config, device=device)
+    apply_mup_init(model)
     return model, config
 
 
@@ -57,6 +59,7 @@ if __name__ == "__main__":
     parser.add_argument("--width_step", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num_seeds", type=int, default=2)
+    parser.add_argument("--mup", type=bool, action="store_true")
     args = parser.parse_args()
 
     results_list: list[dict] = []
@@ -73,7 +76,7 @@ if __name__ == "__main__":
         ):
             torch.manual_seed(seed)
             model, config = get_transformer_and_config(
-                width, vocab_size=args.vocab_size
+                width, vocab_size=args.vocab_size, mup=args.mup
             )
             optimizer = torch.optim.AdamW(
                 model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1

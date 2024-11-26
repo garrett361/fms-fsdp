@@ -1,6 +1,8 @@
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 import torch.nn as nn
 from mamba_ssm.models.config_mamba import MambaConfig
+from mamba_ssm.modules.mha import MHA
+from mamba_ssm.modules.mlp import GatedMLP
 
 """
 Basic mup implementation following Table 3 of 2203.03466. Specific to MambaLMHeadModel.
@@ -8,7 +10,8 @@ Basic mup implementation following Table 3 of 2203.03466. Specific to MambaLMHea
 
 
 def mup_cfg_check(cfg: MambaConfig) -> None:
-    pass
+    if cfg.tie_embeddings:
+        raise ValueError("Tied Embedding-LMHead weights not supported.")
 
 
 def apply_mup_init(
@@ -38,8 +41,9 @@ def apply_mup_init(
         raise ValueError(
             f"mup only implemented for MambaLMHeadModel classes, not {model.__class__.__name__}"
         )
-    if model.config.tie_embeddings:
-        raise ValueError("Tied Embedding-LMHead weights not supported.")
+    cfg = model.config
+    mup_cfg_check(cfg)
+
     # MambaLMHeadModel organization:
     # Embedding: MambaLMHeadModel.backbone.embedding
     # Blocks: MambaLMHeadModel.backbone.layers
@@ -50,23 +54,17 @@ def apply_mup_init(
         print(f"Found {layer_idx=}: {block=}")
     assert model.lm_head is not None
 
-    cfg = model.config
-    mup_cfg_check(cfg)
-
-    for module in model.modules():
-        if isinstance(module, nn.Linear):
-            if module.bias is not None:
-                if not getattr(module.bias, "_no_reinit", False):
-                    nn.init.zeros_(module.bias)
-
     # The embedding layer is an nn.Embedding which already performs unit-normal init and zeros out
     # the padding entry, if needed.
-    embedding = model.backbone.embedding
     # reset_parameters() perform unit-normal init and zeros out the padding entry, if applicable.
-    embedding.reset_parameters()
+    model.backbone.embedding.reset_parameters()
 
     blocks = model.backbone.layers
     for block in blocks:
-        pass
-    lm_head = model.lm_head
-    nn.init.normal_(lm_head.weight, mean=0.0, std=1 / cfg.d_model**0.5)
+        assert isinstance(block.mixer, MHA), "MHA only for now"
+        assert isinstance(block.mlp, GatedMLP), "GatedMLP only for now"
+        for layer in zip(block.mlp.modules(), block.mixer.modules()):
+            if isinstance(layer, nn.Linear):
+                nn.init.normal_(layer.weight, mean=0.0, std=1 / layer.in_feature**0.5)
+
+    nn.init.normal_(model.lm_head.weight, mean=0.0, std=1 / cfg.d_model)

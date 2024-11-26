@@ -1,4 +1,5 @@
 from mamba_ssm.modules.block import Block
+from tqdm import tqdm
 import torch.nn as nn
 import torch
 from typing import Any
@@ -18,9 +19,10 @@ class StatsHook:
         self.width = width
         self.results_list = results_list
         self._hook = module.register_forward_hook(self)
+        self._step = 0
 
     def __call__(self, module: nn.Module, args: Any, output: Any) -> None:
-        results = {"name": self.name, "width": self.width}
+        results = {"name": self.name, "width": self.width, "step": self._step}
         with torch.no_grad():
             # Grab the hidden states of the block tuple
             if isinstance(module, Block):
@@ -30,13 +32,20 @@ class StatsHook:
             results["std"] = output.std().item()
             results["var"] = output.var().item()
         self.results_list.append(results)
+        self._step += 1
 
     def remove(self) -> None:
         self._hook.remove()
 
 
 def get_stats(
-    model: MambaLMHeadModel, width: int, inputs: torch.Tensor, results_list: list[dict]
+    model: MambaLMHeadModel,
+    optimizer: torch.optim.Optimizer,
+    train_steps: int,
+    width: int,
+    inputs: torch.Tensor,
+    labels: torch.Tensor,
+    results_list: list[dict],
 ) -> None:
     hooks = []
     embedding = model.backbone.embedding
@@ -49,10 +58,16 @@ def get_stats(
     lm_head = model.lm_head
     hooks.append(StatsHook(lm_head, "lm_head", results_list, width))
 
-    model.eval()
-    with torch.no_grad():
-        _ = model(inputs)
     model.train()
+    for step in tqdm(range(train_steps), desc="step"):
+        optimizer.zero_grad()
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            outputs = model(inputs)
+            outputs = outputs.logits if hasattr(outputs, "logits") else outputs
+            ce_loss = torch.nn.CrossEntropyLoss()
+            loss = ce_loss(outputs.view(-1, outputs.size(-1)), labels.view(-1).long())
+        loss.backward()
+        optimizer.step()
 
     for hook in hooks:
         hook.remove()

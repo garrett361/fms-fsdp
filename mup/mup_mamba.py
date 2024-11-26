@@ -3,6 +3,7 @@ import torch.nn as nn
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.modules.mha import MHA
 from mamba_ssm.modules.mlp import GatedMLP
+from dataclasses import dataclass
 
 """
 Basic mup implementation following Table 3 of 2203.03466. Specific to MambaLMHeadModel.
@@ -63,3 +64,93 @@ def apply_mup_init(
                 nn.init.normal_(layer.weight, mean=0.0, std=1 / layer.in_feature**0.5)
 
     nn.init.normal_(model.lm_head.weight, mean=0.0, std=1 / cfg.d_model)
+
+
+@dataclass
+class MupParam:
+    param: nn.Parameter
+    fan_in: int
+    fan_out: int
+
+
+def get_mup_optim_iter(
+    model: MambaLMHeadModel,
+    lr: float,
+    optim_type: str = "adam",
+) -> list[dict]:
+    expected_optim_types = ("adam", "sgd")
+    if optim_type not in expected_optim_types:
+        raise ValueError(f"Expected {optim_type=} to be in {expected_optim_types}")
+    if optim_type == "sgd":
+        raise NotImplementedError("Just adam for now.")
+
+    # Nomenclature of 2203.03466
+    input_params_and_biases: list[MupParam] = []
+    hidden_params: list[MupParam] = []
+    output_params: list[MupParam] = []
+
+    # Embedding and lm head are in- and output-params respectively
+    emb = model.backbone.embedding
+    # I think the fan_in for the embedding weight is 1?
+    input_params_and_biases.append(
+        MupParam(emb.weight, fan_in=1, fan_out=emb.embedding_dim)
+    )
+
+    lm_head = model.lm_head
+    output_params.append(
+        MupParam(
+            lm_head.weight, fan_in=lm_head.in_features, fan_out=lm_head.out_features
+        )
+    )
+
+    # There is also a final layer norm in the backbone
+    for p_name, p in model.backbone.norm_f.named_parameters():
+        assert len(p.shape) == 1, f"{p_name=}, {len(p.shape)=}"
+        input_params_and_biases.append(MupParam(p, fan_in=1, fan_out=p.shape[0]))
+
+    # Everything else is blocks
+    blocks = model.backbone.layers
+    for block in blocks:
+        for module in block.modules():
+            if isinstance(module, nn.Linear):
+                hidden_params.append(
+                    MupParam(
+                        module.weight,
+                        fan_in=module.in_features,
+                        fan_out=module.out_features,
+                    )
+                )
+                if module.bias is not None:
+                    input_params_and_biases.append(
+                        MupParam(
+                            module.bias,
+                            fan_in=1,
+                            fan_out=module.out_features,
+                        )
+                    )
+            else:
+                # Don't recurse, otherwise we will double-count the Linear layers above
+                # Assumption: everything else is a layer-norm type layer
+                for p_name, p in module.named_parameters(recurse=False):
+                    assert len(p.shape) == 1, f"{p_name=}, {len(p.shape)=}"
+                    input_params_and_biases.append(
+                        MupParam(p, fan_in=1, fan_out=p.shape[0])
+                    )
+
+    total_params = len(list(model.parameters()))
+    params_accounted_for = (
+        len(input_params_and_biases) + len(hidden_params) + len(output_params)
+    )
+    assert (
+        total_params == params_accounted_for
+    ), f"{total_params=}, {params_accounted_for}"
+
+    optim_iter = [{"param": mp.param, "lr": lr} for mp in input_params_and_biases]
+    optim_iter.extend(
+        [{"param": mp.param, "lr": lr / mp.fan_in} for mp in hidden_params]
+    )
+    optim_iter.extend(
+        [{"param": mp.param, "lr": lr / mp.fan_in} for mp in output_params]
+    )
+    assert len(optim_iter) == total_params, f"{len(optim_iter)=}, {total_params=}"
+    return optim_iter

@@ -86,3 +86,18 @@ def test_coord_check():
     results_list = []
     get_stats(model, inputs, results_list)
     print(results_list)
+
+
+def test_mup_optim_iter():
+    n_layer = 1
+    config = MambaConfig(
+        d_model=d_model,
+        d_intermediate=d_intermediate,
+        n_layer=n_layer,
+        attn_layer_idx=list(range(n_layer)),  # Transformer blocks only
+        vocab_size=2048,
+        attn_cfg=attn_cfg,
+        tie_embeddings=False,
+    )
+    model = MambaLMHeadModel(config, device=device)
+    mup_mamba.get_mup_optim_iter(model, lr=1.0)

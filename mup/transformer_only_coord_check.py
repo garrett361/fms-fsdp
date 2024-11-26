@@ -6,7 +6,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from tqdm import tqdm
 from pathlib import Path
 import argparse
-from mup_mambs import apply_mup_init
+from mup_mamba import apply_mup_init
 
 
 def get_transformer_and_config(
@@ -58,13 +58,13 @@ if __name__ == "__main__":
     parser.add_argument("--max_width", type=int, default=4096)
     parser.add_argument("--width_step", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--num_seeds", type=int, default=2)
+    parser.add_argument("--n_seeds", type=int, default=2)
     parser.add_argument("--mup", type=bool, action="store_true")
     args = parser.parse_args()
 
     results_list: list[dict] = []
     # Train repeatedly on fake data
-    for seed in tqdm(range(args.seed, args.seed + args.num_seeds), desc="seed"):
+    for seed in tqdm(range(args.seed, args.seed + args.n_seeds), desc="seed"):
         torch.manual_seed(seed)
         inputs_and_labels = torch.randint(
             args.vocab_size, size=(1, args.seq_len + 1), device="cuda"

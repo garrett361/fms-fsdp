@@ -110,6 +110,7 @@ def get_stats(
         hook.remove()
 
 
+# TODO: @goon - Title on plot with lr, other data
 def plot_from_df(
     df: pd.DataFrame,
     y: str,

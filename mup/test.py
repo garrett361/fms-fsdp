@@ -1,6 +1,5 @@
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.mlp import GatedMLP
 import mup_mamba
 
 import torch
@@ -65,8 +64,22 @@ def test_mup():
     print("done")
 
 
-def tedonest_mlp():
-    mlp = GatedMLP(d_model, d_intermediate, device=device)
-    inputs = torch.randn(1, seq_len, d_model, device=device)
-    outputs = mlp(inputs)
-    print(outputs)
+def test_coord_check():
+    transformer_only_config = MambaConfig(
+        d_model=d_model,
+        d_intermediate=d_intermediate,
+        n_layer=n_layer,
+        attn_layer_idx=list(range(n_layer)),
+        vocab_size=2048,
+        attn_cfg=attn_cfg,
+        tie_embeddings=False,
+    )
+    model = MambaLMHeadModel(transformer_only_config, device=device)
+    inputs = torch.randint(
+        transformer_only_config.vocab_size, size=(1, seq_len), device=device
+    )
+    from coord_check import get_stats
+
+    results_list = []
+    get_stats(model, inputs, results_list)
+    print(results_list)

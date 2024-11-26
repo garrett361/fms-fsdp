@@ -6,7 +6,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from tqdm import tqdm
 from pathlib import Path
 import argparse
-from mup_mamba import apply_mup_init
+from mup_mamba import apply_mup_init, get_mup_optim_iter
 
 
 def get_transformer_and_config(
@@ -80,8 +80,13 @@ if __name__ == "__main__":
             model, config = get_transformer_and_config(
                 width, vocab_size=args.vocab_size, mup=args.mup
             )
+            if args.mup:
+                print("Getting mup learning rates")
+                optim_args = get_mup_optim_iter(model, args.lr, optim_type="adam")
+            else:
+                optim_args = model.parameters()
             optimizer = torch.optim.AdamW(
-                model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1
+                optim_args, lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1
             )
 
             get_stats(

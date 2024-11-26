@@ -52,10 +52,12 @@ if __name__ == "__main__":
     parser.add_argument("--min_width", type=int, default=512)
     parser.add_argument("--max_width", type=int, default=4096)
     parser.add_argument("--width_step", type=int, default=512)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     results_list: list[dict] = []
     # Train repeatedly on fake data
+    torch.manual_seed(args.seed)
     inputs_and_labels = torch.randint(
         args.vocab_size, size=(1, args.seq_len + 1), device="cuda"
     )
@@ -64,6 +66,7 @@ if __name__ == "__main__":
     for width in tqdm(
         range(args.min_width, args.max_width + 1, args.width_step), desc="width"
     ):
+        torch.manual_seed(args.seed)
         model, config = get_transformer_and_config(width, vocab_size=args.vocab_size)
         optimizer = torch.optim.AdamW(
             model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1

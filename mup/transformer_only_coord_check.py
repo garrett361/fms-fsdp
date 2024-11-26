@@ -55,6 +55,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     results_list: list[dict] = []
+    # Train repeatedly on fake data
     inputs_and_labels = torch.randint(
         args.vocab_size, size=(1, args.seq_len + 1), device="cuda"
     )

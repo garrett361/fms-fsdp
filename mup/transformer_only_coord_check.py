@@ -6,7 +6,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from tqdm import tqdm
 from pathlib import Path
 import argparse
-from mup_mamba import apply_mup_init, get_mup_optim_iter
+from mup_mamba import apply_mup_init, get_mup_optim_iter, ALL_STATS
 
 
 def get_transformer_and_config(
@@ -107,4 +107,5 @@ if __name__ == "__main__":
         if args.mup:
             prefix += "_mup"
         df.to_feather(parent_dir.joinpath(f"{prefix}.feather"))
-        plot_from_df(df, save_path=f"{prefix}.png")
+        for y in ALL_STATS:
+            plot_from_df(df, y=y, save_path=f"{prefix}_{y}.png")

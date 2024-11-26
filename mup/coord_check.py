@@ -10,8 +10,7 @@ import matplotlib
 
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 
-# TODO: @goon - LM Head layer
-_DEFAULT_CLASSES = [nn.Embedding, MambaLMHeadModel, Block]
+ALL_STATS = ("l2_mean", "std", "mean", "var")
 
 
 class StatsHook:
@@ -113,10 +112,12 @@ def get_stats(
 
 def plot_from_df(
     df: pd.DataFrame,
+    y: str,
     save_path: Optional[str] = None,
-    y: str = "l2_mean",
     ncols: int = 4,
 ) -> matplotlib.figure.Figure:
+    if y not in ALL_STATS:
+        raise ValueError(f"{y=} must be in {ALL_STATS}")
     nrows = (len(df.step.unique()) + ncols - 1) // ncols
     fig, axs = plt.subplots(
         ncols=ncols, nrows=nrows, sharey=True, figsize=(4 * ncols, 4 * nrows)

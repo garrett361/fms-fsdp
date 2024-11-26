@@ -59,7 +59,7 @@ if __name__ == "__main__":
     parser.add_argument("--width_step", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_seeds", type=int, default=2)
-    parser.add_argument("--mup", type=bool, action="store_true")
+    parser.add_argument("--mup", action="store_true")
     args = parser.parse_args()
 
     results_list: list[dict] = []

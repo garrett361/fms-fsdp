@@ -49,11 +49,6 @@ def apply_mup_init(
     # Blocks: MambaLMHeadModel.backbone.layers
     # LM Head: MambaLMHeadModel.lm_head
 
-    assert model.backbone.embedding is not None
-    for layer_idx, block in enumerate(model.backbone.layers):
-        print(f"Found {layer_idx=}: {block=}")
-    assert model.lm_head is not None
-
     # The embedding layer is an nn.Embedding which already performs unit-normal init and zeros out
     # the padding entry, if needed.
     # reset_parameters() perform unit-normal init and zeros out the padding entry, if applicable.

@@ -1,8 +1,12 @@
 from mamba_ssm.modules.block import Block
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch
-from typing import Any
+from typing import Any, Optional
+import pandas as pd
+import seaborn as sns
+import matplotlib
 
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 
@@ -71,3 +75,28 @@ def get_stats(
 
     for hook in hooks:
         hook.remove()
+
+
+def plot_from_df(
+    df: pd.DataFrame, save_path: Optional[str] = None, y: str = "l2_mean"
+) -> matplotlib.figure.Figure:
+    ncols = len(df.step.unique())
+    fig, axs = plt.subplots(ncols=ncols, sharey=True, figsize=(4 * ncols, 4))
+    for step in df.step.unique():
+        plot = sns.lineplot(
+            data=df[df.step == step], x="width", y=y, hue="name", ax=axs[step]
+        )
+        plot.set(xscale="log")
+        plot.set(yscale="log")
+        plot.get_legend().remove()
+        axs[step].set_title(f"Step {step.item()}")
+
+        handles, labels = axs[-1].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.0, 0.5))
+
+    plt.tight_layout()
+    plt.subplots_adjust(right=0.85)
+    if save_path:
+        fig.savefig(save_path, dpi=256, bbox_inches="tight")
+
+    return fig

@@ -33,7 +33,7 @@ def get_transformer_and_config(
         d_model=width,
         d_intermediate=4 * width,
         n_layer=n_layer,
-        attn_layer_idx=list(range(n_layer)),
+        attn_layer_idx=list(range(n_layer)),  # Transformer-only blocks
         vocab_size=vocab_size,
         attn_cfg=attn_cfg,
         tie_embeddings=False,
@@ -45,11 +45,15 @@ def get_transformer_and_config(
 if __name__ == "__main__":
     seq_len = 4096
     vocab_size = 128256
-    results_list = []
+    results_list: list[dict] = []
     inputs = torch.randint(vocab_size, size=(1, seq_len), device="cuda")
-    for width in tqdm(range(768, 4096, 256)):
+    for width in tqdm(range(768, 4096, 256), desc="width"):
         model, config = get_transformer_and_config(width, vocab_size=vocab_size)
-        get_stats(model, width, inputs, results_list)
+        optimizer = optim.AdamW(
+            model.parameters(), lr=1e-5, betas=(0.9, 0.95), weight_decay=0.1
+        )
+
+        get_stats(model, optimizer, width, inputs, results_list)
         del model
     df = pd.DataFrame(results_list)
     parent_dir = Path(__file__).parent.absolute()

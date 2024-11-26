@@ -36,17 +36,20 @@ def test_mamba_init():
 
 
 def test_transformer_only():
-    mamba_config = MambaConfig(
+    config = MambaConfig(
         d_model=d_model,
         d_intermediate=d_intermediate,
         n_layer=n_layer,
-        attn_layer_idx=list(range(n_layer)),
+        attn_layer_idx=list(range(n_layer)),  # Transformer blocks only
         vocab_size=2048,
         attn_cfg=attn_cfg,
         tie_embeddings=False,
     )
-    model = MambaLMHeadModel(mamba_config)
+    model = MambaLMHeadModel(config, device=device)
+    inputs = torch.randint(config.vocab_size, size=(1, seq_len), device=device)
     print(model)
+    outputs = model(inputs)
+    print(outputs)
 
 
 def test_mup():

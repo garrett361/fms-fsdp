@@ -1,4 +1,4 @@
-from coord_check import get_stats, plot_from_df
+from coord_check import get_stats, plot_from_df, ALL_STATS
 import torch
 from mamba_ssm.models.config_mamba import MambaConfig
 import pandas as pd
@@ -6,7 +6,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from tqdm import tqdm
 from pathlib import Path
 import argparse
-from mup_mamba import apply_mup_init, get_mup_optim_iter, ALL_STATS
+from mup_mamba import apply_mup_init, get_mup_optim_iter
 
 
 def get_transformer_and_config(

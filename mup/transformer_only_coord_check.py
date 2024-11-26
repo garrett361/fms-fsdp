@@ -1,10 +1,11 @@
-from coord_check import get_stats
+from coord_check import get_stats, plot_from_df
 import torch
 from mamba_ssm.models.config_mamba import MambaConfig
 import pandas as pd
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from tqdm import tqdm
 from pathlib import Path
+import argparse
 
 
 def get_transformer_and_config(
@@ -43,23 +44,34 @@ def get_transformer_and_config(
 
 
 if __name__ == "__main__":
-    seq_len = 4096
-    train_steps = 3
-    vocab_size = 128256
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seq_len", type=int, default=4096)
+    parser.add_argument("--train_steps", type=int, default=4)
+    parser.add_argument("--vocab_size", type=int, default=128256)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--min_width", type=int, default=512)
+    parser.add_argument("--max_width", type=int, default=4096)
+    parser.add_argument("--width_step", type=int, default=512)
+    args = parser.parse_args()
+
     results_list: list[dict] = []
-    inputs_and_labels = torch.randint(vocab_size, size=(1, seq_len + 1), device="cuda")
+    inputs_and_labels = torch.randint(
+        args.vocab_size, size=(1, args.seq_len + 1), device="cuda"
+    )
     inputs = inputs_and_labels[:, :-1]
     labels = inputs_and_labels[:, 1:]
-    for width in tqdm(range(512, 4096, 512), desc="width"):
-        model, config = get_transformer_and_config(width, vocab_size=vocab_size)
+    for width in tqdm(
+        range(args.min_width, args.max_width + 1, args.width_step), desc="width"
+    ):
+        model, config = get_transformer_and_config(width, vocab_size=args.vocab_size)
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=1e-3, betas=(0.9, 0.95), weight_decay=0.1
+            model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1
         )
 
         get_stats(
             model=model,
             optimizer=optimizer,
-            train_steps=train_steps,
+            train_steps=args.train_steps,
             width=width,
             inputs=inputs,
             labels=labels,
@@ -68,4 +80,6 @@ if __name__ == "__main__":
         del model
     df = pd.DataFrame(results_list)
     parent_dir = Path(__file__).parent.absolute()
-    df.to_feather(parent_dir.joinpath("transformer_only_coord_check.feather"))
+    prefix = "transformer_only_coord_check"
+    df.to_feather(parent_dir.joinpath(f"{prefix}.feather"))
+    plot_from_df(df, save_path=f"{prefix}.png")

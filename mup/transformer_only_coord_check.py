@@ -44,7 +44,9 @@ def get_transformer_and_config(
         tie_embeddings=False,
     )
     model = MambaLMHeadModel(config, device=device)
-    apply_mup_init(model)
+    if mup:
+        print("Applying mup param init")
+        apply_mup_init(model)
     return model, config
 
 

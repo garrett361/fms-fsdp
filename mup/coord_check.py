@@ -16,7 +16,12 @@ _DEFAULT_CLASSES = [nn.Embedding, MambaLMHeadModel, Block]
 
 class StatsHook:
     def __init__(
-        self, module: nn.Module, name: str, results_list: list[dict], width: int
+        self,
+        module: nn.Module,
+        name: str,
+        results_list: list[dict],
+        width: int,
+        other_data: Optional[dict] = None,
     ) -> None:
         self.module = module
         self.name = name
@@ -24,9 +29,11 @@ class StatsHook:
         self.results_list = results_list
         self._hook = module.register_forward_hook(self)
         self._step = 0
+        self.other_data = other_data or {}
 
     def __call__(self, module: nn.Module, args: Any, output: Any) -> None:
         results = {"name": self.name, "width": self.width, "step": self._step}
+        results = {**results, **self.other_data}
         with torch.no_grad():
             # Grab the hidden states of the block tuple
             if isinstance(module, Block):
@@ -47,20 +54,47 @@ def get_stats(
     optimizer: torch.optim.Optimizer,
     train_steps: int,
     width: int,
+    seq_len: int,
+    seed: int,
     inputs: torch.Tensor,
     labels: torch.Tensor,
     results_list: list[dict],
 ) -> None:
     hooks = []
     embedding = model.backbone.embedding
-    hooks.append(StatsHook(embedding, "embedding", results_list, width))
+    other_data = {"seed": seed, "seq_len": seq_len}
+    hooks.append(
+        StatsHook(
+            embedding,
+            "embedding",
+            results_list=results_list,
+            width=width,
+            other_data=other_data,
+        )
+    )
 
     blocks = model.backbone.layers
     for idx, block in enumerate(blocks):
-        hooks.append(StatsHook(block, f"block_{idx}", results_list, width))
+        hooks.append(
+            StatsHook(
+                block,
+                f"block_{idx}",
+                results_list=results_list,
+                width=width,
+                other_data=other_data,
+            )
+        )
 
     lm_head = model.lm_head
-    hooks.append(StatsHook(lm_head, "lm_head", results_list, width))
+    hooks.append(
+        StatsHook(
+            lm_head,
+            "lm_head",
+            results_list=results_list,
+            width=width,
+            other_data=other_data,
+        )
+    )
 
     model.train()
     for step in tqdm(range(train_steps), desc="step"):

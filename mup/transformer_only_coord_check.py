@@ -46,9 +46,9 @@ def get_transformer_and_config(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seq_len", type=int, default=4096)
-    parser.add_argument("--train_steps", type=int, default=4)
+    parser.add_argument("--train_steps", type=int, default=8)
     parser.add_argument("--vocab_size", type=int, default=128256)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--min_width", type=int, default=512)
     parser.add_argument("--max_width", type=int, default=4096)
     parser.add_argument("--width_step", type=int, default=512)

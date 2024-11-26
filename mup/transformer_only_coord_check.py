@@ -14,6 +14,7 @@ def get_transformer_and_config(
     vocab_size: int = 128256,
     head_dim: int = 128,
     device: str = "cuda",
+    mup: bool = False,
 ) -> tuple[MambaLMHeadModel, MambaConfig]:
     """
     Get small transformer models. Config based on Cerebras-GPT 111M, roughly.
@@ -28,8 +29,10 @@ def get_transformer_and_config(
         "out_proj_bias": False,
         "qkv_proj_bias": False,
         "rotary_emb_dim": head_dim // 2,  # Apparently correct for mamba-ssm
-        "softmax_scale": head_dim,
     }
+    if mup:
+        attn_cfg["softmax_scale"] = head_dim
+
     config = MambaConfig(
         d_model=width,
         d_intermediate=4 * width,

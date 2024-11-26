@@ -97,5 +97,7 @@ if __name__ == "__main__":
         df = pd.DataFrame(results_list)
         parent_dir = Path(__file__).parent.absolute()
         prefix = "transformer_only_coord_check"
+        if args.mup:
+            prefix += "_mup"
         df.to_feather(parent_dir.joinpath(f"{prefix}.feather"))
         plot_from_df(df, save_path=f"{prefix}.png")

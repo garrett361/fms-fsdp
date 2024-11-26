@@ -78,21 +78,27 @@ def get_stats(
 
 
 def plot_from_df(
-    df: pd.DataFrame, save_path: Optional[str] = None, y: str = "l2_mean"
+    df: pd.DataFrame,
+    save_path: Optional[str] = None,
+    y: str = "l2_mean",
+    ncols: int = 4,
 ) -> matplotlib.figure.Figure:
-    ncols = len(df.step.unique())
-    fig, axs = plt.subplots(ncols=ncols, sharey=True, figsize=(4 * ncols, 4))
+    nrows = (len(df.step.unique()) + ncols - 1) // ncols
+    fig, axs = plt.subplots(
+        ncols=ncols, nrows=nrows, sharey=True, figsize=(4 * ncols, 4 * nrows)
+    )
     for step in df.step.unique():
+        row, col = divmod(step, ncols)
         plot = sns.lineplot(
-            data=df[df.step == step], x="width", y=y, hue="name", ax=axs[step]
+            data=df[df.step == step], x="width", y=y, hue="name", ax=axs[row, col]
         )
         plot.set(xscale="log")
         plot.set(yscale="log")
         plot.get_legend().remove()
-        axs[step].set_title(f"Step {step.item()}")
+        axs[row, col].set_title(f"Step {step.item()}")
 
-        handles, labels = axs[-1].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.0, 0.5))
+        handles, labels = axs[0, 0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.2, 0.5))
 
     plt.tight_layout()
     plt.subplots_adjust(right=0.85)

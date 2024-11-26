@@ -145,12 +145,14 @@ def get_mup_optim_iter(
         total_params == params_accounted_for
     ), f"{total_params=}, {params_accounted_for}"
 
-    optim_iter = [{"param": mp.param, "lr": lr} for mp in input_params_and_biases]
+    # Create a list with a dict for each individual param. Annoying, but makes switching between
+    # equivalent mup impls easier.
+    optim_iter = [{"params": [mp.param], "lr": lr} for mp in input_params_and_biases]
     optim_iter.extend(
-        [{"param": mp.param, "lr": lr / mp.fan_in} for mp in hidden_params]
+        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in hidden_params]
     )
     optim_iter.extend(
-        [{"param": mp.param, "lr": lr / mp.fan_in} for mp in output_params]
+        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in output_params]
     )
     assert len(optim_iter) == total_params, f"{len(optim_iter)=}, {total_params=}"
     return optim_iter

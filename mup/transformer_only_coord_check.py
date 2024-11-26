@@ -50,10 +50,10 @@ if __name__ == "__main__":
     inputs_and_labels = torch.randint(vocab_size, size=(1, seq_len + 1), device="cuda")
     inputs = inputs_and_labels[:, :-1]
     labels = inputs_and_labels[:, 1:]
-    for width in tqdm(range(768, 4096, 256), desc="width"):
+    for width in tqdm(range(512, 4096, 512), desc="width"):
         model, config = get_transformer_and_config(width, vocab_size=vocab_size)
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=1e-5, betas=(0.9, 0.95), weight_decay=0.1
+            model.parameters(), lr=1e-3, betas=(0.9, 0.95), weight_decay=0.1
         )
 
         get_stats(

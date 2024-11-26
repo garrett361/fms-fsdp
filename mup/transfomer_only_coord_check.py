@@ -47,7 +47,7 @@ if __name__ == "__main__":
     vocab_size = 128256
     results_list = []
     inputs = torch.randint(vocab_size, size=(1, seq_len), device="cuda")
-    for width in tqdm(range(768, 1024, 128)):
+    for width in tqdm(range(768, 4096, 256)):
         model, config = get_transformer_and_config(width, vocab_size=vocab_size)
         get_stats(model, width, inputs, results_list)
         del model

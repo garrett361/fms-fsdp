@@ -119,6 +119,8 @@ if __name__ == "__main__":
         df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))
 
         title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, widths={widths}"
+        if args.mup:
+            title = "(mup) " + title
         for y in ALL_STATS:
             plot_from_df(
                 df, y=y, save_path=fig_dir.joinpath(f"{prefix}_{y}.png"), title=title

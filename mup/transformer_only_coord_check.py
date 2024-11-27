@@ -109,10 +109,14 @@ if __name__ == "__main__":
             del model
         df = pd.DataFrame(results_list)
         parent_dir = Path(__file__).parent.absolute()
-        prefix = f"trans_coord_check_lr-{args.lr}lr={args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
+        prefix = "trans_coord_check_lr"
         if args.mup:
             prefix += "_mup"
-        df.to_feather(parent_dir.joinpath(f"{prefix}.feather"))
+        prefix += f"-{args.lr}lr={args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
+        fig_dir = parent_dir.joinpath("figs/")
+        df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))
         title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}"
         for y in ALL_STATS:
-            plot_from_df(df, y=y, save_path=f"figs/{prefix}_{y}.png", title=title)
+            plot_from_df(
+                df, y=y, save_path=fig_dir.joinpath(f"{prefix}_{y}.png"), title=title
+            )

@@ -3,7 +3,8 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch
-from typing import Any, Optional
+from typing import Any, Optional, Union
+import pathlib
 import pandas as pd
 import seaborn as sns
 import matplotlib
@@ -115,7 +116,7 @@ def get_stats(
 def plot_from_df(
     df: pd.DataFrame,
     y: str,
-    save_path: Optional[str] = None,
+    save_path: Optional[Union[pathlib.Path, str]] = None,
     ncols: int = 4,
     title: Optional[str] = None,
 ) -> matplotlib.figure.Figure:

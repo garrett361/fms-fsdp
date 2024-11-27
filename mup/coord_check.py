@@ -117,6 +117,7 @@ def plot_from_df(
     y: str,
     save_path: Optional[str] = None,
     ncols: int = 4,
+    title: Optional[str] = None,
 ) -> matplotlib.figure.Figure:
     if y not in ALL_STATS:
         raise ValueError(f"{y=} must be in {ALL_STATS}")
@@ -137,8 +138,11 @@ def plot_from_df(
         handles, labels = axs[0, 0].get_legend_handles_labels()
         fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.2, 0.5))
 
+    if title:
+        fig.suptitle(title)
     plt.tight_layout()
     plt.subplots_adjust(right=0.85)
+
     if save_path:
         fig.savefig(save_path, dpi=256, bbox_inches="tight")
 

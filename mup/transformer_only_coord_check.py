@@ -62,6 +62,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_seeds", type=int, default=2)
     parser.add_argument("--mup", action="store_true")
+    parser.add_argument("--n_layer", type=int, default=10)
+    parser.add_argument("--head_dim", type=int, default=128)
     args = parser.parse_args()
 
     results_list: list[dict] = []
@@ -78,7 +80,11 @@ if __name__ == "__main__":
         ):
             torch.manual_seed(seed)
             model, config = get_transformer_and_config(
-                width, vocab_size=args.vocab_size, mup=args.mup
+                width,
+                vocab_size=args.vocab_size,
+                mup=args.mup,
+                head_dim=args.head_dim,
+                n_layer=args.n_layer,
             )
             if args.mup:
                 print("Getting mup learning rates")
@@ -107,5 +113,6 @@ if __name__ == "__main__":
         if args.mup:
             prefix += "_mup"
         df.to_feather(parent_dir.joinpath(f"{prefix}.feather"))
+        title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}"
         for y in ALL_STATS:
-            plot_from_df(df, y=y, save_path=f"{prefix}_{y}.png")
+            plot_from_df(df, y=y, save_path=f"{prefix}_{y}.png", title=title)

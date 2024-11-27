@@ -68,6 +68,7 @@ if __name__ == "__main__":
 
     results_list: list[dict] = []
     # Train repeatedly on fake data
+    widths = list(range(args.min_width, args.max_width + 1, args.width_step))
     for seed in tqdm(range(args.seed, args.seed + args.n_seeds), desc="seed"):
         torch.manual_seed(seed)
         inputs_and_labels = torch.randint(
@@ -75,9 +76,7 @@ if __name__ == "__main__":
         )
         inputs = inputs_and_labels[:, :-1]
         labels = inputs_and_labels[:, 1:]
-        for width in tqdm(
-            range(args.min_width, args.max_width + 1, args.width_step), desc="width"
-        ):
+        for width in tqdm(widths, desc="width"):
             torch.manual_seed(seed)
             model, config = get_transformer_and_config(
                 width,
@@ -108,14 +107,18 @@ if __name__ == "__main__":
             )
             del model
         df = pd.DataFrame(results_list)
+
         parent_dir = Path(__file__).parent.absolute()
+        fig_dir = parent_dir.joinpath("figs/")
+
         prefix = "trans_coord_check_lr"
         if args.mup:
             prefix += "_mup"
-        prefix += f"-{args.lr}lr={args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
-        fig_dir = parent_dir.joinpath("figs/")
+        prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
+
         df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))
-        title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}"
+
+        title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, widths={widths}"
         for y in ALL_STATS:
             plot_from_df(
                 df, y=y, save_path=fig_dir.joinpath(f"{prefix}_{y}.png"), title=title

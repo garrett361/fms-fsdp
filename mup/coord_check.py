@@ -10,7 +10,7 @@ import matplotlib
 
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 
-ALL_STATS = ("l2_mean", "std", "mean", "var")
+ALL_STATS = ("l2_mean", "std", "mean", "var", "l1_mean")
 
 
 class StatsHook:
@@ -38,6 +38,7 @@ class StatsHook:
             if isinstance(module, Block):
                 output = output[0]
             results["mean"] = output.mean().item()
+            results["l1_mean"] = output.abs().mean().item()
             results["l2_mean"] = output.pow(2).mean().item()
             results["std"] = output.std().item()
             results["var"] = output.var().item()

@@ -73,17 +73,14 @@ class MupParam:
     fan_out: int
 
 
-def get_mup_optim_iter(
-    model: MambaLMHeadModel,
-    lr: float,
-    optim_type: str = "adam",
-) -> list[dict]:
-    expected_optim_types = ("adam", "sgd")
-    if optim_type not in expected_optim_types:
-        raise ValueError(f"Expected {optim_type=} to be in {expected_optim_types}")
-    if optim_type == "sgd":
-        raise NotImplementedError("Just adam for now.")
+@dataclass
+class MupParamGroups:
+    input: list[MupParam]
+    hidden: list[MupParam]
+    output: list[MupParam]
 
+
+def get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     # Nomenclature of 2203.03466
     input_params_and_biases: list[MupParam] = []
     hidden_params: list[MupParam] = []
@@ -145,14 +142,31 @@ def get_mup_optim_iter(
         total_params == params_accounted_for
     ), f"{total_params=}, {params_accounted_for}"
 
+    return MupParamGroups(
+        input=input_params_and_biases, hidden=hidden_params, output=output_params
+    )
+
+
+def get_mup_optim_iter(
+    model: MambaLMHeadModel,
+    lr: float,
+    optim_type: str = "adam",
+) -> list[dict]:
+    expected_optim_types = ("adam", "sgd")
+    if optim_type not in expected_optim_types:
+        raise ValueError(f"Expected {optim_type=} to be in {expected_optim_types}")
+    if optim_type == "sgd":
+        raise NotImplementedError("Just adam for now.")
+
+    mup_param_groups = get_mup_param_groups(model)
+
     # Create a list with a dict for each individual param. Annoying, but makes switching between
     # equivalent mup impls easier.
-    optim_iter = [{"params": [mp.param], "lr": lr} for mp in input_params_and_biases]
+    optim_iter = [{"params": [mp.param], "lr": lr} for mp in mup_param_groups.input]
     optim_iter.extend(
-        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in hidden_params]
+        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in mup_param_groups.hidden]
     )
     optim_iter.extend(
-        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in output_params]
+        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in mup_param_groups.output]
     )
-    assert len(optim_iter) == total_params, f"{len(optim_iter)=}, {total_params=}"
     return optim_iter

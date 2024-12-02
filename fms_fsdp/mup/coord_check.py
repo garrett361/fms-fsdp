@@ -131,8 +131,10 @@ def plot_from_df(
         plot = sns.lineplot(
             data=df[df.step == step], x="width", y=y, hue="name", ax=axs[row, col]
         )
-        plot.set(xscale="log")
-        plot.set(yscale="log")
+        # Log-log for positive quantities:
+        if y != "mean":
+            plot.set(xscale="log")
+            plot.set(yscale="log")
         plot.get_legend().remove()
         axs[row, col].set_title(f"Step {step.item()}")
 

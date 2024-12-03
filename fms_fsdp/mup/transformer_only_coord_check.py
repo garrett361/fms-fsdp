@@ -23,11 +23,11 @@ if __name__ == "__main__":
     parser.add_argument("--mup", action="store_true")
     parser.add_argument("--n_layer", type=int, default=10)
     parser.add_argument("--head_dim", type=int, default=128)
-    parser.add_argument("--use_width_in_mup", action="store_true")
+    parser.add_argument("--mup_use_width", action="store_true")
     args = parser.parse_args()
 
-    if args.use_width_in_mup and not args.mup:
-        raise ValueError("--use_width_in_mup must be used with --mup")
+    if args.mup_use_width and not args.mup:
+        raise ValueError("--mup_use_width must be used with --mup")
 
     results_list: list[dict] = []
     # Train repeatedly on fake data
@@ -55,9 +55,10 @@ if __name__ == "__main__":
                     model=model,
                     lr=args.lr,
                     optim_type="adam",
-                    base_width=widths[0],
-                    width=width if args.use_width_in_mup else None,
+                    base_width=min(widths),
+                    width=width if args.mup_use_width else None,
                 )
+
             else:
                 optim_args = model.parameters()
             optimizer = torch.optim.AdamW(
@@ -84,7 +85,7 @@ if __name__ == "__main__":
         prefix = "trans_coord_check"
         if args.mup:
             prefix += "_mup"
-            if args.use_width_in_mup:
+            if args.mup_use_width:
                 prefix += "_with_width"
         prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
 
@@ -92,7 +93,7 @@ if __name__ == "__main__":
 
         title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, widths={widths}"
         if args.mup:
-            if args.use_width_in_mup:
+            if args.mup_use_width:
                 title = "(mup[width]) " + title
             else:
                 title = "(mup) " + title

@@ -24,7 +24,6 @@ from fms_fsdp.utils.config_utils import update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
-    setup,
     setup_environ_flags,
 )
 from dataclasses import dataclass
@@ -250,7 +249,7 @@ def main(**kwargs):
         print(f"--> running with these configs {cfg}")
 
     # some setups
-    setup()
+    # setup()
     torch.cuda.set_device(local_rank)
     torch.cuda.empty_cache()
     setup_environ_flags()

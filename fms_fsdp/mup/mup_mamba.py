@@ -186,17 +186,16 @@ def get_mup_optim_iter(
     # Create a list with a dict for each individual param. Annoying, but makes switching between
     # equivalent mup impls easier.
 
-    lr *= base_width
     optim_iter = [{"params": [mp.param], "lr": lr} for mp in mup_param_groups.input]
     optim_iter.extend(
         [
-            {"params": [mp.param], "lr": lr / (width or mp.fan_in)}
+            {"params": [mp.param], "lr": lr * base_width / (width or mp.fan_in)}
             for mp in mup_param_groups.hidden
         ]
     )
     optim_iter.extend(
         [
-            {"params": [mp.param], "lr": lr / (width or mp.fan_in)}
+            {"params": [mp.param], "lr": lr * base_width / (width or mp.fan_in)}
             for mp in mup_param_groups.output
         ]
     )

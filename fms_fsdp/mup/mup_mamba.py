@@ -1,6 +1,7 @@
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 import torch.nn as nn
 import warnings
+from typing import Optional
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.modules.mha import MHA
 from mamba_ssm.modules.mlp import GatedMLP
@@ -153,7 +154,27 @@ def get_mup_optim_iter(
     model: MambaLMHeadModel,
     lr: float,
     optim_type: str = "adam",
+    base_width: int = 1,
+    width: Optional[int] = None,
 ) -> list[dict]:
+    """
+    Get the per-weight learning rates for mup.
+
+    There are two basic behaviors:
+    1) If no `width` is provided, then the weight lr's are adjusted based on their fan_in shapes, as
+    appropriate.
+    2) If a `width` is provided, then weight lr's are instead adjusted by factors of `width` instead
+    of fan_in.
+
+    Option 1 uses the LRs you'd have without mup for those layers where `base_width = fan_in`
+
+    Option 2 with width == base_width gives LRs which exactly match those you'd have without mup.
+
+    Unclear to me which is the canonical implementation. Option 2 allows for easier comparison with
+    non-mup models, but option 1 seems more natural.
+
+
+    """
     expected_optim_types = ("adam", "sgd")
     if optim_type not in expected_optim_types:
         raise ValueError(f"Expected {optim_type=} to be in {expected_optim_types}")
@@ -164,11 +185,19 @@ def get_mup_optim_iter(
 
     # Create a list with a dict for each individual param. Annoying, but makes switching between
     # equivalent mup impls easier.
+
+    lr *= base_width
     optim_iter = [{"params": [mp.param], "lr": lr} for mp in mup_param_groups.input]
     optim_iter.extend(
-        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in mup_param_groups.hidden]
+        [
+            {"params": [mp.param], "lr": lr / (width or mp.fan_in)}
+            for mp in mup_param_groups.hidden
+        ]
     )
     optim_iter.extend(
-        [{"params": [mp.param], "lr": lr / mp.fan_in} for mp in mup_param_groups.output]
+        [
+            {"params": [mp.param], "lr": lr / (width or mp.fan_in)}
+            for mp in mup_param_groups.output
+        ]
     )
     return optim_iter

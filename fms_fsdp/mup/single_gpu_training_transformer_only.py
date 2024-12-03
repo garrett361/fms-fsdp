@@ -6,14 +6,12 @@ from pathlib import Path
 import fire
 import torch
 import torch.optim as optim
-from mamba_ssm.models.config_mamba import MambaConfig
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
 from torch import distributed as dist
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
-from fms_fsdp.utils.config_utils import get_model_config, update_config
+from fms_fsdp.utils.config_utils import update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
@@ -124,9 +122,9 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, block)
 
     # get model
-    config_data = get_model_config(cfg.model_variant)
-    mamba_config = MambaConfig(**config_data)
-    model = MambaLMHeadModel(mamba_config)
+    # config_data = get_model_config(cfg.model_variant)
+    # mamba_config = MambaConfig(**config_data)
+    # model = MambaLMHeadModel(mamba_config)
     model, mamba_config = get_transformer_and_config(
         width=cfg.width,
         n_layer=cfg.n_layer,

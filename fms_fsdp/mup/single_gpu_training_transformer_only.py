@@ -218,14 +218,14 @@ def train(
             start = time.time()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if batch_idx % cfg.checkpoint_interval == 0:
-            checkpointer.save(
-                batch_idx,
-                model,
-                optimizer,
-                None,
-                tokens_seen=tokens_seen + new_tokens_seen,
-            )
+        # if batch_idx % cfg.checkpoint_interval == 0:
+        #     checkpointer.save(
+        #         batch_idx,
+        #         model,
+        #         optimizer,
+        #         None,
+        #         tokens_seen=tokens_seen + new_tokens_seen,
+        #     )
 
     return train_loss
 
@@ -410,7 +410,7 @@ def main(**kwargs):
         tokens_seen,
     )
 
-    checkpointer.save_single_file(cfg.num_steps, model)
+    # checkpointer.save_single_file(cfg.num_steps, model)
 
 
 if __name__ == "__main__":

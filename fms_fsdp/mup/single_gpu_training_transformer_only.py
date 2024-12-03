@@ -15,7 +15,6 @@ from fms_fsdp.utils.config_utils import update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
-    get_profiler,
     setup,
     setup_environ_flags,
     train,
@@ -245,7 +244,7 @@ def main(**kwargs):
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
     # profiler
-    profiler = get_profiler(cfg, rank)
+    profiler = None  # get_profiler(cfg, rank)
 
     # Train
     if rank == 0:

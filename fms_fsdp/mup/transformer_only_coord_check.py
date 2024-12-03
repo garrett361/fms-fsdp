@@ -26,6 +26,9 @@ if __name__ == "__main__":
     parser.add_argument("--use_width_in_mup", action="store_true")
     args = parser.parse_args()
 
+    if args.use_width_in_mup and not args.mup:
+        raise ValueError("--use_width_in_mup must be used with --mup")
+
     results_list: list[dict] = []
     # Train repeatedly on fake data
     widths = list(range(args.min_width, args.max_width + 1, args.width_step))
@@ -81,6 +84,8 @@ if __name__ == "__main__":
         prefix = "trans_coord_check"
         if args.mup:
             prefix += "_mup"
+            if args.use_width_in_mup:
+                prefix += "_with_width"
         prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
 
         df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))

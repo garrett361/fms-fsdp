@@ -89,7 +89,7 @@ class mup_config:
 def main(**kwargs):
     # get configs
     cfg = mup_config()
-    update_config(cfg, config.train_config() ** kwargs)
+    update_config(cfg, **kwargs)
     print(f"{cfg=}")
 
     # ensure reproducibility

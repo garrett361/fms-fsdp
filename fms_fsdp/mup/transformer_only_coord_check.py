@@ -23,6 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("--mup", action="store_true")
     parser.add_argument("--n_layer", type=int, default=10)
     parser.add_argument("--head_dim", type=int, default=128)
+    parser.add_argument("--use_width_in_mup", action="store_true")
     args = parser.parse_args()
 
     results_list: list[dict] = []
@@ -47,7 +48,13 @@ if __name__ == "__main__":
             if args.mup:
                 print("Getting mup learning rates and applying init")
                 apply_mup_init(model)
-                optim_args = get_mup_optim_iter(model, args.lr, optim_type="adam")
+                optim_args = get_mup_optim_iter(
+                    model=model,
+                    lr=args.lr,
+                    optim_type="adam",
+                    base_width=widths[0],
+                    width=width if args.use_width_in_mup else None,
+                )
             else:
                 optim_args = model.parameters()
             optimizer = torch.optim.AdamW(

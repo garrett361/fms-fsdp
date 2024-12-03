@@ -83,7 +83,7 @@ class MupParamGroups:
     output: list[MupParam]
 
 
-def get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
+def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     # Nomenclature of 2203.03466
     input_params_and_biases: list[MupParam] = []
     hidden_params: list[MupParam] = []
@@ -181,7 +181,7 @@ def get_mup_optim_iter(
     if optim_type == "sgd":
         raise NotImplementedError("Just adam for now.")
 
-    mup_param_groups = get_mup_param_groups(model)
+    mup_param_groups = _get_mup_param_groups(model)
 
     # Create a list with a dict for each individual param. Annoying, but makes switching between
     # equivalent mup impls easier.

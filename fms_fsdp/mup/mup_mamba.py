@@ -1,5 +1,6 @@
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 import torch.nn as nn
+import warnings
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.modules.mha import MHA
 from mamba_ssm.modules.mlp import GatedMLP
@@ -39,9 +40,10 @@ def apply_mup_init(
     - Rescales some Linear weights following some prescription GPT-2 for residuals
     """
     if not isinstance(model, MambaLMHeadModel):
-        raise ValueError(
-            f"mup only implemented for MambaLMHeadModel classes, not {model.__class__.__name__}"
+        warnings.warn(
+            f"Found model of type {model.__class__.__name__}, not MambaLMHeadModel. No op."
         )
+        return
     cfg = model.config
     mup_cfg_check(cfg)
 

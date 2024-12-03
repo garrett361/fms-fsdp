@@ -97,6 +97,8 @@ if __name__ == "__main__":
             else:
                 title = "(mup) " + title
         for y in ALL_STATS:
+            fig_subdir = fig_dir.joinpath(y)
+            fig_subdir.mkdir(parents=True, exist_ok=True)
             plot_from_df(
-                df, y=y, save_path=fig_dir.joinpath(f"{prefix}_{y}.png"), title=title
+                df, y=y, save_path=fig_subdir.joinpath(f"{prefix}_{y}.png"), title=title
             )

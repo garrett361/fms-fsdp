@@ -48,6 +48,7 @@ if __name__ == "__main__":
                 head_dim=args.head_dim,
                 n_layer=args.n_layer,
             )
+            optim_kwargs = dict(betas=(0.9, 0.95), weight_decay=0.1)
             if args.mup:
                 print("Getting mup learning rates and applying init")
                 apply_mup_init(model)
@@ -61,9 +62,8 @@ if __name__ == "__main__":
 
             else:
                 optim_args = model.parameters()
-            optimizer = torch.optim.AdamW(
-                optim_args, lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1
-            )
+                optim_kwargs["lr"] = args.lr
+            optimizer = torch.optim.AdamW(optim_args, **optim_kwargs)
 
             get_stats(
                 model=model,

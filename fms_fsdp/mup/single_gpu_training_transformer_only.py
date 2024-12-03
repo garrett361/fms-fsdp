@@ -158,7 +158,7 @@ def train(
 
         if batch_idx % cfg.report_interval == 0:
             with torch.no_grad():
-                train_loss = torch.cat(loss_history).mean()
+                train_loss = torch.stack(loss_history).mean()
                 loss_history.clear()
             elapsed_time = time.time() - loop_start
             world_size = int(os.getenv("WORLD_SIZE", 0))

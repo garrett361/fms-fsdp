@@ -1,5 +1,15 @@
 import math
 import os
+from dataclasses import asdict
+
+
+try:
+    import packaging.version
+except ImportError:
+    pass  # type: ignore
+
+import time
+
 from typing import Optional, Union
 from pathlib import Path
 
@@ -7,7 +17,6 @@ import fire
 import torch
 import torch.optim as optim
 from mamba_ssm.modules.block import Block
-from torch import distributed as dist
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -17,7 +26,6 @@ from fms_fsdp.utils.train_utils import (
     get_policies,
     setup,
     setup_environ_flags,
-    train,
 )
 from dataclasses import dataclass
 from fms_fsdp.mup.transformer_only_utils import get_transformer_and_config
@@ -62,6 +70,7 @@ class mup_config:
 
     # training spec
     batch_size: int = 2
+    acc_steps: int = 1
     num_steps: int = 1000000
     training_stage: str = "initial"
     learning_rate: float = 3e-4
@@ -81,6 +90,145 @@ class mup_config:
 
     # compile
     use_torch_compile: bool = True
+
+
+def train(
+    cfg,
+    model,
+    local_rank,
+    rank,
+    train_loader,
+    optimizer,
+    scheduler,
+    profiler,
+    checkpointer,
+    start_step,
+    tokens_seen,
+):
+    if cfg.tracker:
+        if cfg.tracker not in ["wandb", "aim"]:
+            raise ValueError(f"tracker {cfg.tracker} not supported.")
+        tracker_dir = cfg.tracker_dir
+        project_name = cfg.tracker_project_name
+        run_id = cfg.tracker_run_id
+
+        if cfg.tracker == "wandb":
+            try:
+                import wandb  # type: ignore
+            except ImportError:
+                raise ImportError("tracker is set to wandb but wandb is not installed.")
+            if rank == 0:
+                print("--> wandb is enabled!")
+                try:
+                    wandb.init(
+                        project=project_name,
+                        dir=tracker_dir,
+                        resume="allow",
+                        id=run_id,
+                    )
+                except wandb.errors.UsageError:
+                    raise ValueError(
+                        "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
+                    )
+                wandb.config = asdict(cfg)
+
+    model.train()
+
+    start = time.time()
+    loop_start = time.time()
+    loss_history = []
+    for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
+        if batch_idx > cfg.num_steps:
+            break
+        input = input.to(local_rank)
+        label = label.to(local_rank)
+
+        optimizer.zero_grad()
+        for _ in range(cfg.acc_steps):
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                output = model(input)
+                output = output.logits if hasattr(output, "logits") else output
+                ce_loss = torch.nn.CrossEntropyLoss()
+                loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+                loss_history.append(loss.detach().clone())
+
+            (loss / cfg.acc_steps).backward()
+        optimizer.step()
+        scheduler.step()
+
+        if batch_idx % cfg.report_interval == 0:
+            with torch.no_grad():
+                train_loss = torch.cat(loss_history).mean()
+                loss_history.clear()
+            elapsed_time = time.time() - loop_start
+            world_size = int(os.getenv("WORLD_SIZE", 0))
+            new_tokens_seen = (
+                (batch_idx - start_step)
+                * world_size
+                * cfg.batch_size
+                * cfg.seq_length
+                * cfg.acc_steps
+            )
+            if rank == 0:
+                total_tokens_seen = tokens_seen + new_tokens_seen
+                current_loss = train_loss.item()
+                current_lr = scheduler.get_last_lr()[0]
+                current_step_time = (time.time() - start) / cfg.report_interval
+                overall_step_time = elapsed_time / (batch_idx - start_step)
+                current_throughput = int(
+                    cfg.batch_size * cfg.seq_length / current_step_time
+                )
+                overall_throughput = int(
+                    cfg.batch_size * cfg.seq_length / overall_step_time
+                )
+                reserved_mem = torch.cuda.max_memory_reserved(
+                    device=torch.cuda.current_device()
+                )
+                allocated_mem = torch.cuda.max_memory_allocated(
+                    device=torch.cuda.current_device()
+                )
+
+                print("step:", batch_idx)
+                print("loss:", current_loss)
+                print("LR:", current_lr)
+                print("tokens seen:", total_tokens_seen)
+                print("reserved memory:", reserved_mem)
+                print("allocated memory:", allocated_mem)
+                print("current step time:", current_step_time)
+                print("overall step time:", overall_step_time)
+                print("current token per gpu per sec:", current_throughput)
+                print("overall token per gpu per sec:", overall_throughput)
+                print(
+                    "overall token per day:",
+                    int(new_tokens_seen / elapsed_time * 3600 * 24),
+                )
+                if cfg.tracker:
+                    vals_to_track = {
+                        "learning rate": current_lr,
+                        "loss": current_loss,
+                        "token seen": total_tokens_seen,
+                        "current throughput (token per gpu per sec)": current_throughput,
+                        "overall throughput (token per gpu per sec)": overall_throughput,
+                        "gpu reserved memory": reserved_mem,
+                        "gpu allocated memory": allocated_mem,
+                    }
+                    if cfg.tracker == "wandb":
+                        tracker_fn = wandb.log
+                    tracker_fn(vals_to_track, step=batch_idx)
+
+            start = time.time()
+        torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
+
+        if batch_idx % cfg.checkpoint_interval == 0:
+            checkpointer.save(
+                batch_idx,
+                model,
+                optimizer,
+                None,
+                tokens_seen=tokens_seen + new_tokens_seen,
+            )
+
+    return train_loss
 
 
 def main(**kwargs):
@@ -264,9 +412,6 @@ def main(**kwargs):
     )
 
     checkpointer.save_single_file(cfg.num_steps, model)
-
-    dist.barrier()
-    dist.destroy_process_group()
 
 
 if __name__ == "__main__":

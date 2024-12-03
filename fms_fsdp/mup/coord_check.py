@@ -132,8 +132,8 @@ def plot_from_df(
             data=df[df.step == step], x="width", y=y, hue="name", ax=axs[row, col]
         )
         # Log-log for positive quantities:
+        plot.set(xscale="log")
         if y != "mean":
-            plot.set(xscale="log")
             plot.set(yscale="log")
         plot.get_legend().remove()
         axs[row, col].set_title(f"Step {step.item()}")

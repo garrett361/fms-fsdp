@@ -242,8 +242,8 @@ def train(
     loss_history = []
 
     # Each batch is comprised of acc_steps mini batches. acc_steps backwards per optim step.
-    for mini_batch_idx, (input, label) in enumerate(train_loader, start=1):
-        batch_idx, acc_step_idx = divmod(mini_batch_idx, cfg.acc_steps)
+    for mini_batch_idx, (input, label) in enumerate(train_loader):
+        batch_idx, acc_step_idx = divmod(mini_batch_idx + cfg.acc_steps, cfg.acc_steps)
         print(f"Processing {batch_idx=}, {acc_step_idx=}")
         is_last_mini_batch = acc_step_idx == cfg.acc_steps - 1
 

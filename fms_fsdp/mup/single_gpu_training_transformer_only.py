@@ -58,9 +58,13 @@ class mup_config:
     width: int = 512
     n_layer: int = 10
     head_dim: int = 128
-    mup: bool = False
     ckpt_load_path: str = "/fsx/output/ckpt"
     ckpt_save_path: str = "/fsx/output/ckpt"
+
+    # mup
+    mup: bool = False
+    base_width: Optional[int] = None
+    mup_use_width: bool = False
 
     # dataset and dataloader
     use_dummy_dataset: bool = False
@@ -97,6 +101,10 @@ class mup_config:
 
     # compile
     use_torch_compile: bool = True
+
+    def __post_init__(self) -> None:
+        if self.mup and not self.base_width:
+            raise ValueError("mup can only be specified along with a base_width")
 
 
 def causal_lm(data_seq, prompt_len=1):
@@ -384,7 +392,13 @@ def main(**kwargs):
     if cfg.mup:
         apply_mup_init(model)
         optimizer = optim.AdamW(
-            get_mup_optim_iter(model, lr=cfg.learning_rate, optim_type="adam"),
+            get_mup_optim_iter(
+                model,
+                lr=cfg.learning_rate,
+                optim_type="adam",
+                base_width=cfg.base_width,
+                width=cfg.width,
+            ),
             lr=cfg.learning_rate,
             betas=(0.9, 0.95),
             weight_decay=0.1,

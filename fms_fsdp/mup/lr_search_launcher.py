@@ -83,25 +83,3 @@ if __name__ == "__main__":
                 print(f"{cfg.learning_rate} errored with {err=}\n{traceback=}")
             else:
                 print(f"{cfg.learning_rate} succeeded with {res=}")
-        # for cfg, res in zip(cfgs, p.map(print_cfg, cfgs)):
-        #     pass
-        # try:
-        #     print(f"{res=}")
-        # except Exception as e:
-        #     print(f"Found exception {e}")
-
-        # cfg_dict = dataclasses.asdict(cfg)
-        # r = p.map(
-        #     main,
-        #     kwds=cfg_dict,
-        #     error_callback=lambda error: print(f"Error: {error}"),
-        # )
-        # results.append(r)
-
-        # for p_idx, r in enumerate(results):
-        #     r.wait()
-        # for r in results:
-        #     try:
-        #         print(r.result())
-        #     except Exception as e:
-        #         print(f"Found exception {e}")

@@ -239,12 +239,14 @@ def train(
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             print_device("--> wandb is enabled!")
             try:
-                wandb.init(
+                wandb_kwargs = dict(
                     project=project_name,
                     dir=tracker_dir,
-                    resume="never",
+                    resume="allow",
                     id=run_id,
                 )
+                print(f"Using {wandb_kwargs=}")
+                wandb.init(**wandb_kwargs)
             except wandb.errors.UsageError:
                 raise ValueError(
                     "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"

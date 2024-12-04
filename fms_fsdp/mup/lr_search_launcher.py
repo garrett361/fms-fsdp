@@ -40,7 +40,7 @@ def populate_cfgs(**kwargs) -> None:
 def main_wrapper(cfg):
     try:
         cfg_dict = dataclasses.asdict(cfg)
-        res = main(cfg_dict)
+        res = main(**cfg_dict)
         return (res, None, None)
     except Exception as e:
         return (None, e, traceback.format_exc())

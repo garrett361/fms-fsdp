@@ -1,5 +1,4 @@
 import os
-import wandb
 from dataclasses import asdict
 
 
@@ -422,13 +421,15 @@ def main(**kwargs):
     #
     # # Train
     # print_device(f"Training for {cfg.num_steps} steps")
-    # train(
-    #     cfg,
-    #     None,
-    #     None,
-    #     None,
-    #     None,
-    # )
+
+    train(
+        cfg,
+        None,
+        None,
+        None,
+        None,
+    )
+
     # train(
     #     cfg,
     #     model,
@@ -437,16 +438,17 @@ def main(**kwargs):
     #     scheduler,
     # )
 
-    wandb_kwargs = dict(
-        project="goon-test",
-        dir="/gpfs/goon",
-        resume="allow",
-        # id="platform_test",
-    )
-    print(f"{wandb_kwargs=}")
-    wandb.init(**wandb_kwargs)
-    for idx in range(1, 11):
-        wandb.log(data={"loss": idx}, step=idx)
+    # wandb_kwargs = dict(
+    #     project="goon-test",
+    #     dir="/gpfs/goon",
+    #     resume="allow",
+    #     # id="platform_test",
+    # )
+    # print(f"{wandb_kwargs=}")
+    # wandb.init(**wandb_kwargs)
+    # for idx in range(1, 11):
+    #     wandb.log(data={"loss": idx}, step=idx)
+    #
 
 
 if __name__ == "__main__":

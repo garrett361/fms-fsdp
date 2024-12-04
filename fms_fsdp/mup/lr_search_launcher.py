@@ -60,6 +60,8 @@ if __name__ == "__main__":
             device_idx.value += 1
             device_idx.value %= num_devices
 
+    # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
+    # main function and Pool does not support nested mp.
     with ProcessPoolExecutor(len(devices), initializer=set_device) as p:
         for cfg, (res, err, traceback) in zip(cfgs, p.map(main_wrapper, cfgs)):
             if err:

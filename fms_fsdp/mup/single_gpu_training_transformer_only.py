@@ -49,7 +49,10 @@ Minimal single-gpu script for quick training.  No checkpointing.
 
 def print_device(*args, **kwargs):
     device = os.environ["CUDA_VISIBLE_DEVICES"]
-    print(f"[{device=}]: ", *args, **kwargs)
+    if len(device == 1):
+        print(f"[{device=}]: ", *args, **kwargs)
+    else:
+        print(*args, **kwargs)
 
 
 @dataclass

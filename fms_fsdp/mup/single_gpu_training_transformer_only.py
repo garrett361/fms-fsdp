@@ -262,7 +262,6 @@ def train(
         (loss / cfg.acc_steps).backward()
 
         if is_last_mini_batch:
-            print(f"Stepping on {batch_idx=}, {acc_step_idx=}")
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)

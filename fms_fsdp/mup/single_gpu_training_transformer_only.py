@@ -244,6 +244,7 @@ def train(
     # Each batch is comprised of acc_steps mini batches. acc_steps backwards per optim step.
     for mini_batch_idx, (input, label) in enumerate(train_loader, start=1):
         batch_idx, acc_step_idx = divmod(mini_batch_idx, cfg.acc_steps)
+        print(f"Processing {batch_idx=}, {acc_step_idx=}")
         is_last_mini_batch = acc_step_idx == cfg.acc_steps - 1
 
         if batch_idx > cfg.num_steps:
@@ -262,6 +263,7 @@ def train(
         (loss / cfg.acc_steps).backward()
 
         if is_last_mini_batch:
+            print(f"Stepping on {batch_idx=}, {acc_step_idx=}")
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
@@ -417,8 +419,6 @@ def main(**kwargs):
         optimizer,
         scheduler,
     )
-
-    # checkpointer.save_single_file(cfg.num_steps, model)
 
 
 if __name__ == "__main__":

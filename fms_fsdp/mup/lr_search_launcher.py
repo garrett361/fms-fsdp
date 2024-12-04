@@ -4,6 +4,7 @@ from typing import Sequence
 import os
 import fire
 from single_gpu_training_transformer_only import mup_config, main
+import wandb
 from copy import deepcopy
 from concurrent.futures import ProcessPoolExecutor
 import dataclasses
@@ -60,6 +61,9 @@ if __name__ == "__main__":
     print(f"Launching on {devices=}")
     num_devices = len(devices)
     device_idx = mp.Value("i", 0)
+
+    # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process
+    wandb.setup()
 
     def set_device() -> None:
         with device_idx.get_lock():

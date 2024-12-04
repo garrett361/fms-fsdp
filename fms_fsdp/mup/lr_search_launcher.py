@@ -37,25 +37,6 @@ def populate_cfgs(**kwargs) -> None:
         cfgs.append(cfg)
 
 
-def print_cfg(x):
-    device = os.environ["CUDA_VISIBLE_DEVICES"]
-    print(f"{device=}")
-    import time
-
-    time.sleep(1)
-    print(f"{device=} DONE")
-    raise ValueError("test")
-    return device
-
-
-def print_cfg_wrapper(x):
-    try:
-        res = print_cfg(x)
-        return (res, None, None)
-    except Exception as e:
-        return (None, e, traceback.format_exc())
-
-
 def main_wrapper(cfg):
     try:
         cfg_dict = dataclasses.asdict(cfg)
@@ -80,7 +61,7 @@ if __name__ == "__main__":
             device_idx.value %= num_devices
 
     with ProcessPoolExecutor(len(devices), initializer=set_device) as p:
-        for cfg, (res, err, traceback) in zip(cfgs, p.map(print_cfg_wrapper, cfgs)):
+        for cfg, (res, err, traceback) in zip(cfgs, p.map(main_wrapper, cfgs)):
             if err:
                 print(f"{cfg.learning_rate} errored with {err=}\n{traceback=}")
             else:

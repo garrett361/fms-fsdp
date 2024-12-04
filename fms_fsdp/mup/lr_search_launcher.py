@@ -1,8 +1,10 @@
 import multiprocessing as mp
+import traceback
 import os
 import fire
 from single_gpu_training_transformer_only import mup_config, main
 from copy import deepcopy
+from concurrent.futures import ProcessPoolExecutor
 import dataclasses
 
 
@@ -36,7 +38,31 @@ def populate_cfgs(**kwargs) -> None:
 
 
 def print_cfg(x):
-    print(x)
+    device = os.environ["CUDA_VISIBLE_DEVICES"]
+    print(f"{device=}")
+    import time
+
+    time.sleep(1)
+    print(f"{device=} DONE")
+    raise ValueError("test")
+    return device
+
+
+def print_cfg_wrapper(x):
+    try:
+        res = print_cfg(x)
+        return (res, None, None)
+    except Exception as e:
+        return (None, e, traceback.format_exc())
+
+
+def main_wrapper(cfg):
+    try:
+        cfg_dict = dataclasses.asdict(cfg)
+        res = main(cfg_dict)
+        return (res, None, None)
+    except Exception as e:
+        return (None, e, traceback.format_exc())
 
 
 if __name__ == "__main__":
@@ -53,16 +79,31 @@ if __name__ == "__main__":
             device_idx.value += 1
             device_idx.value %= num_devices
 
-    results = []
-    with mp.Pool(len(devices), initializer=set_device) as p:
-        for cfg in cfgs:
-            cfg_dict = dataclasses.asdict(cfg)
-            r = p.apply_async(
-                main,
-                kwds=cfg_dict,
-                error_callback=lambda error: print(f"Error: {error}"),
-            )
-            results.append(r)
+    with ProcessPoolExecutor(len(devices), initializer=set_device) as p:
+        for cfg, (res, err, traceback) in zip(cfgs, p.map(print_cfg_wrapper, cfgs)):
+            if err:
+                print(f"{cfg.learning_rate} errored with {err=}\n{traceback=}")
+            else:
+                print(f"{cfg.learning_rate} successed with {res=}")
+        # for cfg, res in zip(cfgs, p.map(print_cfg, cfgs)):
+        #     pass
+        # try:
+        #     print(f"{res=}")
+        # except Exception as e:
+        #     print(f"Found exception {e}")
 
-        for p_idx, r in enumerate(results):
-            r.wait()
+        # cfg_dict = dataclasses.asdict(cfg)
+        # r = p.map(
+        #     main,
+        #     kwds=cfg_dict,
+        #     error_callback=lambda error: print(f"Error: {error}"),
+        # )
+        # results.append(r)
+
+        # for p_idx, r in enumerate(results):
+        #     r.wait()
+        # for r in results:
+        #     try:
+        #         print(r.result())
+        #     except Exception as e:
+        #         print(f"Found exception {e}")

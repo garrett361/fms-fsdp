@@ -267,6 +267,7 @@ def train(
         (loss / cfg.acc_steps).backward()
 
         if is_last_mini_batch:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)

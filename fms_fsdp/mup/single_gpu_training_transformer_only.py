@@ -98,7 +98,7 @@ class mup_config:
     # logging
     report_interval: int = 100
     tracker: Optional[str] = None  # None, "wandb", "aim"
-    tracker_dir: str = "/fsx/aim_logs/llama"
+    tracker_dir: Optional[str] = None
     tracker_project_name: str = "llama"  # project name for a group of runs
     tracker_run_id: Optional[str] = None  # run id, for job resume purpose
 

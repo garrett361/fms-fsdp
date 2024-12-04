@@ -41,6 +41,7 @@ def print_cfg(x):
 if __name__ == "__main__":
     fire.Fire(populate_cfgs)
     devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
+    print(f"Launching on {devices=}")
     num_devices = len(devices)
     device_idx = mp.Value("i", 0)
 

@@ -243,7 +243,8 @@ def train(
                     project=project_name,
                     dir=tracker_dir,
                     resume="allow",
-                    id=run_id,
+                    id=None,
+                    # id=run_id,
                 )
                 print(f"Using {wandb_kwargs=}")
                 wandb.init(**wandb_kwargs)

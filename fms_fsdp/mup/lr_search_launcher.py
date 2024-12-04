@@ -17,6 +17,7 @@ def populate_cfgs(**kwargs) -> None:
     lrs = kwargs.pop("lrs")
     assert "learning_rate" not in kwargs
     base_cfg = mup_config(**kwargs)
+    print(f"Launching with {lrs=}")
     for lr in lrs:
         cfg = deepcopy(base_cfg)
         cfg.learning_rate = lr

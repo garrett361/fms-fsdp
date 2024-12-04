@@ -8,8 +8,6 @@ from pathlib import Path
 
 import fire
 import torch
-import torch.optim as optim
-from torch.optim.lr_scheduler import LambdaLR
 from fms_fsdp.utils.dataloader_utils import parse_data_args
 
 from fms_fsdp.utils.config_utils import update_config
@@ -17,9 +15,7 @@ from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
 )
 from dataclasses import dataclass
-from fms_fsdp.mup.transformer_only_utils import get_transformer_and_config
 
-from fms_fsdp.mup.mup_mamba import apply_mup_init, get_mup_optim_iter
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -365,60 +361,60 @@ def main(**kwargs):
     # config_data = get_model_config(cfg.model_variant)
     # mamba_config = MambaConfig(**config_data)
     # model = MambaLMHeadModel(mamba_config)
-    model, mamba_config = get_transformer_and_config(
-        width=cfg.width,
-        n_layer=cfg.n_layer,
-        vocab_size=cfg.vocab_size,
-        head_dim=cfg.head_dim,
-        device="cuda",
-        mup=cfg.mup,
-    )
+    # model, mamba_config = get_transformer_and_config(
+    #     width=cfg.width,
+    #     n_layer=cfg.n_layer,
+    #     vocab_size=cfg.vocab_size,
+    #     head_dim=cfg.head_dim,
+    #     device="cuda",
+    #     mup=cfg.mup,
+    # )
+    #
+    # total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # print_device(f"\n--> model has {total_params / 1e6} Million params\n")
+    # print_device(f"{model=}")
+    #
+    # # get data loader
+    # print_device("Constructing datasets...")
+    # if not cfg.use_dummy_dataset:
+    #     train_loader = get_data_loader(cfg)
+    # else:
+    #     train_loader = get_dummy_loader(cfg)
+    # print_device("Datasets constructed!")
+    #
+    # # torch compile
+    # if cfg.use_torch_compile:
+    #     print_device("--> enabling torch compile...")
+    #     # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
+    #     torch._dynamo.config.accumulated_cache_size_limit = 128
+    #     model = torch.compile(model)
+    #
+    # # Model init and Optimizer
+    # if cfg.mup:
+    #     apply_mup_init(model)
+    #     optimizer = optim.AdamW(
+    #         get_mup_optim_iter(
+    #             model,
+    #             lr=cfg.learning_rate,
+    #             optim_type="adam",
+    #             base_width=cfg.base_width,
+    #             width=cfg.width,
+    #         ),
+    #         lr=cfg.learning_rate,
+    #         betas=(0.9, 0.95),
+    #         weight_decay=0.1,
+    #     )
+    # else:
+    #     optimizer = optim.AdamW(
+    #         model.parameters(),
+    #         lr=cfg.learning_rate,
+    #         betas=(0.9, 0.95),
+    #         weight_decay=0.1,
+    #     )
 
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print_device(f"\n--> model has {total_params / 1e6} Million params\n")
-    print_device(f"{model=}")
-
-    # get data loader
-    print_device("Constructing datasets...")
-    if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg)
-    else:
-        train_loader = get_dummy_loader(cfg)
-    print_device("Datasets constructed!")
-
-    # torch compile
-    if cfg.use_torch_compile:
-        print_device("--> enabling torch compile...")
-        # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
-        torch._dynamo.config.accumulated_cache_size_limit = 128
-        model = torch.compile(model)
-
-    # Model init and Optimizer
-    if cfg.mup:
-        apply_mup_init(model)
-        optimizer = optim.AdamW(
-            get_mup_optim_iter(
-                model,
-                lr=cfg.learning_rate,
-                optim_type="adam",
-                base_width=cfg.base_width,
-                width=cfg.width,
-            ),
-            lr=cfg.learning_rate,
-            betas=(0.9, 0.95),
-            weight_decay=0.1,
-        )
-    else:
-        optimizer = optim.AdamW(
-            model.parameters(),
-            lr=cfg.learning_rate,
-            betas=(0.9, 0.95),
-            weight_decay=0.1,
-        )
-
-    # Override loaded optim hyperparams with the current values
-    for g in optimizer.param_groups:
-        g["initial_lr"] = cfg.learning_rate
+    # # Override loaded optim hyperparams with the current values
+    # for g in optimizer.param_groups:
+    #     g["initial_lr"] = cfg.learning_rate
 
     # LR schedule  (cosine 0.01 decay)
     warmup_interval = min(1000, cfg.num_steps // 10)
@@ -430,17 +426,24 @@ def main(**kwargs):
         * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
     )
 
-    scheduler = LambdaLR(optimizer, lambda x: schedule(x))
+    # scheduler = LambdaLR(optimizer, lambda x: schedule(x))
 
     # Train
     print_device(f"Training for {cfg.num_steps} steps")
     train(
         cfg,
-        model,
-        train_loader,
-        optimizer,
-        scheduler,
+        None,
+        None,
+        None,
+        None,
     )
+    # train(
+    #     cfg,
+    #     model,
+    #     train_loader,
+    #     optimizer,
+    #     scheduler,
+    # )
 
 
 if __name__ == "__main__":

@@ -69,7 +69,7 @@ if __name__ == "__main__":
             if err:
                 print(f"{cfg.learning_rate} errored with {err=}\n{traceback=}")
             else:
-                print(f"{cfg.learning_rate} successed with {res=}")
+                print(f"{cfg.learning_rate} succeeded with {res=}")
         # for cfg, res in zip(cfgs, p.map(print_cfg, cfgs)):
         #     pass
         # try:

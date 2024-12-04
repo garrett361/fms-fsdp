@@ -305,6 +305,7 @@ def train(
             print(
                 "overall token per day:",
                 int(tokens_seen / elapsed_time * 3600 * 24),
+                "\n",
             )
             if cfg.tracker:
                 vals_to_track = {

@@ -242,7 +242,7 @@ def train(
                 wandb.init(
                     project=project_name,
                     dir=tracker_dir,
-                    resume="allow",
+                    resume="never",
                     id=run_id,
                 )
             except wandb.errors.UsageError:

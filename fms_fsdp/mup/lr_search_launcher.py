@@ -1,8 +1,14 @@
 import multiprocessing as mp
 import os
 import fire
-from single_gpu_training_transformer_only import mup_config
+from single_gpu_training_transformer_only import mup_config, main
 from copy import deepcopy
+
+
+"""
+A pool based lr searcher.  Pass a --lrs="1e-3, 1e-4,..." arg along with other usual args to the cli
+and each lr will be created and run.
+"""
 
 cfgs = []
 
@@ -42,7 +48,7 @@ if __name__ == "__main__":
     with mp.Pool(len(devices), initializer=set_device) as p:
         for cfg in cfgs:
             r = p.apply_async(
-                print_cfg, (cfg,), error_callback=lambda error: print(f"Error: {error}")
+                main, (cfg,), error_callback=lambda error: print(f"Error: {error}")
             )
             results.append(r)
 

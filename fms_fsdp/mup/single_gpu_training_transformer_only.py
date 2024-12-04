@@ -47,6 +47,11 @@ Minimal single-gpu script for quick training.  No checkpointing.
 """
 
 
+def print_device(*args, **kwargs):
+    device = os.environ["CUDA_VISIBLE_DEVICES"]
+    print(f"[{device=}]: ", *args, **kwargs)
+
+
 @dataclass
 class mup_config:
     # model
@@ -221,7 +226,7 @@ def train(
                 import wandb  # type: ignore
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
-            print("--> wandb is enabled!")
+            print_device("--> wandb is enabled!")
             try:
                 wandb.init(
                     project=project_name,
@@ -290,17 +295,17 @@ def train(
                 device=torch.cuda.current_device()
             )
 
-            print("step:", batch_idx)
-            print("loss:", current_loss)
-            print("LR:", current_lr)
-            print("tokens seen:", total_tokens_seen)
-            print("reserved memory:", reserved_mem)
-            print("allocated memory:", allocated_mem)
-            print("current step time:", current_step_time)
-            print("overall step time:", overall_step_time)
-            print("current token per gpu per sec:", current_throughput)
-            print("overall token per gpu per sec:", overall_throughput)
-            print(
+            print_device("step:", batch_idx)
+            print_device("loss:", current_loss)
+            print_device("LR:", current_lr)
+            print_device("tokens seen:", total_tokens_seen)
+            print_device("reserved memory:", reserved_mem)
+            print_device("allocated memory:", allocated_mem)
+            print_device("current step time:", current_step_time)
+            print_device("overall step time:", overall_step_time)
+            print_device("current token per gpu per sec:", current_throughput)
+            print_device("overall token per gpu per sec:", overall_throughput)
+            print_device(
                 "overall token per day:",
                 int(tokens_seen / elapsed_time * 3600 * 24),
                 "\n",
@@ -329,13 +334,13 @@ def main(**kwargs):
     # get configs
     cfg = mup_config()
     update_config(cfg, **kwargs)
-    print(f"{cfg=}")
+    print_device(f"{cfg=}")
 
     # ensure reproducibility
     torch.cuda.manual_seed(cfg.seed)
     torch.manual_seed(cfg.seed)
 
-    print(f"--> running with these configs {cfg}")
+    print_device(f"--> running with these configs {cfg}")
 
     torch.cuda.set_device(0)
     torch.cuda.empty_cache()
@@ -356,20 +361,20 @@ def main(**kwargs):
     )
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"\n--> model has {total_params / 1e6} Million params\n")
-    print(f"{model=}")
+    print_device(f"\n--> model has {total_params / 1e6} Million params\n")
+    print_device(f"{model=}")
 
     # get data loader
-    print("Constructing datasets...")
+    print_device("Constructing datasets...")
     if not cfg.use_dummy_dataset:
         train_loader = get_data_loader(cfg)
     else:
         train_loader = get_dummy_loader(cfg)
-    print("Datasets constructed!")
+    print_device("Datasets constructed!")
 
     # torch compile
     if cfg.use_torch_compile:
-        print("--> enabling torch compile...")
+        print_device("--> enabling torch compile...")
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
@@ -408,7 +413,7 @@ def main(**kwargs):
     scheduler = LambdaLR(optimizer, lambda x: schedule(x))
 
     # Train
-    print(f"Training for {cfg.num_steps} steps")
+    print_device(f"Training for {cfg.num_steps} steps")
     train(
         cfg,
         model,

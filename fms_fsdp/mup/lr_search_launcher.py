@@ -26,7 +26,7 @@ def populate_cfgs(**kwargs) -> None:
         run_id = (
             user_run_id
             + ("_" if user_run_id else "")
-            + f"n_layer-{cfg.n_layer}_width-{cfg.width}_lr-{cfg.lr}"
+            + f"n_layer-{cfg.n_layer}_width-{cfg.width}_lr-{cfg.learning_rate}"
         )
         if cfg.mup:
             run_id += "_mup"

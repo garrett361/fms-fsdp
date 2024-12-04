@@ -437,12 +437,14 @@ def main(**kwargs):
     #     scheduler,
     # )
 
-    wandb.init(
+    wandb_kwargs = dict(
         project="goon-test",
         dir="/gpfs/goon",
         resume="allow",
         # id="platform_test",
     )
+    print(f"{wandb_kwargs=}")
+    wandb.init(**wandb_kwargs)
     for idx in range(1, 11):
         wandb.log(data={"loss": idx}, step=idx)
 

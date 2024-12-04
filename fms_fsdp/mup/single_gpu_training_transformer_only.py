@@ -247,7 +247,8 @@ def train(
                     # id=run_id,
                 )
                 print(f"Using {wandb_kwargs=}")
-                wandb.init(**wandb_kwargs)
+                run = wandb.init(**wandb_kwargs)
+                run.name = run_id
             except wandb.errors.UsageError:
                 raise ValueError(
                     "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"

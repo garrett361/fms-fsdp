@@ -13,16 +13,22 @@ and each lr will be created and run.
 cfgs = []
 
 
-def populate_cfgs(**kwargs) -> list[dict]:
+def populate_cfgs(**kwargs) -> None:
     lrs = kwargs.pop("lrs")
     assert "learning_rate" not in kwargs
     base_cfg = mup_config(**kwargs)
     for lr in lrs:
         cfg = deepcopy(base_cfg)
         cfg.learning_rate = lr
-        run_id = f"n_layer-{cfg.n_layer}_width-{cfg.width}_lr-{cfg.lr}"
+        # Create a unique id
+        user_run_id = cfg.tracker_run_id or ""
+        run_id = (
+            user_run_id
+            + ("_" if user_run_id else "")
+            + f"n_layer-{cfg.n_layer}_width-{cfg.width}_lr-{cfg.lr}"
+        )
         if cfg.mup:
-            run_id = "mup_" + run_id
+            run_id += "_mup"
         cfg.tracker_run_id = run_id
         cfgs.append(cfg)
 

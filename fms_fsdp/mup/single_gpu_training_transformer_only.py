@@ -31,7 +31,6 @@ from fms_fsdp.utils.dataset_utils import (
     PreloadBufferDataset,
     PreprocessDataset,
     SamplingDataset,
-    ScalableShardDataset,
     StreamingDocDataset,
 )
 
@@ -73,7 +72,6 @@ class mup_config:
     bol_token: Optional[int] = None
     eol_token: Optional[int] = None
     strip_tokens: str = ""
-    logical_shards: int = 1024
     num_workers: int = 1
 
     # training spec
@@ -149,12 +147,6 @@ def get_data_loader(cfg, postprocess=[causal_lm]):
         strip_tokens=set(droplist),
         min_length=3,
         seed=cfg.seed,
-    )
-    # Add rescaling/resharding
-    data = ScalableShardDataset(
-        data,
-        cfg.eos_token,
-        n_logical_shards=cfg.logical_shards,
     )
     # Add multi-dataset handling
     data = SamplingDataset(

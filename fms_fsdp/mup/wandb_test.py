@@ -227,7 +227,7 @@ def train(
             print_device("--> wandb is enabled!")
             try:
                 wandb_kwargs = dict(
-                    project=project_name, dir=tracker_dir, id=run_id, resume="allow"
+                    project=project_name, dir=tracker_dir, resume="allow"
                 )
                 print(f"Using {wandb_kwargs=}")
                 wandb.init(**wandb_kwargs)

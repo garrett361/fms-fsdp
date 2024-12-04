@@ -1,5 +1,6 @@
 import multiprocessing as mp
 import traceback
+from typing import Sequence
 import os
 import fire
 from single_gpu_training_transformer_only import mup_config, main
@@ -17,7 +18,14 @@ cfgs = []
 
 
 def populate_cfgs(**kwargs) -> None:
+    # --lrs  expected to be a comma separated list of numbers
     lrs = kwargs.pop("lrs")
+    if not isinstance(lrs, Sequence):
+        lrs = (lrs,)
+
+    # Handle strings
+    lrs = [float(eval(lr)) for lr in lrs]
+
     assert "learning_rate" not in kwargs
     base_cfg = mup_config(**kwargs)
     print(f"Launching with {lrs=}")

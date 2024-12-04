@@ -3,6 +3,7 @@ import os
 import fire
 from single_gpu_training_transformer_only import mup_config, main
 from copy import deepcopy
+import dataclasses
 
 
 """
@@ -55,8 +56,11 @@ if __name__ == "__main__":
     results = []
     with mp.Pool(len(devices), initializer=set_device) as p:
         for cfg in cfgs:
+            cfg_dict = dataclasses.asdict(cfg)
             r = p.apply_async(
-                main, (cfg,), error_callback=lambda error: print(f"Error: {error}")
+                main,
+                kwds=cfg_dict,
+                error_callback=lambda error: print(f"Error: {error}"),
             )
             results.append(r)
 

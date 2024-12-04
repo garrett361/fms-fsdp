@@ -18,13 +18,11 @@ cfgs = []
 
 
 def populate_cfgs(**kwargs) -> None:
-    # --lrs  expected to be a comma separated list of numbers
+    # --lrs expected to be a comma separated list of numbers using "1e-3" type exponential notation.
+    # "2**-5" exponential notation is not handled.
     lrs = kwargs.pop("lrs")
     if not isinstance(lrs, Sequence):
         lrs = (lrs,)
-
-    # Handle strings
-    lrs = [float(eval(lr)) for lr in lrs]
 
     assert "learning_rate" not in kwargs
     base_cfg = mup_config(**kwargs)

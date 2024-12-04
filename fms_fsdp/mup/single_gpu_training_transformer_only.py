@@ -239,15 +239,15 @@ def train(
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             print_device("--> wandb is enabled!")
             try:
-                wandb_kwargs = dict(
+                # Important: for some reason there are frequent hangs if we use a non-trivial id in
+                # wandb.init when this script is run under mutiprocessing, but it works fine if we
+                # just set the name by hand.
+                run = wandb.init(
                     project=project_name,
                     dir=tracker_dir,
                     resume="allow",
                     id=None,
-                    # id=run_id,
                 )
-                print(f"Using {wandb_kwargs=}")
-                run = wandb.init(**wandb_kwargs)
                 run.name = run_id
             except wandb.errors.UsageError:
                 raise ValueError(

@@ -5,7 +5,7 @@ if __name__ == "__main__":
         project="goon-test",
         dir=None,
         resume="allow",
-        id="platform_test",
+        # id="platform_test",
     )
     for idx in range(1, 11):
         wandb.log(data={"loss": idx}, step=idx)

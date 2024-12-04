@@ -237,6 +237,7 @@ def train(
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             print_device("--> wandb is enabled!")
             try:
+                print(f"Using {tracker_dir=}")
                 wandb.init(
                     project=project_name,
                     dir=tracker_dir,

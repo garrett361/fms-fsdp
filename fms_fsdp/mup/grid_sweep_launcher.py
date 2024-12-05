@@ -106,7 +106,9 @@ if __name__ == "__main__":
                 # Important: for some reason there are frequent hangs if we use a non-trivial id in
                 # wandb.init when this script is run under mutiprocessing, but it works fine if we
                 # just set the name by hand.
-                run.name = create_wandb_run_id(cfg)
+                run_name = create_wandb_run_id(cfg)
+                print(f"{ run_name= }")
+                run.name = run_name
                 res = main(cfg)
             return (res, None, None)
         except Exception as e:

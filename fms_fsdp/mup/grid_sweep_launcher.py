@@ -27,7 +27,7 @@ python3  grid_sweep_launcher.py --n_layer=10 --sweep_params="$SWEEP_PARAMS"
 
 SWEEP_CFG: dict[str, Any] = {
     "method": "grid",
-    "metric": {"goal": "mnimize", "name": "loss"},
+    "metric": {"goal": "minimize", "name": "loss"},
 }
 
 

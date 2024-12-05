@@ -88,10 +88,7 @@ if __name__ == "__main__":
     sweep_id_queue = mp.Queue()
 
     def main_wrapper():
-        print(f'{FIRE_CLI_ARGS["tracker_project_name"]=}')
-        with wandb.init(
-            project=FIRE_CLI_ARGS["tracker_project_name"], resume="never"
-        ) as run:
+        with wandb.init(resume="never") as run:
             cfg_dict = wandb.config
             cfg = get_cfg_from_kwargs(**cfg_dict)
             print(f"Started with {cfg_dict=}")
@@ -112,6 +109,7 @@ if __name__ == "__main__":
             )
             sweep_id_queue.put(sweep_id)
         else:
+            os.environ["WANDB_PROJECT"] = FIRE_CLI_ARGS["tracker_project_name"]
             sweep_id = sweep_id_queue.get()
             sweep_id_queue.put(sweep_id)
 

@@ -42,7 +42,10 @@ def populate_cfgs(**kwargs) -> None:
             + f"-{cfg.num_steps}"
         )
         if cfg.mup:
-            run_id += "_mup"
+            if cfg.mup_use_width:
+                run_id += "_mup[use_width]"
+            else:
+                run_id += "_mup"
         cfg.tracker_run_id = run_id
 
         cfgs.append(cfg)

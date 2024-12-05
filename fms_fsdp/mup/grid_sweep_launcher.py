@@ -62,6 +62,7 @@ def create_wandb_run_id(cfg: mup_config) -> str:
 
 if __name__ == "__main__":
     fire.Fire(populate_sweep_cfg)
+    print("Running sweep with config:\n{SWEEP_CFG}")
 
     # sweep_id = wandb.sweep(SWEEP_CFG, project=SWEEP_CFG["tracker_project_name"])
     #

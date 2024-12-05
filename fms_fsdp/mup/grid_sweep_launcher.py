@@ -111,9 +111,6 @@ if __name__ == "__main__":
         except Exception as e:
             return (None, e, traceback.format_exc())
 
-    # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process
-    wandb.setup()
-
     # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
     # main function and Pool does not support nested mp.
     with ProcessPoolExecutor(len(devices)) as executor:

@@ -88,11 +88,9 @@ if __name__ == "__main__":
     sweep_id_queue = mp.Queue()
 
     def main_wrapper():
-        print(f'MAIN {os.environ["CUDA_VISIBLE_DEVICES"]=}')
         with wandb.init(resume="never") as run:
             cfg_dict = wandb.config
             cfg = get_cfg_from_kwargs(**cfg_dict)
-            print(f"Started with {cfg_dict=}")
             # Important: for some reason there are frequent hangs if we use a non-trivial id in
             # wandb.init when this script is run under mutiprocessing, but it works fine if we
             # just set the name by hand.
@@ -102,8 +100,9 @@ if __name__ == "__main__":
 
     def target(device_idx: str):
         os.environ["CUDA_VISIBLE_DEVICES"] = device_idx
-        print(f'TARGET {os.environ["CUDA_VISIBLE_DEVICES"]=}')
-        # Only device 0 starts the sweep
+        # HACKS: Only device 0 starts the sweep and the remaining processes must manually set the
+        # expected WANDB_PROJECT env var.
+
         if device_idx == "0":
             sweep_id = wandb.sweep(
                 SWEEP_CFG,

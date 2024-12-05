@@ -245,7 +245,7 @@ def train(
                 run = wandb.init(
                     project=project_name,
                     dir=tracker_dir,
-                    resume="allow",
+                    resume="never",
                     id=None,
                 )
                 run.name = run_id

@@ -64,7 +64,7 @@ class mup_config:
 
     # mup
     mup: bool = False
-    base_width: Optional[int] = None
+    mup_base_width: Optional[int] = None
     mup_use_width: bool = False
 
     # dataset and dataloader
@@ -104,7 +104,7 @@ class mup_config:
     use_torch_compile: bool = True
 
     def __post_init__(self) -> None:
-        if self.mup and not self.base_width:
+        if self.mup and not self.mup_base_width:
             raise ValueError("mup can only be specified along with a base_width")
 
 
@@ -412,7 +412,7 @@ def main(**kwargs):
                 model,
                 lr=cfg.learning_rate,
                 optim_type="adam",
-                base_width=cfg.base_width,
+                base_width=cfg.mup_base_width,
                 width=cfg.width if cfg.mup_use_width else None,
             ),
             lr=cfg.learning_rate,

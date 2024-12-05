@@ -43,9 +43,9 @@ def populate_cfgs(**kwargs) -> None:
         )
         if cfg.mup:
             if cfg.mup_use_width:
-                run_id += "_mup[use_width]"
+                run_id += f"_mup[base-{cfg.mup_base_width}-use_width]"
             else:
-                run_id += "_mup"
+                run_id += f"_mup[base-{cfg.mup_base_width}]"
         cfg.tracker_run_id = run_id
 
         cfgs.append(cfg)

@@ -413,7 +413,7 @@ def main(**kwargs):
                 lr=cfg.learning_rate,
                 optim_type="adam",
                 base_width=cfg.base_width,
-                width=cfg.width,
+                width=cfg.width if cfg.mup_use_width else None,
             ),
             lr=cfg.learning_rate,
             betas=(0.9, 0.95),

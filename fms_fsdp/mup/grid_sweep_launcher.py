@@ -102,15 +102,12 @@ if __name__ == "__main__":
         os.environ["CUDA_VISIBLE_DEVICES"] = device_idx
         # HACKS: Only device 0 starts the sweep and the remaining processes must manually set the
         # expected WANDB_PROJECT env var.
-
+        project = FIRE_CLI_ARGS["tracker_project_name"]
         if device_idx == "0":
-            sweep_id = wandb.sweep(
-                SWEEP_CFG,
-                project=FIRE_CLI_ARGS["tracker_project_name"],
-            )
+            sweep_id = wandb.sweep(SWEEP_CFG, project=project)
             sweep_id_queue.put(sweep_id)
         else:
-            os.environ["WANDB_PROJECT"] = FIRE_CLI_ARGS["tracker_project_name"]
+            os.environ["WANDB_PROJECT"] = project
             sweep_id = sweep_id_queue.get()
             sweep_id_queue.put(sweep_id)
 

@@ -79,7 +79,7 @@ if __name__ == "__main__":
     print(f"Running sweep with config:\n{SWEEP_CFG}")
 
     sweep_id = wandb.sweep(
-        SWEEP_CFG, project=SWEEP_CFG["parameters"]["value"]["tracker_project_name"]
+        SWEEP_CFG, project=SWEEP_CFG["parameters"]["tracker_project_name"]["value"]
     )
 
     devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]

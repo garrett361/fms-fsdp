@@ -49,20 +49,6 @@ def populate_cfgs(**kwargs) -> None:
         cfgs.append(cfg)
 
 
-def main_wrapper(cfg, device_idx_queue: mp.Queue):
-    try:
-        device_idx = device_idx_queue.get()
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
-        print(f"Using {device_idx=}")
-        cfg_dict = dataclasses.asdict(cfg)
-        res = main(**cfg_dict)
-        return (res, None, None)
-    except Exception as e:
-        return (None, e, traceback.format_exc())
-    finally:
-        device_idx_queue.put(device_idx)
-
-
 if __name__ == "__main__":
     fire.Fire(populate_cfgs)
     devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
@@ -72,13 +58,26 @@ if __name__ == "__main__":
     for device_idx in devices:
         device_idx_queue.put(device_idx)
 
+    def main_wrapper(cfg, device_idx_queue: mp.Queue):
+        try:
+            device_idx = device_idx_queue.get()
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
+            print(f"Using {device_idx=}")
+            cfg_dict = dataclasses.asdict(cfg)
+            res = main(**cfg_dict)
+            return (res, None, None)
+        except Exception as e:
+            return (None, e, traceback.format_exc())
+        finally:
+            device_idx_queue.put(device_idx)
+
     # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process
     wandb.setup()
 
     # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
     # main function and Pool does not support nested mp.
     with ProcessPoolExecutor(len(devices)) as executor:
-        futures = [executor.submit(main_wrapper, cfg, device_idx_queue) for cfg in cfgs]
+        futures = [executor.submit(main_wrapper, cfg) for cfg in cfgs]
         for f in as_completed(futures):
             res, err, tb = f.result()
             if err:

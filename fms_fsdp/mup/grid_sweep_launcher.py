@@ -10,9 +10,11 @@ A wandb sweep launcher. Pass a dict[str, tuple|list] --sweep_params arg which wi
 over. Example:
 
 ```bash
-
+LRS=$(python -c 'print([10**(-n/3) for n in range(6, 8)])')
+SEEDS=$(python -c 'print(list(range(42, 44)))')
+SWEEP_PARAMS="{learning_rate:$LRS,seed:$SEEDS}"
+python3  grid_sweep_launcher.py --n_layer=10 --sweep_params="$SWEEP_PARAMS"
 ```
-python3  grid_weep_launcher.py --
 """
 
 SWEEP_CFG: dict[str, Any] = {
@@ -23,7 +25,6 @@ SWEEP_CFG: dict[str, Any] = {
 
 def populate_sweep_cfg(**kwargs) -> None:
     print(f"{kwargs=}")
-    global SWEEP_CFG
     assert kwargs["tracker"] == "wandb"
     # Expect a --sweep_params arg, which provides a dict
     sweep_params = kwargs.pop("sweep_params")
@@ -39,8 +40,7 @@ def populate_sweep_cfg(**kwargs) -> None:
 
     # Merge the sweep config into the fixed config.
 
-    SWEEP_CFG = kwargs
-    print(f"{SWEEP_CFG=}")
+    SWEEP_CFG["parameters"] = kwargs
 
 
 def create_wandb_run_id(cfg: mup_config) -> str:

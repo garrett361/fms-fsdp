@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
     # main function and Pool does not support nested mp.
-    with ProcessPoolExecutor(len(devices)) as executor:
+    with ProcessPoolExecutor(len(devices), mp_context="fork") as executor:
         futures = [executor.submit(wandb.agent, sweep_id, test) for _ in devices]
         for f in as_completed(futures):
             pass

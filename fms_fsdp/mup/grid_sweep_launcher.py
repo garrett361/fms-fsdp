@@ -1,6 +1,7 @@
 from typing import Any
 import multiprocessing as mp
 import os
+from copy import deepcopy
 
 import fire
 import wandb
@@ -23,15 +24,23 @@ python3  grid_sweep_launcher.py --n_layer=10 --sweep_params="$SWEEP_PARAMS"
 ```
 """
 
+FIRE_CLI_ARGS: dict[str, Any] = {}
 SWEEP_CFG: dict[str, Any] = {
     "method": "grid",
     "metric": {"goal": "minimize", "name": "loss"},
 }
 
 
-def populate_sweep_cfg(**kwargs) -> None:
-    print(f"{kwargs=}")
+def process_cli_args(**kwargs) -> None:
     assert kwargs["tracker"] == "wandb"
+    global FIRE_CLI_ARGS
+    global SWEEP_CFG
+
+    # Get the bare cli args
+    FIRE_CLI_ARGS = deepcopy(kwargs)
+
+    # And then build up the wandb sweep args
+
     # Expect a --sweep_params arg, which provides a dict
     sweep_params = kwargs.pop("sweep_params")
     if not isinstance(sweep_params, dict):
@@ -73,15 +82,15 @@ def create_wandb_run_id(cfg: mup_config) -> str:
 
 
 if __name__ == "__main__":
-    fire.Fire(populate_sweep_cfg)
+    fire.Fire(process_cli_args)
     print(f"Running sweep with config:\n{SWEEP_CFG}")
 
-    sweep_id = wandb.sweep(
-        SWEEP_CFG, project=SWEEP_CFG["parameters"]["tracker_project_name"]["value"]
-    )
+    sweep_id_queue = mp.Queue()
 
     def main_wrapper():
-        with wandb.init(resume="never", id=None) as run:
+        with wandb.init(
+            project=FIRE_CLI_ARGS["tracker_project_name"], resume="never", id=None
+        ) as run:
             cfg_dict = wandb.config
             cfg = get_cfg_from_kwargs(**cfg_dict)
             print(f"Started with {cfg_dict=}")
@@ -92,13 +101,24 @@ if __name__ == "__main__":
             run.name = run_name
             main(cfg)
 
-    def target(device_idx: str, sweep_id: str):
+    def target(device_idx: str):
         os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
+        # Only device 0 starts the sweep
+        if device_idx == "0":
+            sweep_id = wandb.sweep(
+                SWEEP_CFG,
+                project=FIRE_CLI_ARGS["tracker_project_name"],
+            )
+            sweep_id_queue.put(sweep_id)
+        else:
+            sweep_id = sweep_id_queue.get()
+            sweep_id_queue.put(sweep_id)
+
         wandb.agent(sweep_id, main_wrapper)
 
-    devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
+    devices = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
     processes = [
-        mp.Process(target=target, args=(device_idx, sweep_id)) for device_idx in devices
+        mp.Process(target=target, args=(device_idx,)) for device_idx in devices
     ]
 
     for p in processes:

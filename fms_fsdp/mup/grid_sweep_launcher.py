@@ -89,6 +89,7 @@ if __name__ == "__main__":
         device_idx_queue.put(device_idx)
 
     def main_wrapper(cfg_dict):
+        print(f"Started with {cfg_dict=}")
         try:
             device_idx = device_idx_queue.get()
             os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)

@@ -259,6 +259,7 @@ def train(
     start = time.time()
     loop_start = time.time()
     loss_history = []
+    gnorm_history = []
 
     # Each batch is comprised of acc_steps mini batches. acc_steps backwards per optim step.
     for mini_batch_idx, (input, label) in enumerate(train_loader):
@@ -281,20 +282,27 @@ def train(
         (loss / cfg.acc_steps).backward()
 
         if is_last_mini_batch:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
+            gnorm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), cfg.grad_clip_thresh
+            )
+            gnorm_history.append(gnorm)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
 
         if (batch_idx % cfg.report_interval == 0) and is_last_mini_batch:
-            with torch.no_grad():
-                train_loss = torch.stack(loss_history).mean()
-                loss_history.clear()
+            mean_loss = torch.stack(loss_history).mean()
+            loss_history.clear()
+
+            mean_gnorm = torch.stack(gnorm_history).mean()
+            gnorm_history.clear()
+
             elapsed_time = time.time() - loop_start
             tokens_seen = batch_idx * cfg.batch_size * cfg.seq_length * cfg.acc_steps
             total_tokens_seen = tokens_seen
-            current_loss = train_loss.item()
+            current_loss = mean_loss.item()
             current_lr = scheduler.get_last_lr()[0]
+            current_gnorm = mean_gnorm.item()
             current_step_time = (time.time() - start) / cfg.report_interval
             overall_step_time = elapsed_time / batch_idx
             current_throughput = int(
@@ -314,6 +322,7 @@ def train(
             print_device("loss:", current_loss)
             print_device("LR:", current_lr)
             print_device("tokens seen:", total_tokens_seen)
+            print_device("gradient norm:", current_gnorm)
             print_device("reserved memory:", reserved_mem)
             print_device("allocated memory:", allocated_mem)
             print_device("current step time:", current_step_time)
@@ -329,6 +338,7 @@ def train(
                 vals_to_track = {
                     "learning rate": current_lr,
                     "loss": current_loss,
+                    "gradient norm": current_gnorm,
                     "token seen": total_tokens_seen,
                     "current throughput (token per gpu per sec)": current_throughput,
                     "overall throughput (token per gpu per sec)": overall_throughput,
@@ -342,7 +352,7 @@ def train(
             start = time.time()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-    return train_loss
+    return mean_loss
 
 
 def main(**kwargs):

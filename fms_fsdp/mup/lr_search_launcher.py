@@ -69,6 +69,7 @@ if __name__ == "__main__":
         except Exception as e:
             return (None, e, traceback.format_exc())
         finally:
+            wandb.finish()
             device_idx_queue.put(device_idx)
 
     # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process

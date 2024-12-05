@@ -53,6 +53,7 @@ def main_wrapper(cfg, device_idx_queue: mp.Queue):
     try:
         device_idx = device_idx_queue.get()
         os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
+        print(f"Using {device_idx=}")
         cfg_dict = dataclasses.asdict(cfg)
         res = main(**cfg_dict)
         return (res, None, None)

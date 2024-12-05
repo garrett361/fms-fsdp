@@ -1,29 +1,22 @@
 import math
-import torch.nn as nn
 import os
-from dataclasses import asdict
-
-
 import time
-
-from typing import Optional
+from contextlib import nullcontext
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Optional, Union
 
 import fire
 import torch
+import torch.nn as nn
 import torch.optim as optim
+import wandb
 from torch.optim.lr_scheduler import LambdaLR
-from fms_fsdp.utils.dataloader_utils import parse_data_args
-
-from fms_fsdp.utils.config_utils import update_config
-from fms_fsdp.utils.train_utils import (
-    setup_environ_flags,
-)
-from dataclasses import dataclass
-from fms_fsdp.mup.transformer_only_utils import get_transformer_and_config
 
 from fms_fsdp.mup.mup_mamba import apply_mup_init, get_mup_optim_iter
-
+from fms_fsdp.mup.transformer_only_utils import get_transformer_and_config
+from fms_fsdp.utils.config_utils import update_config
+from fms_fsdp.utils.dataloader_utils import parse_data_args
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
     AutoHandler,
@@ -34,7 +27,9 @@ from fms_fsdp.utils.dataset_utils import (
     SamplingDataset,
     StreamingDocDataset,
 )
-
+from fms_fsdp.utils.train_utils import (
+    setup_environ_flags,
+)
 
 _handler_map = {
     "arrow": ArrowHandler,
@@ -107,6 +102,8 @@ class mup_config:
     def __post_init__(self) -> None:
         if self.mup and not self.mup_base_width:
             raise ValueError("mup can only be specified along with a base_width")
+        if self.tracker and self.tracker != "wandb":
+            raise ValueError("Only tracker in {None, 'wandb'} supported")
 
 
 def causal_lm(data_seq, prompt_len=1):
@@ -224,37 +221,6 @@ def train(
     optimizer,
     scheduler,
 ):
-    if cfg.tracker:
-        if cfg.tracker not in ["wandb", "aim"]:
-            raise ValueError(f"tracker {cfg.tracker} not supported.")
-        tracker_dir = cfg.tracker_dir
-        project_name = cfg.tracker_project_name
-        run_id = cfg.tracker_run_id
-
-        if cfg.tracker == "wandb":
-            try:
-                import wandb  # type: ignore
-            except ImportError:
-                raise ImportError("tracker is set to wandb but wandb is not installed.")
-            print_device("--> wandb is enabled!")
-            try:
-                # Important: for some reason there are frequent hangs if we use a non-trivial id in
-                # wandb.init when this script is run under mutiprocessing, but it works fine if we
-                # just set the name by hand.
-                run = wandb.init(
-                    project=project_name,
-                    dir=tracker_dir,
-                    resume="never",
-                    id=None,
-                    config=asdict(cfg),
-                )
-                run.name = run_id
-            except wandb.errors.UsageError:
-                raise ValueError(
-                    "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
-                )
-            # wandb.config = asdict(cfg)
-
     model.train()
 
     start = time.time()
@@ -437,12 +403,15 @@ def get_model_optim_scheduler(
     return model, optimizer, scheduler
 
 
-def main(**kwargs):
+def get_cfg_from_kwargs(**kwargs) -> mup_config:
     # get configs
     cfg = mup_config()
     update_config(cfg, **kwargs)
     print_device(f"--> running with these configs {cfg}")
+    return cfg
 
+
+def main(cfg: mup_config) -> None:
     model, optimizer, scheduler = get_model_optim_scheduler(cfg)
 
     # get data loader
@@ -465,4 +434,26 @@ def main(**kwargs):
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+
+    def run(**kwargs) -> None:
+        cfg = get_cfg_from_kwargs(**kwargs)
+        ctx: Union[wandb.Run, nullcontext]
+        if cfg.tracker == "wandb":
+            ctx = wandb.init(
+                project=cfg.tracker_project_name,
+                dir=cfg.tracker_dir,
+                resume="never",
+                id=None,
+                config=asdict(cfg),
+            )
+        else:
+            ctx = nullcontext()
+        with ctx as run:
+            # Important: for some reason there are frequent hangs if we use a non-trivial id in
+            # wandb.init when this script is run under mutiprocessing, but it works fine if we
+            # just set the name by hand.
+            if cfg.tracker == "wandb":
+                run.name = cfg.tracker_run_id
+            main(cfg)
+
+    fire.Fire(run)

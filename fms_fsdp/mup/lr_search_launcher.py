@@ -43,8 +43,6 @@ def populate_cfgs(**kwargs) -> None:
         if cfg.mup:
             run_id += "_mup"
         cfg.tracker_run_id = run_id
-        # TODO: @goon - DELETE
-        # cfg.tracker_run_id = None
 
         cfgs.append(cfg)
 
@@ -80,6 +78,6 @@ if __name__ == "__main__":
     with ProcessPoolExecutor(len(devices), initializer=set_device) as p:
         for cfg, (res, err, traceback) in zip(cfgs, p.map(main_wrapper, cfgs)):
             if err:
-                print(f"{cfg.learning_rate} errored with {err=}\n{traceback=}")
+                print(f"{cfg=} errored with {err=}\n{traceback=}")
             else:
-                print(f"{cfg.learning_rate} succeeded with {res=}")
+                print(f"{cfg=} succeeded with {res=}")

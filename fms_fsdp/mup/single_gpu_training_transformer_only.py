@@ -247,13 +247,14 @@ def train(
                     dir=tracker_dir,
                     resume="never",
                     id=None,
+                    config=asdict(cfg),
                 )
                 run.name = run_id
             except wandb.errors.UsageError:
                 raise ValueError(
                     "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                 )
-            wandb.config = asdict(cfg)
+            # wandb.config = asdict(cfg)
 
     model.train()
 

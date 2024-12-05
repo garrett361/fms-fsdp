@@ -74,7 +74,9 @@ if __name__ == "__main__":
     fire.Fire(populate_sweep_cfg)
     print(f"Running sweep with config:\n{SWEEP_CFG}")
 
-    sweep_id = wandb.sweep(SWEEP_CFG, project=SWEEP_CFG["tracker_project_name"])
+    sweep_id = wandb.sweep(
+        SWEEP_CFG, project=SWEEP_CFG["parameters"]["tracker_project_name"]
+    )
 
     devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
     num_devices = len(devices)

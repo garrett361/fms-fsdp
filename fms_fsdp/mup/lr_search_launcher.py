@@ -29,7 +29,6 @@ def populate_cfgs(**kwargs) -> None:
 
     assert "learning_rate" not in kwargs
     base_cfg = mup_config(**kwargs)
-    print(f"Launching with {lrs=}")
     for lr in lrs:
         cfg = deepcopy(base_cfg)
         cfg.learning_rate = lr
@@ -52,7 +51,6 @@ def populate_cfgs(**kwargs) -> None:
 if __name__ == "__main__":
     fire.Fire(populate_cfgs)
     devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
-    print(f"Launching on {devices=}")
     num_devices = len(devices)
     device_idx_queue = mp.Queue()
     for device_idx in devices:
@@ -62,7 +60,6 @@ if __name__ == "__main__":
         try:
             device_idx = device_idx_queue.get()
             os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
-            print(f"Using {device_idx=}")
             cfg_dict = dataclasses.asdict(cfg)
             res = main(**cfg_dict)
             return (res, None, None)
@@ -79,10 +76,7 @@ if __name__ == "__main__":
     # main function and Pool does not support nested mp.
     with ProcessPoolExecutor(len(devices)) as executor:
         futures = [executor.submit(main_wrapper, cfg) for cfg in cfgs]
-        print(f"{len(futures)=}")
         for f in as_completed(futures):
             res, err, tb = f.result()
             if err:
                 print(f"Errored with {err=}\n{tb}")
-            else:
-                print(f"Succeeded with {res=}")

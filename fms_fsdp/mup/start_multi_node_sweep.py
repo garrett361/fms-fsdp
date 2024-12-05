@@ -9,7 +9,7 @@ from copy import deepcopy
 
 import fire
 import wandb
-from fms_fsdp.mup import SWEEP_FILE
+from fms_fsdp.mup import SWEEP_FILE, PROJECT_FILE
 
 
 import warnings
@@ -17,7 +17,7 @@ import warnings
 
 """
 Creates a wandb sweep from the CLI args and writes the sweep id to a file. Use for multi-node
-sweeps.
+sweeps. Intended to be followed by run_sweep_worker.py, which read in the file.
 
 Pass a dict[str, tuple|list] --sweep_params arg which will be grid-scanned
 over. Example:
@@ -74,11 +74,11 @@ if __name__ == "__main__":
     fire.Fire(process_cli_args)
     print(f"Running sweep with config:\n{SWEEP_CFG}")
 
+    project = FIRE_CLI_ARGS["tracker_project_name"]
     rank = int(os.environ["RANK"])
     try:
         dist.init_process_group("gloo")
         if not rank:
-            project = FIRE_CLI_ARGS["tracker_project_name"]
             sweep_id = wandb.sweep(SWEEP_CFG, project=project)
             sweep_id_list = [sweep_id]
         else:
@@ -87,6 +87,8 @@ if __name__ == "__main__":
         print(f"Found {sweep_id_list=} on {rank=}")
         with open(SWEEP_FILE, "w") as f:
             f.write(sweep_id_list[0])
+        with open(PROJECT_FILE, "w") as f:
+            f.write(project)
         print(f"Done write on {rank=}")
 
     finally:

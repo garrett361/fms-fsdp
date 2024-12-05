@@ -6,7 +6,7 @@ from single_gpu_training_transformer_only import mup_config
 
 
 """
-A wandb sweep launcher. Pass a dict[str, tuple|list] --sweep_cfg arg which will be grid-scanned
+A wandb sweep launcher. Pass a dict[str, tuple|list] --sweep_params arg which will be grid-scanned
 over.
 """
 
@@ -19,7 +19,7 @@ SWEEP_CFG: dict[str, Any] = {
 def populate_sweep_cfg(**kwargs) -> None:
     global SWEEP_CFG
     assert kwargs["tracker"] == "wandb"
-    # Expect a --sweep_cfg arg, which provides a dict
+    # Expect a --sweep_params arg, which provides a dict
     sweep_params = kwargs.pop("sweep_params")
     if not isinstance(sweep_params, dict):
         raise ValueError(f"Expected a dict, got {sweep_params=}")

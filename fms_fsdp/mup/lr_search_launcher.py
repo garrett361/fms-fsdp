@@ -58,7 +58,7 @@ if __name__ == "__main__":
     for device_idx in devices:
         device_idx_queue.put(device_idx)
 
-    def main_wrapper(cfg, device_idx_queue: mp.Queue):
+    def main_wrapper(cfg):
         try:
             device_idx = device_idx_queue.get()
             os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)

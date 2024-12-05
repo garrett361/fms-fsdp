@@ -61,8 +61,6 @@ class mup_config:
     width: int = 512
     n_layer: int = 10
     head_dim: int = 128
-    ckpt_load_path: str = "/fsx/output/ckpt"
-    ckpt_save_path: str = "/fsx/output/ckpt"
 
     # mup
     mup: bool = False

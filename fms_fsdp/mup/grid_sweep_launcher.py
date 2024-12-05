@@ -77,6 +77,7 @@ def create_wandb_run_id(cfg: mup_config) -> str:
 if __name__ == "__main__":
     fire.Fire(populate_sweep_cfg)
     print(f"Running sweep with config:\n{SWEEP_CFG}")
+    wandb.login()
 
     sweep_id = wandb.sweep(
         SWEEP_CFG, project=SWEEP_CFG["parameters"]["tracker_project_name"]["value"]
@@ -88,7 +89,7 @@ if __name__ == "__main__":
     for device_idx in devices:
         device_idx_queue.put(device_idx)
 
-    def main_wrapper(cfg_dict):
+    def main_wrapper():
         print(f"Started with {cfg_dict=}")
         try:
             device_idx = device_idx_queue.get()
@@ -114,12 +115,14 @@ if __name__ == "__main__":
         except Exception as e:
             return (None, e, traceback.format_exc())
 
+    def test():
+        wandb.login()
+        print(f"{wandb.config=}")
+
     # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
     # main function and Pool does not support nested mp.
     with ProcessPoolExecutor(len(devices)) as executor:
-        futures = [
-            executor.submit(wandb.agent, sweep_id, main_wrapper) for _ in devices
-        ]
+        futures = [executor.submit(wandb.agent, sweep_id, test) for _ in devices]
         for f in as_completed(futures):
             pass
             # res, err, tb = f.result()

@@ -78,6 +78,7 @@ if __name__ == "__main__":
     # main function and Pool does not support nested mp.
     with ProcessPoolExecutor(len(devices)) as executor:
         futures = [executor.submit(main_wrapper, cfg) for cfg in cfgs]
+        print(f"{len(futures)=}")
         for f in as_completed(futures):
             res, err, tb = f.result()
             if err:

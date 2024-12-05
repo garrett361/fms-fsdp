@@ -1,4 +1,5 @@
 import math
+import datetime
 import os
 import time
 from contextlib import nullcontext
@@ -228,6 +229,8 @@ def train(
     loss_history = []
     gnorm_history = []
 
+    total_tokens = cfg.num_steps * cfg.batch_size * cfg.seq_length * cfg.acc_steps
+
     # Each batch is comprised of acc_steps mini batches. acc_steps backwards per optim step.
     for mini_batch_idx, (input, label) in enumerate(train_loader):
         batch_idx, acc_step_idx = divmod(mini_batch_idx + cfg.acc_steps, cfg.acc_steps)
@@ -266,7 +269,6 @@ def train(
 
             elapsed_time = time.time() - loop_start
             tokens_seen = batch_idx * cfg.batch_size * cfg.seq_length * cfg.acc_steps
-            total_tokens_seen = tokens_seen
             current_loss = mean_loss.item()
             current_lr = scheduler.get_last_lr()[0]
             current_gnorm = mean_gnorm.item()
@@ -284,11 +286,13 @@ def train(
             allocated_mem = torch.cuda.max_memory_allocated(
                 device=torch.cuda.current_device()
             )
+            tokens_remaining = total_tokens - tokens_seen
+            secs_remaining = tokens_remaining / current_throughput
 
             print_device("step:", batch_idx)
             print_device("loss:", current_loss)
             print_device("LR:", current_lr)
-            print_device("tokens seen:", total_tokens_seen)
+            print_device("tokens seen:", tokens_seen)
             print_device("gradient norm:", current_gnorm)
             print_device("reserved memory:", reserved_mem)
             print_device("allocated memory:", allocated_mem)
@@ -299,6 +303,10 @@ def train(
             print_device(
                 "overall token per day:",
                 int(tokens_seen / elapsed_time * 3600 * 24),
+            )
+            print_device(
+                "approx time remaining (H:M:S):",
+                str(datetime.timedelta(seconds=secs_remaining)),
                 "\n",
             )
             if cfg.tracker:
@@ -306,7 +314,7 @@ def train(
                     "learning rate": current_lr,
                     "loss": current_loss,
                     "gradient norm": current_gnorm,
-                    "token seen": total_tokens_seen,
+                    "token seen": tokens_seen,
                     "current throughput (token per gpu per sec)": current_throughput,
                     "overall throughput (token per gpu per sec)": overall_throughput,
                     "gpu reserved memory": reserved_mem,

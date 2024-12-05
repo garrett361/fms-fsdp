@@ -1,9 +1,16 @@
 from typing import Any
+import multiprocessing as mp
+import os
+
+import fire
+import wandb
+
+import traceback
+from single_gpu_training_transformer_only import mup_config, main, get_cfg_from_kwargs
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 
 import warnings
-import fire
-
-from single_gpu_training_transformer_only import mup_config
 
 
 """
@@ -67,48 +74,48 @@ if __name__ == "__main__":
     fire.Fire(populate_sweep_cfg)
     print(f"Running sweep with config:\n{SWEEP_CFG}")
 
-    # sweep_id = wandb.sweep(SWEEP_CFG, project=SWEEP_CFG["tracker_project_name"])
-    #
-    # devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
-    # num_devices = len(devices)
-    # device_idx_queue = mp.Queue()
-    # for device_idx in devices:
-    #     device_idx_queue.put(device_idx)
-    #
-    # def main_wrapper(cfg_dict):
-    #     try:
-    #         device_idx = device_idx_queue.get()
-    #         os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
-    #         cfg = get_cfg_from_kwargs(**cfg_dict)
-    #
-    #         ctx = wandb.init(
-    #             project=cfg.tracker_project_name,
-    #             dir=cfg.tracker_dir,
-    #             resume="never",
-    #             id=None,
-    #             config=cfg_dict,
-    #         )
-    #         with ctx as run:
-    #             # Important: for some reason there are frequent hangs if we use a non-trivial id in
-    #             # wandb.init when this script is run under mutiprocessing, but it works fine if we
-    #             # just set the name by hand.
-    #             run.name = create_wandb_run_id(cfg)
-    #             res = main(cfg)
-    #         return (res, None, None)
-    #     except Exception as e:
-    #         return (None, e, traceback.format_exc())
-    #
-    # # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process
-    # wandb.setup()
-    #
-    # # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
-    # # main function and Pool does not support nested mp.
-    # with ProcessPoolExecutor(len(devices)) as executor:
-    #     futures = [
-    #         executor.submit(wandb.agent, sweep_id, main_wrapper) for _ in devices
-    #     ]
-    #     for f in as_completed(futures):
-    #         pass
-    #         # res, err, tb = f.result()
-    #         # if err:
-    #         #     print(f"Errored with {err=}\n{tb}")
+    sweep_id = wandb.sweep(SWEEP_CFG, project=SWEEP_CFG["tracker_project_name"])
+
+    devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
+    num_devices = len(devices)
+    device_idx_queue = mp.Queue()
+    for device_idx in devices:
+        device_idx_queue.put(device_idx)
+
+    def main_wrapper(cfg_dict):
+        try:
+            device_idx = device_idx_queue.get()
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
+            cfg = get_cfg_from_kwargs(**cfg_dict)
+
+            ctx = wandb.init(
+                project=cfg.tracker_project_name,
+                dir=cfg.tracker_dir,
+                resume="never",
+                id=None,
+                config=cfg_dict,
+            )
+            with ctx as run:
+                # Important: for some reason there are frequent hangs if we use a non-trivial id in
+                # wandb.init when this script is run under mutiprocessing, but it works fine if we
+                # just set the name by hand.
+                run.name = create_wandb_run_id(cfg)
+                res = main(cfg)
+            return (res, None, None)
+        except Exception as e:
+            return (None, e, traceback.format_exc())
+
+    # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process
+    wandb.setup()
+
+    # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
+    # main function and Pool does not support nested mp.
+    with ProcessPoolExecutor(len(devices)) as executor:
+        futures = [
+            executor.submit(wandb.agent, sweep_id, main_wrapper) for _ in devices
+        ]
+        for f in as_completed(futures):
+            pass
+            # res, err, tb = f.result()
+            # if err:
+            #     print(f"Errored with {err=}\n{tb}")

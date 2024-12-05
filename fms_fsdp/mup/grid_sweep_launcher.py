@@ -88,6 +88,7 @@ if __name__ == "__main__":
     sweep_id_queue = mp.Queue()
 
     def main_wrapper():
+        print(f'MAIN {os.environ["CUDA_VISIBLE_DEVICES"]=}')
         with wandb.init(resume="never") as run:
             cfg_dict = wandb.config
             cfg = get_cfg_from_kwargs(**cfg_dict)
@@ -100,7 +101,8 @@ if __name__ == "__main__":
             main(cfg)
 
     def target(device_idx: str):
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
+        os.environ["CUDA_VISIBLE_DEVICES"] = device_idx
+        print(f'TARGET {os.environ["CUDA_VISIBLE_DEVICES"]=}')
         # Only device 0 starts the sweep
         if device_idx == "0":
             sweep_id = wandb.sweep(

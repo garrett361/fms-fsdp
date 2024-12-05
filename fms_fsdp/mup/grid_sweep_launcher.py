@@ -1,5 +1,6 @@
 from typing import Any
 
+import warnings
 import fire
 
 from single_gpu_training_transformer_only import mup_config
@@ -36,6 +37,8 @@ def populate_sweep_cfg(**kwargs) -> None:
             raise ValueError(
                 f"--sweep_params should be dict[str, tuple|list] dict, found {k=}, {v=}"
             )
+        if k in kwargs:
+            warnings.warn(f"Overwriting key {k=}, v={kwargs[k]} with {v=}")
         kwargs[k] = {"values": v}
 
     # Merge the sweep config into the fixed config.
@@ -62,7 +65,7 @@ def create_wandb_run_id(cfg: mup_config) -> str:
 
 if __name__ == "__main__":
     fire.Fire(populate_sweep_cfg)
-    print("Running sweep with config:\n{SWEEP_CFG}")
+    print(f"Running sweep with config:\n{SWEEP_CFG}")
 
     # sweep_id = wandb.sweep(SWEEP_CFG, project=SWEEP_CFG["tracker_project_name"])
     #

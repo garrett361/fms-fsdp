@@ -7,7 +7,12 @@ from single_gpu_training_transformer_only import mup_config
 
 """
 A wandb sweep launcher. Pass a dict[str, tuple|list] --sweep_params arg which will be grid-scanned
-over.
+over. Example:
+
+```bash
+
+```
+python3  grid_weep_launcher.py --
 """
 
 SWEEP_CFG: dict[str, Any] = {
@@ -17,6 +22,7 @@ SWEEP_CFG: dict[str, Any] = {
 
 
 def populate_sweep_cfg(**kwargs) -> None:
+    print(f"{kwargs=}")
     global SWEEP_CFG
     assert kwargs["tracker"] == "wandb"
     # Expect a --sweep_params arg, which provides a dict

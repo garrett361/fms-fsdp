@@ -1,13 +1,17 @@
 import multiprocessing as mp
+import os
+from contextlib import nullcontext
+from dataclasses import asdict
+from typing import Union
+
+import fire
+import wandb
+
 import traceback
 from typing import Sequence
-import os
-import fire
 from single_gpu_training_transformer_only import mup_config, main
-import wandb
 from copy import deepcopy
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import dataclasses
 
 
 """
@@ -63,13 +67,29 @@ if __name__ == "__main__":
         try:
             device_idx = device_idx_queue.get()
             os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
-            cfg_dict = dataclasses.asdict(cfg)
-            res = main(**cfg_dict)
+
+            ctx: Union[wandb.Run, nullcontext]
+            if cfg.tracker == "wandb":
+                ctx = wandb.init(
+                    project=cfg.tracker_project_name,
+                    dir=cfg.tracker_dir,
+                    resume="never",
+                    id=None,
+                    config=asdict(cfg),
+                )
+            else:
+                ctx = nullcontext()
+            with ctx as run:
+                # Important: for some reason there are frequent hangs if we use a non-trivial id in
+                # wandb.init when this script is run under mutiprocessing, but it works fine if we
+                # just set the name by hand.
+                if cfg.tracker == "wandb":
+                    run.name = cfg.tracker_run_id
+                res = main(cfg)
             return (res, None, None)
         except Exception as e:
             return (None, e, traceback.format_exc())
         finally:
-            wandb.finish()
             device_idx_queue.put(device_idx)
 
     # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process

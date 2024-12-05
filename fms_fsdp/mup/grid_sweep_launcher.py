@@ -38,19 +38,23 @@ def populate_sweep_cfg(**kwargs) -> None:
     sweep_params = kwargs.pop("sweep_params")
     if not isinstance(sweep_params, dict):
         raise ValueError(f"Expected a dict, got {sweep_params=}")
+
+    # All other kwargs are fixed values. wandb expects this structure:
+    all_params = {k: {"value": v} for k, v in kwargs.items()}
+
     # Merge in the sweep config w/ correct wandb syntax
     for k, v in sweep_params.items():
         if not isinstance(k, str) or not isinstance(v, (tuple, list)):
             raise ValueError(
                 f"--sweep_params should be dict[str, tuple|list] dict, found {k=}, {v=}"
             )
-        if k in kwargs:
-            warnings.warn(f"Overwriting key {k=}, v={kwargs[k]} with {v=}")
-        kwargs[k] = {"values": v}
+        if k in all_params:
+            warnings.warn(f"Overwriting key {k=}, v={all_params[k]} with {v=}")
+        all_params[k] = {"values": v}
 
     # Merge the sweep config into the fixed config.
 
-    SWEEP_CFG["parameters"] = kwargs
+    SWEEP_CFG["parameters"] = all_params
 
 
 def create_wandb_run_id(cfg: mup_config) -> str:

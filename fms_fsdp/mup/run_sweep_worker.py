@@ -54,11 +54,22 @@ if __name__ == "__main__":
             run.name = run_name
             main(cfg)
 
+    def test_wrapper():
+        with wandb.init(resume="never") as run:
+            cfg_dict = wandb.config
+            cfg = get_cfg_from_kwargs(**cfg_dict)
+            # Important: for some reason there are frequent hangs if we use a non-trivial id in
+            # wandb.init when this script is run under mutiprocessing, but it works fine if we
+            # just set the name by hand.
+            run_name = create_wandb_run_id(cfg)
+            run.name = run_name
+            wandb.log({"step": 1}, step=1)
+
     def target(device_idx: str):
         os.environ["CUDA_VISIBLE_DEVICES"] = device_idx
         # HACKS: must manually set the expected WANDB_PROJECT env var.
         os.environ["WANDB_PROJECT"] = project
-        wandb.agent(sweep_id, main_wrapper)
+        wandb.agent(sweep_id, test_wrapper)
 
     devices = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
     processes = [

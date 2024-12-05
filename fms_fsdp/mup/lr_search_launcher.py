@@ -6,7 +6,7 @@ import fire
 from single_gpu_training_transformer_only import mup_config, main
 import wandb
 from copy import deepcopy
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import dataclasses
 
 
@@ -19,6 +19,8 @@ cfgs = []
 
 
 def populate_cfgs(**kwargs) -> None:
+    # TODO: @goon - generalize to just passing a sweep dict
+
     # --lrs expected to be a comma separated list of numbers using "1e-3" type exponential notation.
     # "2**-5" exponential notation is not handled.
     lrs = kwargs.pop("lrs")
@@ -47,13 +49,17 @@ def populate_cfgs(**kwargs) -> None:
         cfgs.append(cfg)
 
 
-def main_wrapper(cfg):
+def main_wrapper(cfg, device_idx_queue: mp.Queue):
     try:
+        device_idx = device_idx_queue.get()
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_idx)
         cfg_dict = dataclasses.asdict(cfg)
         res = main(**cfg_dict)
         return (res, None, None)
     except Exception as e:
         return (None, e, traceback.format_exc())
+    finally:
+        device_idx_queue.put(device_idx)
 
 
 if __name__ == "__main__":
@@ -61,23 +67,20 @@ if __name__ == "__main__":
     devices = [int(s) for s in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
     print(f"Launching on {devices=}")
     num_devices = len(devices)
-    device_idx = mp.Value("i", 0)
+    device_idx_queue = mp.Queue()
+    for device_idx in devices:
+        device_idx_queue.put(device_idx)
 
     # https://docs.wandb.ai/guides/track/log/distributed-training/#spawn-process
     wandb.setup()
 
-    def set_device() -> None:
-        with device_idx.get_lock():
-            curr_idx = device_idx.value
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(curr_idx)
-            device_idx.value += 1
-            device_idx.value %= num_devices
-
     # Important to use ProcessPoolExecutor, and not Pool, because multiprocessing is used in the
     # main function and Pool does not support nested mp.
-    with ProcessPoolExecutor(len(devices), initializer=set_device) as p:
-        for cfg, (res, err, traceback) in zip(cfgs, p.map(main_wrapper, cfgs)):
+    with ProcessPoolExecutor(len(devices)) as executor:
+        futures = [executor.submit(main_wrapper, cfg, device_idx_queue) for cfg in cfgs]
+        for f in as_completed(futures):
+            res, err, tb = f.result()
             if err:
-                print(f"{cfg=} errored with {err=}\n{traceback=}")
+                print(f"Errored with {err=}\n{tb}")
             else:
-                print(f"{cfg=} succeeded with {res=}")
+                print(f"Succeeded with {res=}")

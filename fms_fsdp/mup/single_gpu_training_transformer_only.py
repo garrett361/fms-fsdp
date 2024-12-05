@@ -1,4 +1,5 @@
 import math
+import torch.nn as nn
 import os
 from dataclasses import asdict
 
@@ -355,28 +356,25 @@ def train(
     return mean_loss
 
 
-def main(**kwargs):
-    # get configs
-    cfg = mup_config()
-    update_config(cfg, **kwargs)
-    print_device(f"{cfg=}")
-
+def setup(cfg: mup_config) -> None:
     # ensure reproducibility
     torch.cuda.manual_seed(cfg.seed)
     torch.manual_seed(cfg.seed)
-
-    print_device(f"--> running with these configs {cfg}")
 
     torch.cuda.set_device(0)
     torch.cuda.empty_cache()
     setup_environ_flags()
     os.environ["TRITON_CACHE_DIR"] = os.path.join(Path.home(), ".triton", "cache")
 
+
+def get_model_optim_scheduler(
+    cfg: mup_config,
+) -> tuple[nn.Module, optim.Optimizer, LambdaLR]:
     # get model
     # config_data = get_model_config(cfg.model_variant)
     # mamba_config = MambaConfig(**config_data)
     # model = MambaLMHeadModel(mamba_config)
-    model, mamba_config = get_transformer_and_config(
+    model, _ = get_transformer_and_config(
         width=cfg.width,
         n_layer=cfg.n_layer,
         vocab_size=cfg.vocab_size,
@@ -389,14 +387,6 @@ def main(**kwargs):
     print_device(f"\n--> model has {total_params / 1e6} Million params\n")
     print_device(f"{model=}")
 
-    # get data loader
-    print_device("Constructing datasets...")
-    if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg)
-    else:
-        train_loader = get_dummy_loader(cfg)
-    print_device("Datasets constructed!")
-
     # torch compile
     if cfg.use_torch_compile:
         print_device("--> enabling torch compile...")
@@ -407,6 +397,7 @@ def main(**kwargs):
     # Model init and Optimizer
     if cfg.mup:
         apply_mup_init(model)
+        assert cfg.mup_base_width is not None  # mypy
         optimizer = optim.AdamW(
             get_mup_optim_iter(
                 model,
@@ -442,6 +433,25 @@ def main(**kwargs):
     )
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x))
+
+    return model, optimizer, scheduler
+
+
+def main(**kwargs):
+    # get configs
+    cfg = mup_config()
+    update_config(cfg, **kwargs)
+    print_device(f"--> running with these configs {cfg}")
+
+    model, optimizer, scheduler = get_model_optim_scheduler(cfg)
+
+    # get data loader
+    print_device("Constructing datasets...")
+    if not cfg.use_dummy_dataset:
+        train_loader = get_data_loader(cfg)
+    else:
+        train_loader = get_dummy_loader(cfg)
+    print_device("Datasets constructed!")
 
     # Train
     print_device(f"Training for {cfg.num_steps} steps")

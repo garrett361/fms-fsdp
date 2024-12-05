@@ -16,17 +16,28 @@ import warnings
 
 
 """
-Creates a wandb sweep from the CLI args and writes the sweep id to a file. Use for multi-node
-sweeps. Intended to be followed by run_sweep_worker.py, which read in the file.
+Creates a wandb sweep from the CLI args and writes the sweep id and wandb project to node-local
+files. To be follwed up with run_sweep_worker.py which starts the corresponding sweep workers.
 
-Pass a dict[str, tuple|list] --sweep_params arg which will be grid-scanned
-over. Example:
+Pass a dict[str, tuple|list] --sweep_params arg which will be grid-scanned over, in addition to the
+usual other fire cli args.
+
+Example:
 
 ```bash
+#On every node: 
+
 LRS=$(python -c 'print([10**(-n/3) for n in range(6, 8)])')
 SEEDS=$(python -c 'print(list(range(42, 44)))')
 SWEEP_PARAMS="{learning_rate:$LRS,seed:$SEEDS}"
-python3  grid_sweep_launcher.py --n_layer=10 --sweep_params="$SWEEP_PARAMS"
+
+# Run once on each node. node-rank-0 starts the sweep, communicates the sweep_id to all other nodes
+# and the node 
+torchrun --nnodes=${N_NODES} --node_rank=${NODE_RANK} --nproc_per_node=1 \ 
+    <other-torchrun-flags> start_multi_node_sweep.py --n_layer=10 <other_cli_args> --sweep_params="$SWEEP_PARAMS"
+
+# Then start workers on each node:
+python3 fms_fsdp/mup/run_sweep_worker.py
 ```
 """
 

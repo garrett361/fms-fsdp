@@ -4,19 +4,16 @@ import os
 
 import wandb
 
-from single_gpu_training_transformer_only import mup_config, main, get_cfg_from_kwargs
+from fms_fsdp.mup.single_gpu_training_transformer_only import (
+    mup_config,
+    main,
+    get_cfg_from_kwargs,
+)
 
 
 """
-A wandb sweep launcher. Pass a dict[str, tuple|list] --sweep_params arg which will be grid-scanned
-over. Example:
-
-```bash
-LRS=$(python -c 'print([10**(-n/3) for n in range(6, 8)])')
-SEEDS=$(python -c 'print(list(range(42, 44)))')
-SWEEP_PARAMS="{learning_rate:$LRS,seed:$SEEDS}"
-python3  grid_sweep_launcher.py --n_layer=10 --sweep_params="$SWEEP_PARAMS"
-```
+Starts a one single-GPU worker per available GPU to carry out a wandb sweep. Assumes the
+`start_multi_node_sweep.py` file was run first, populating the SWEEP_FILE and PROJECT_FILE.
 """
 
 

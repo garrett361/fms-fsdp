@@ -31,7 +31,6 @@ from fms_fsdp.utils.train_utils import (
 from fms_fsdp.mup import (
     mup_config,
     get_cfg_from_kwargs,
-    apply_mup_init,
     get_mup_optim_iter,
     get_transformer,
 )
@@ -310,7 +309,6 @@ def get_model_optim_scheduler(
 
     # Model init and Optimizer
     if cfg.mup:
-        apply_mup_init(model, cfg)
         assert cfg.mup_base_d_model is not None  # mypy
         optimizer = optim.AdamW(
             get_mup_optim_iter(model, cfg),

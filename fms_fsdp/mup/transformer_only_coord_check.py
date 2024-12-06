@@ -6,7 +6,7 @@ import torch
 from tqdm import tqdm
 
 from coord_check import ALL_STATS, get_stats, plot_from_df
-from fms_fsdp.mup import apply_mup_init, get_transformer, mup_config, get_mup_optim_iter
+from fms_fsdp.mup import get_transformer, mup_config, get_mup_optim_iter
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -49,8 +49,6 @@ if __name__ == "__main__":
             model = get_transformer(cfg)
             optim_kwargs = dict(betas=(0.9, 0.95), weight_decay=0.1)
             if args.mup:
-                print("Getting mup learning rates and applying init")
-                apply_mup_init(model, cfg)
                 optim_args = get_mup_optim_iter(model=model, cfg=cfg)
 
             else:

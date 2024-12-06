@@ -1,6 +1,4 @@
-from mamba_ssm.models.config_mamba import MambaConfig
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from fms_fsdp.mup import apply_mup_init, get_mup_optim_iter, mup_config, get_transformer
+from fms_fsdp.mup import get_mup_optim_iter, mup_config, get_transformer
 
 import torch
 
@@ -38,7 +36,6 @@ def test_mup_init():
         mup_base_d_model=d_model // 2,
     )
     model = get_transformer(cfg)
-    apply_mup_init(model, cfg)
 
 
 class TestMupOptim:
@@ -67,24 +64,3 @@ class TestMupOptim:
         optim_iter = get_mup_optim_iter(model, cfg)
         for p_lr_dict in optim_iter:
             assert p_lr_dict["lr"] == cfg.learning_rate
-
-
-def test_coord_check():
-    transformer_only_config = MambaConfig(
-        d_model=d_model,
-        d_intermediate=d_intermediate,
-        n_layer=n_layer,
-        attn_layer_idx=list(range(n_layer)),
-        vocab_size=2048,
-        attn_cfg=attn_cfg,
-        tie_embeddings=False,
-    )
-    model = MambaLMHeadModel(transformer_only_config, device=device)
-    inputs = torch.randint(
-        transformer_only_config.vocab_size, size=(1, seq_length), device=device
-    )
-    from coord_check import get_stats
-
-    results_list = []
-    get_stats(model, inputs, results_list)
-    print(results_list)

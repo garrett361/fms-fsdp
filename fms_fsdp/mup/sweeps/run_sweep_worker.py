@@ -4,27 +4,10 @@ import os
 import wandb
 
 from fms_fsdp.mup.single_gpu_training_transformer_only import (
-    mup_config,
     main,
     get_cfg_from_kwargs,
 )
-
-
-def create_wandb_run_id(cfg: mup_config) -> str:
-    user_run_id = cfg.tracker_run_id or ""
-    run_id = (
-        user_run_id
-        + ("_" if user_run_id else "")
-        + f"n_layer-{cfg.n_layer}_width-{cfg.width}_lr-{cfg.learning_rate}"
-        + f"_bsz-{cfg.batch_size}_acc-{cfg.acc_steps}_seq_len-{cfg.seq_length}_steps"
-        + f"-{cfg.num_steps}"
-    )
-    if cfg.mup:
-        if cfg.mup_use_width:
-            run_id += f"_mup[base-{cfg.mup_base_width}-use_width]"
-        else:
-            run_id += f"_mup[base-{cfg.mup_base_width}]"
-    return run_id
+from fms_fsdp.mup import create_wandb_run_id
 
 
 if __name__ == "__main__":

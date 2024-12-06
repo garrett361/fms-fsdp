@@ -1,11 +1,15 @@
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-import torch.nn as nn
+import math
 import warnings
-from typing import Optional
+from dataclasses import dataclass
+
+import torch
+import torch.nn as nn
 from mamba_ssm.models.config_mamba import MambaConfig
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.mha import MHA
 from mamba_ssm.modules.mlp import GatedMLP
-from dataclasses import dataclass
+
+from fms_fsdp.mup._cfg import mup_config
 
 """
 Basic mup implementation following Table 3 of 2203.03466. Specific to MambaLMHeadModel.
@@ -17,14 +21,39 @@ def mup_cfg_check(cfg: MambaConfig) -> None:
         raise ValueError("Tied Embedding-LMHead weights not supported.")
 
 
-def apply_mup_init(
-    model: MambaLMHeadModel,
-    mup_emb_scale: float = 0,
-    mup_head_scale: float = 0,
-    mup_a_f_skew: float = 0,
-    mup_attn_temp: float = 0,
-    mup_lr_dscale: float = 0,
+# Modified from mamba-ssm:
+# https://github.com/state-spaces/mamba/blob/442fab4b1fd5226c1b5939b37d91ede430b5d1ae/mamba_ssm/models/mixer_seq_simple.py?plain=1#L91
+def _init_weights(
+    module: nn.Module,
+    n_layer: int,
+    cfg: mup_config,
 ) -> None:
+    if isinstance(module, nn.Linear):
+        if module.bias is not None:
+            if not getattr(module.bias, "_no_reinit", False):
+                nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.Embedding):
+        nn.init.normal_(module.weight, std=cfg.mup_initializer_range)
+
+    if cfg.mup_rescale_prenorm_residual:
+        # Reinitialize selected weights subject to the OpenAI GPT-2 Paper Scheme:
+        #   > A modified initialization which accounts for the accumulation on the residual path with model depth. Scale
+        #   > the weights of residual layers at initialization by a factor of 1/√N where N is the # of residual layers.
+        #   >   -- GPT-2 :: https://openai.com/blog/better-language-models/
+        #
+        # Reference (Megatron-LM): https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/model/gpt_model.py
+        for name, p in module.named_parameters():
+            if name in ["out_proj.weight", "fc2.weight"]:
+                # Special Scaled Initialization --> There are 2 Layer Norms per Transformer Block
+                # Following Pytorch init, except scale by 1/sqrt(2 * n_layer)
+                # We need to reinit p since this code could be called multiple times
+                # Having just p *= scale would repeatedly scale it down
+                nn.init.kaiming_uniform_(p, a=math.sqrt(5))
+                with torch.no_grad():
+                    p /= math.sqrt(cfg.mup_n_residuals_per_layer * n_layer)
+
+
+def apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     """
     Apply mup init.
 
@@ -152,50 +181,40 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
 
 def get_mup_optim_iter(
     model: MambaLMHeadModel,
-    lr: float,
-    optim_type: str = "adam",
-    base_width: int = 1,
-    width: Optional[int] = None,
+    cfg: mup_config,
 ) -> list[dict]:
     """
     Get the per-weight learning rates for mup.
-
-    There are two basic behaviors:
-    1) If no `width` is provided, then the weight lr's are adjusted based on their fan_in shapes, as
-    appropriate.
-    2) If a `width` is provided, then weight lr's are instead adjusted by factors of `width` instead
-    of fan_in.
-
-    Option 1 uses the LRs you'd have without mup for those layers where `base_width = fan_in`
-
-    Option 2 with width == base_width gives LRs which exactly match those you'd have without mup.
-
-    Unclear to me which is the canonical implementation. Option 2 allows for easier comparison with
-    non-mup models, but option 1 seems more natural.
-
-
     """
-    expected_optim_types = ("adam", "sgd")
-    if optim_type not in expected_optim_types:
-        raise ValueError(f"Expected {optim_type=} to be in {expected_optim_types}")
-    if optim_type == "sgd":
-        raise NotImplementedError("Just adam for now.")
+    expected_optims = ("adamw", "sgd")
+    if cfg.optim not in expected_optims:
+        raise ValueError(f"Expected {cfg.optim=} to be in {expected_optims}")
+    if cfg.optim == "sgd":
+        raise NotImplementedError("Just adamw for now.")
 
     mup_param_groups = _get_mup_param_groups(model)
 
     # Create a list with a dict for each individual param. Annoying, but makes switching between
     # equivalent mup impls easier.
 
-    optim_iter = [{"params": [mp.param], "lr": lr} for mp in mup_param_groups.input]
+    optim_iter = [
+        {"params": [mp.param], "lr": cfg.learning_rate} for mp in mup_param_groups.input
+    ]
     optim_iter.extend(
         [
-            {"params": [mp.param], "lr": lr * base_width / (width or mp.fan_in)}
+            {
+                "params": [mp.param],
+                "lr": cfg.learning_rate * cfg.mup_base_d_model / (cfg.d_model or mp.fan_in),
+            }
             for mp in mup_param_groups.hidden
         ]
     )
     optim_iter.extend(
         [
-            {"params": [mp.param], "lr": lr * base_width / (width or mp.fan_in)}
+            {
+                "params": [mp.param],
+                "lr": cfg.learning_rate * cfg.mup_base_d_model / (cfg.d_model or mp.fan_in),
+            }
             for mp in mup_param_groups.output
         ]
     )

@@ -5,7 +5,7 @@ from tqdm import tqdm
 from pathlib import Path
 import argparse
 from mup_mamba import get_mup_optim_iter
-from fms_fsdp.mup.transformer_only_utils import get_transformer_and_config
+from fms_fsdp.mup.transformer_only_utils import get_transformer_and_cfg
 from fms_fsdp.mup.mup_mamba import apply_mup_init
 
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         labels = inputs_and_labels[:, 1:]
         for width in tqdm(widths, desc="width"):
             torch.manual_seed(seed)
-            model, config = get_transformer_and_config(
+            model, cfg = get_transformer_and_cfg(
                 width,
                 vocab_size=args.vocab_size,
                 mup=args.mup,
@@ -52,13 +52,7 @@ if __name__ == "__main__":
             if args.mup:
                 print("Getting mup learning rates and applying init")
                 apply_mup_init(model)
-                optim_args = get_mup_optim_iter(
-                    model=model,
-                    lr=args.lr,
-                    optim_type="adam",
-                    base_width=min(widths),
-                    width=width if args.mup_use_width else None,
-                )
+                optim_args = get_mup_optim_iter(model=model, cfg=cfg)
 
             else:
                 optim_args = model.parameters()

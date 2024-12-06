@@ -3,9 +3,9 @@ import datetime
 import os
 import time
 from contextlib import nullcontext
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 import fire
 import torch
@@ -15,8 +15,7 @@ import wandb
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp.mup.mup_mamba import apply_mup_init, get_mup_optim_iter
-from fms_fsdp.mup.transformer_only_utils import get_transformer_and_config
-from fms_fsdp.utils.config_utils import update_config
+from fms_fsdp.mup.transformer_only_utils import get_transformer
 from fms_fsdp.utils.dataloader_utils import parse_data_args
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -31,12 +30,7 @@ from fms_fsdp.utils.dataset_utils import (
 from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
 )
-
-_handler_map = {
-    "arrow": ArrowHandler,
-    "hf_parquet": ParquetHandler,
-    "auto": AutoHandler,
-}
+from fms_fsdp.mup import mup_config, get_cfg_from_kwargs
 
 
 """
@@ -52,74 +46,6 @@ def print_device(*args, **kwargs):
         print(*args, **kwargs)
 
 
-@dataclass
-class mup_config:
-    # model
-    width: int = 512
-    n_layer: int = 10
-    head_dim: int = 128
-
-    # mup
-    mup: bool = False
-    mup_base_width: Optional[int] = None
-    mup_use_width: bool = False
-    # From Davis; currently unused.
-    mup_emb_scale: Optional[float] = None
-    mup_head_scale: Optional[float] = None
-    mup_a_f_skew: Optional[float] = None
-    mup_attn_temp: Optional[float] = None
-    mup_lr_dscale: Optional[float] = None
-
-    # dataset and dataloader
-    use_dummy_dataset: bool = False
-    data_path: str = "/fsx/data"
-    file_type: str = "arrow"
-    col_name: str = "tokens"
-    tokenizer_path: str = "/fsx/tokenizer"
-    datasets: str = "lang=en/dataset=commoncrawl,lang=en/dataset=webhose,lang=en/dataset=github_clean,lang=de/dataset=wikipedia,lang=es/dataset=wikipedia,lang=fr/dataset=wikipedia,lang=ja/dataset=wikipedia,lang=pt/dataset=wikipedia,lang=en/dataset=wikimedia,lang=en/dataset=uspto,lang=en/dataset=pubmedcentral,lang=en/dataset=arxiv,lang=en/dataset=stackexchange"
-    weights: str = "7725,500,550,28,17,22,25,8,100,500,175,250,100"
-    seq_length: int = 4096
-    vocab_size: int = 128256
-    bos_token: Optional[int] = None
-    eos_token: int = 0
-    bol_token: Optional[int] = None
-    eol_token: Optional[int] = None
-    strip_tokens: str = ""
-    num_workers: int = 1
-
-    # training spec
-    batch_size: int = 2
-    acc_steps: int = 1
-    num_steps: int = 1000000
-    training_stage: str = "initial"
-    learning_rate: float = 3e-4
-    grad_clip_thresh: float = 1.0
-    seed: int = 2023
-
-    # logging
-    report_interval: int = 100
-    tracker: Optional[str] = None  # None, "wandb", "aim"
-    tracker_dir: Optional[str] = None
-    tracker_project_name: str = "llama"  # project name for a group of runs
-    tracker_run_id: Optional[str] = None  # run id, for job resume purpose
-
-    # compile
-    use_torch_compile: bool = True
-
-    def __post_init__(self) -> None:
-        if self.mup and not self.mup_base_width:
-            raise ValueError("mup can only be specified along with a base_width")
-        if self.tracker and self.tracker != "wandb":
-            raise ValueError("Only tracker in {None, 'wandb'} supported")
-
-    @property
-    def mup_ratio(self) -> float:
-        if not self.mup:
-            raise ValueError("mup_ratio only defined when mup=True")
-        assert self.mup_base_width is not None  # mypy
-        return self.mup_base_width / self.width
-
-
 def causal_lm(data_seq, prompt_len=1):
     """
     Perform causal language modeling by right-shifting the input sequence.
@@ -132,7 +58,7 @@ def causal_lm(data_seq, prompt_len=1):
     return data_seq, t
 
 
-def get_data_loader(cfg, postprocess=[causal_lm]):
+def get_data_loader(cfg: mup_config, postprocess=[causal_lm]):
     """
     Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
     Assumes underlying data is sequences of integer values.
@@ -145,6 +71,11 @@ def get_data_loader(cfg, postprocess=[causal_lm]):
         Any task-specific postprocessing to apply before handing over data. Steps will apply in
         the order provided by the user. For CLM training, use postprocess=[causal_lm].
     """
+    _handler_map = {
+        "arrow": ArrowHandler,
+        "hf_parquet": ParquetHandler,
+        "auto": AutoHandler,
+    }
 
     datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
 
@@ -361,8 +292,8 @@ def get_model_optim_scheduler(
     # config_data = get_model_config(cfg.model_variant)
     # mamba_config = MambaConfig(**config_data)
     # model = MambaLMHeadModel(mamba_config)
-    model, _ = get_transformer_and_config(
-        width=cfg.width,
+    model, _ = get_transformer(
+        width=cfg.d_model,
         n_layer=cfg.n_layer,
         vocab_size=cfg.vocab_size,
         head_dim=cfg.head_dim,
@@ -384,15 +315,9 @@ def get_model_optim_scheduler(
     # Model init and Optimizer
     if cfg.mup:
         apply_mup_init(model)
-        assert cfg.mup_base_width is not None  # mypy
+        assert cfg.mup_base_d_model is not None  # mypy
         optimizer = optim.AdamW(
-            get_mup_optim_iter(
-                model,
-                lr=cfg.learning_rate,
-                optim_type="adam",
-                base_width=cfg.mup_base_width,
-                width=cfg.width if cfg.mup_use_width else None,
-            ),
+            get_mup_optim_iter(model, cfg),
             lr=cfg.learning_rate,
             betas=(0.9, 0.95),
             weight_decay=0.1,
@@ -422,14 +347,6 @@ def get_model_optim_scheduler(
     scheduler = LambdaLR(optimizer, lambda x: schedule(x))
 
     return model, optimizer, scheduler
-
-
-def get_cfg_from_kwargs(**kwargs) -> mup_config:
-    # get configs
-    cfg = mup_config()
-    update_config(cfg, **kwargs)
-    print_device(f"--> running with these configs {cfg}")
-    return cfg
 
 
 def main(cfg: mup_config) -> None:

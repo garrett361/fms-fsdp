@@ -43,7 +43,7 @@ parameters:
     value: 100
   mup:
     value: true
-  mup_base_width:
+  mup_base_d_model:
     value: 512
   # LRs: log-spaced between 1e-2 and 1e-5, inclusive. [f"{10**(-n/3):.3e}" for n in range(6, 16)]
   learning_rate:

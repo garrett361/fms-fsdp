@@ -1,4 +1,4 @@
-program: fms_fsp/mup/sweeps/run_sweep_worker.py
+name: transformer-only-n_layer-4
 method: grid
 metric:
   goal: minimize
@@ -28,21 +28,27 @@ parameters:
     value: wandb
   n_layer:
     value: 4
-  width:
-    value: 512
-  # 2**20 tok batch size: seq_len = 4096, batch_size * acc_steps = 256
+  d_model:
+    values:
+      - 512
+      - 1024
+      - 1536
+      - 2048
+  # 2**20 tok batch size: seq_len = 4096 = 2**12, batch_size * acc_steps = 256 = 2**8
   seq_length:
-    value: 4096
+    # 4096
+    value: !!int 2**12
   batch_size:
-    value: 4
+    value: !!int 2**2
   acc_steps:
-    value: 64
+    value: !!int 2**6
   num_steps:
-    value: 10000
+    value: 1024
   report_interval:
+    value: 64
   # LRs: log-spaced between 1e-2 and 1e-5, inclusive. [f"{10**(-n/3):.3e}" for n in range(6, 16)]
   learning_rate:
-    values: 
+    values:
       - 1.000e-02
       - 4.642e-03
       - 2.154e-03
@@ -53,4 +59,3 @@ parameters:
       - 4.642e-05
       - 2.154e-05
       - 1.000e-05
-    value: 100

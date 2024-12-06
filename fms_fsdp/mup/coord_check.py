@@ -139,7 +139,7 @@ def plot_from_df(
         axs[row, col].set_title(f"Step {step.item()}")
 
         handles, labels = axs[0, 0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.2, 0.5))
+        fig.legend(handles, labels, loc="center right", bbox_to_anchor=(1.0, 0.5))
 
     if title:
         fig.suptitle(title)

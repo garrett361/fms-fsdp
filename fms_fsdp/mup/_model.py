@@ -1,5 +1,6 @@
 from dataclasses import asdict
 from inspect import signature
+import torch
 
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
@@ -22,8 +23,16 @@ def get_transformer(cfg: mup_config, device: str = "cuda") -> MambaLMHeadModel:
     }
     # Force the model to be transformer-only:
     filtered_kwargs["attn_layer_idx"] = list(range(cfg.n_layer))
+
+    torch.cuda.manual_seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
     model = MambaLMHeadModel(MambaConfig(**filtered_kwargs), device=device)
     if cfg.mup:
+        # apply_mup_init calls into a very similar init fuction as the MambaLMHeadModel constructor
+        # essentially, just possibly rescaling some of the generated weights. So, reset the seed
+        # again to made the d_model == base_d_model mup and non cases coincide.
+        torch.cuda.manual_seed(cfg.seed)
+        torch.manual_seed(cfg.seed)
         print("Applying mup param init")
         apply_mup_init(model, cfg)
     return model

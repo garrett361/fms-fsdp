@@ -14,8 +14,6 @@ import torch.optim as optim
 import wandb
 from torch.optim.lr_scheduler import LambdaLR
 
-from fms_fsdp.mup.mup_mamba import apply_mup_init, get_mup_optim_iter
-from fms_fsdp.mup.transformer_only_utils import get_transformer
 from fms_fsdp.utils.dataloader_utils import parse_data_args
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -30,7 +28,13 @@ from fms_fsdp.utils.dataset_utils import (
 from fms_fsdp.utils.train_utils import (
     setup_environ_flags,
 )
-from fms_fsdp.mup import mup_config, get_cfg_from_kwargs
+from fms_fsdp.mup import (
+    mup_config,
+    get_cfg_from_kwargs,
+    apply_mup_init,
+    get_mup_optim_iter,
+    get_transformer,
+)
 
 
 """

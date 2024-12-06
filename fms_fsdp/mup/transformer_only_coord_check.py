@@ -3,11 +3,10 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-from mup_mamba import get_mup_optim_iter
 from tqdm import tqdm
 
 from coord_check import ALL_STATS, get_stats, plot_from_df
-from fms_fsdp.mup import apply_mup_init, get_transformer, mup_config
+from fms_fsdp.mup import apply_mup_init, get_transformer, mup_config, get_mup_optim_iter
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -41,6 +40,7 @@ if __name__ == "__main__":
                 n_layer=args.n_layer,
                 seed=args.seed,
                 mup=args.mup,
+                mup_base_d_model=args.min_d_model,
                 head_dim=args.head_dim,
                 learning_rate=args.lr,
                 vocab_size=args.vocab_size,
@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
         title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, d_models={d_models}"
         if args.mup:
-            title = "(mup) " + title
+            title = f"(mup[base-{args.min_d_model}]) " + title
         for y in ALL_STATS:
             fig_subdir = fig_dir.joinpath(y)
             fig_subdir.mkdir(parents=True, exist_ok=True)

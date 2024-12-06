@@ -5,7 +5,7 @@ from tqdm import tqdm
 from pathlib import Path
 import argparse
 from mup_mamba import get_mup_optim_iter
-from fms_fsdp.mup.transformer_only_utils import get_transformer_and_cfg
+from fms_fsdp.mup.transformer_only_utils import get_transformer
 from fms_fsdp.mup.mup_mamba import apply_mup_init
 
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         labels = inputs_and_labels[:, 1:]
         for width in tqdm(widths, desc="width"):
             torch.manual_seed(seed)
-            model, cfg = get_transformer_and_cfg(
+            model, cfg = get_transformer(
                 width,
                 vocab_size=args.vocab_size,
                 mup=args.mup,

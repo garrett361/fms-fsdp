@@ -10,9 +10,10 @@ class mup_config:
     d_intermediate: Optional[int] = None  # Will default to 4*width if not provided
     n_layer: int = 10
     head_dim: int = 128
-    attn_cfg: Optional[dict[str, Any]] = field(
+    attn_cfg: dict[str, Any] = field(
         default_factory=dict
     )  # Populated with defaults if not provided
+    initializer_cfg: dict[str, Any] = field(default_factory=dict)
     tie_embeddings: bool = False
 
     # mup
@@ -21,9 +22,6 @@ class mup_config:
     # mup_init_kwargs
     mup_initializer_range: float = 0.02  # Now only used for embedding layer.
     mup_rescale_prenorm_residual: bool = True
-    mup_n_residuals_per_layer: Optional[int] = (
-        None  # Populated according to d_intermediate value
-    )
     # From Davis; currently unused.
     mup_emb_scale: Optional[float] = None
     mup_head_scale: Optional[float] = None
@@ -89,17 +87,18 @@ class mup_config:
         if self.d_intermediate is None:
             self.d_intermediate = 4 * self.d_model
 
-        if self.mup_n_residuals_per_layer is None:
-            # Set to 2 if using mlp layers (= d_intermediate == 0), else 1
-            # This needs to follow the population of d_intermediate
-            self.mup_n_residuals_per_layer = 2 if self.d_intermediate else 1
-
     @property
     def mup_ratio(self) -> float:
         if not self.mup:
             raise ValueError("mup_ratio only defined when mup=True")
         assert self.mup_base_d_model is not None  # mypy
         return self.mup_base_d_model / self.d_model
+
+    @property
+    def n_residuals_per_layer(self) -> int:
+        # From mamba-ssm
+        using_mlp = self.d_intermediate != 0
+        return 2 if using_mlp else 1
 
 
 def create_wandb_run_id(cfg: mup_config) -> str:

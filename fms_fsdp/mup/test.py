@@ -16,6 +16,7 @@ def test_cfg():
     cfg = mup_config(
         d_model=d_model, head_dim=head_dim, n_layer=n_layer, seq_length=seq_length
     )
+    assert cfg
 
 
 def test_get_transformer():
@@ -29,7 +30,12 @@ def test_get_transformer():
 
 def test_mup_init():
     cfg = mup_config(
-        d_model=d_model, head_dim=head_dim, n_layer=n_layer, seq_length=seq_length
+        d_model=d_model,
+        head_dim=head_dim,
+        n_layer=n_layer,
+        seq_length=seq_length,
+        mup=True,
+        mup_base_d_model=d_model // 2,
     )
     model = get_transformer(cfg)
     apply_mup_init(model, cfg)

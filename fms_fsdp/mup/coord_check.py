@@ -124,7 +124,7 @@ def plot_from_df(
         raise ValueError(f"{y=} must be in {ALL_STATS}")
     nrows = (len(df.step.unique()) + ncols - 1) // ncols
     fig, axs = plt.subplots(
-        ncols=ncols, nrows=nrows, sharey=True, figsize=(4 * ncols, 4 * nrows)
+        ncols=ncols, nrows=nrows, sharey=True, figsize=(6 * ncols, 4 * nrows)
     )
     for step in df.step.unique():
         row, col = divmod(step, ncols)

@@ -1,3 +1,4 @@
+program: fms_fsp/mup/sweeps/run_sweep_worker.py
 method: grid
 metric:
   goal: minimize

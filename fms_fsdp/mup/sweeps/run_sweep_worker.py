@@ -1,7 +1,6 @@
 import multiprocessing as mp
 import os
 
-import fire
 import wandb
 
 from fms_fsdp.mup.single_gpu_training_transformer_only import (
@@ -9,17 +8,6 @@ from fms_fsdp.mup.single_gpu_training_transformer_only import (
     main,
     get_cfg_from_kwargs,
 )
-
-
-SWEEP_ID: str = ""
-PROJECT: str = ""
-
-
-def get_sweep_id_and_project(**kwargs) -> None:
-    global SWEEP_ID
-    global PROJECT
-    SWEEP_ID = kwargs.pop("sweep_id")
-    PROJECT = kwargs.pop("project")
 
 
 def create_wandb_run_id(cfg: mup_config) -> str:
@@ -40,7 +28,8 @@ def create_wandb_run_id(cfg: mup_config) -> str:
 
 
 if __name__ == "__main__":
-    fire.Fire(get_sweep_id_and_project)
+    SWEEP_ID = os.environ["SWEEP_ID"]
+    assert os.getenv("WANDB_PROJECT"), "Must set WANDB_PROJECT env var"
 
     def main_wrapper():
         with wandb.init(resume="never") as run:
@@ -56,7 +45,6 @@ if __name__ == "__main__":
     def target(device_idx: str):
         os.environ["CUDA_VISIBLE_DEVICES"] = device_idx
         # HACKS: must manually set the expected WANDB_PROJECT env var.
-        os.environ["WANDB_PROJECT"] = PROJECT
         wandb.agent(SWEEP_ID, main_wrapper)
 
     devices = os.environ["CUDA_VISIBLE_DEVICES"].split(",")

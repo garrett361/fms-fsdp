@@ -25,6 +25,11 @@ def mup_cfg_check(cfg: MambaConfig) -> None:
 # Modified from mamba-ssm:
 # https://github.com/state-spaces/mamba/blob/442fab4b1fd5226c1b5939b37d91ede430b5d1ae/mamba_ssm/models/mixer_seq_simple.py?plain=1#L91
 # Basically, just need to insert a scaling factors in various places.
+
+
+# NOTE: @goon - whether cfg.mup_ratio factors are inserted depends on which mup impl from 2203.03466
+# is used. Currently following Table 3, which requires no factors in _init_weights (but see the
+# cfg.mup_ratio in _apply_mup_init applied to the LM head.
 def _init_weights(
     module: nn.Module,
     cfg: mup_config,
@@ -54,7 +59,7 @@ def _init_weights(
                     p.div_(math.sqrt(cfg.n_residuals_per_layer * cfg.n_layer))
 
 
-def apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
+def _apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     """
     Apply mup init.
 

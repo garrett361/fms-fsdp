@@ -20,19 +20,19 @@ class StatsHook:
         module: nn.Module,
         name: str,
         results_list: list[dict],
-        width: int,
+        d_model: int,
         other_data: Optional[dict] = None,
     ) -> None:
         self.module = module
         self.name = name
-        self.width = width
+        self.d_model = d_model
         self.results_list = results_list
         self._hook = module.register_forward_hook(self)
         self._step = 0
         self.other_data = other_data or {}
 
     def __call__(self, module: nn.Module, args: Any, output: Any) -> None:
-        results = {"name": self.name, "width": self.width, "step": self._step}
+        results = {"name": self.name, "d_model": self.d_model, "step": self._step}
         results = {**results, **self.other_data}
         with torch.no_grad():
             # Grab the hidden states of the block tuple
@@ -54,7 +54,7 @@ def get_stats(
     model: MambaLMHeadModel,
     optimizer: torch.optim.Optimizer,
     train_steps: int,
-    width: int,
+    d_model: int,
     seq_len: int,
     seed: int,
     inputs: torch.Tensor,
@@ -69,7 +69,7 @@ def get_stats(
             embedding,
             "embedding",
             results_list=results_list,
-            width=width,
+            d_model=d_model,
             other_data=other_data,
         )
     )
@@ -81,7 +81,7 @@ def get_stats(
                 block,
                 f"block_{idx}",
                 results_list=results_list,
-                width=width,
+                d_model=d_model,
                 other_data=other_data,
             )
         )
@@ -92,7 +92,7 @@ def get_stats(
             lm_head,
             "lm_head",
             results_list=results_list,
-            width=width,
+            d_model=d_model,
             other_data=other_data,
         )
     )
@@ -129,7 +129,7 @@ def plot_from_df(
     for step in df.step.unique():
         row, col = divmod(step, ncols)
         plot = sns.lineplot(
-            data=df[df.step == step], x="width", y=y, hue="name", ax=axs[row, col]
+            data=df[df.step == step], x="d_model", y=y, hue="name", ax=axs[row, col]
         )
         # Log-log for positive quantities:
         plot.set(xscale="log")

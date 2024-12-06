@@ -296,15 +296,7 @@ def get_model_optim_scheduler(
     # config_data = get_model_config(cfg.model_variant)
     # mamba_config = MambaConfig(**config_data)
     # model = MambaLMHeadModel(mamba_config)
-    model, _ = get_transformer(
-        width=cfg.d_model,
-        n_layer=cfg.n_layer,
-        vocab_size=cfg.vocab_size,
-        head_dim=cfg.head_dim,
-        device="cuda",
-        mup=cfg.mup,
-    )
-
+    model = get_transformer(cfg)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print_device(f"\n--> model has {total_params / 1e6} Million params\n")
     print_device(f"{model=}")
@@ -318,7 +310,7 @@ def get_model_optim_scheduler(
 
     # Model init and Optimizer
     if cfg.mup:
-        apply_mup_init(model)
+        apply_mup_init(model, cfg)
         assert cfg.mup_base_d_model is not None  # mypy
         optimizer = optim.AdamW(
             get_mup_optim_iter(model, cfg),

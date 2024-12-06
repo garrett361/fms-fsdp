@@ -43,6 +43,7 @@ if __name__ == "__main__":
     def main_wrapper():
         with wandb.init(resume="never") as run:
             cfg_dict = wandb.config
+            print(f"Running {cfg_dict=}")
             cfg = get_cfg_from_kwargs(**cfg_dict)
             # Important: for some reason there are frequent hangs if we use a non-trivial id in
             # wandb.init when this script is run under mutiprocessing, but it works fine if we

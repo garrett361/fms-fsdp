@@ -63,6 +63,12 @@ class mup_config:
     mup: bool = False
     mup_base_width: Optional[int] = None
     mup_use_width: bool = False
+    # From Davis; currently unused.
+    mup_emb_scale: Optional[float] = None
+    mup_head_scale: Optional[float] = None
+    mup_a_f_skew: Optional[float] = None
+    mup_attn_temp: Optional[float] = None
+    mup_lr_dscale: Optional[float] = None
 
     # dataset and dataloader
     use_dummy_dataset: bool = False
@@ -105,6 +111,13 @@ class mup_config:
             raise ValueError("mup can only be specified along with a base_width")
         if self.tracker and self.tracker != "wandb":
             raise ValueError("Only tracker in {None, 'wandb'} supported")
+
+    @property
+    def mup_ratio(self) -> float:
+        if not self.mup:
+            raise ValueError("mup_ratio only defined when mup=True")
+        assert self.mup_base_width is not None  # mypy
+        return self.mup_base_width / self.width
 
 
 def causal_lm(data_seq, prompt_len=1):

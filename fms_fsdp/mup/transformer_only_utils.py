@@ -1,6 +1,6 @@
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mup_mamba import apply_mup_init
+from fms_fsdp.mup.mup_mamba import apply_mup_init
 
 
 def get_transformer_and_config(

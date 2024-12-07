@@ -30,12 +30,11 @@ parameters:
     value: 4
   d_model:
     values:
+      - 256
       - 512
       - 1024
-      - 1536
       - 2048
-      - 2560
-      - 3072
+      - 4096
   # 2**20 tok batch size: seq_len = 4096 = 2**12, batch_size * acc_steps = 256 = 2**8
   seq_length:
     value: 4096

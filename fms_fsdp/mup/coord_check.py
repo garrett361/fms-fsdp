@@ -37,7 +37,7 @@ class StatsHook:
         with torch.no_grad():
             # Grab the hidden states of the block tuple
             if isinstance(module, Block):
-                output = output[0]
+                output = output[0].detach().clone()
             results["mean"] = output.mean().item()
             results["l1_mean"] = output.abs().mean().item()
             results["l2_mean"] = output.pow(2).mean().item()

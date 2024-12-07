@@ -1,4 +1,5 @@
 import argparse
+import gc
 from pathlib import Path
 
 import pandas as pd
@@ -11,16 +12,16 @@ from fms_fsdp.mup import get_transformer, mup_config, get_mup_optim_iter
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seq_len", type=int, default=4096)
-    parser.add_argument("--train_steps", type=int, default=8)
+    parser.add_argument("--train_steps", type=int, default=12)
     parser.add_argument("--vocab_size", type=int, default=128256)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--min_d_model", type=int, default=512)
     parser.add_argument("--max_d_model", type=int, default=4096)
     parser.add_argument("--d_model_step", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--n_seeds", type=int, default=2)
+    parser.add_argument("--n_seeds", type=int, default=3)
     parser.add_argument("--mup", action="store_true")
-    parser.add_argument("--n_layer", type=int, default=10)
+    parser.add_argument("--n_layer", type=int, default=6)
     parser.add_argument("--head_dim", type=int, default=128)
     args = parser.parse_args()
 
@@ -68,24 +69,27 @@ if __name__ == "__main__":
                 results_list=results_list,
             )
             del model
-        df = pd.DataFrame(results_list)
+            gc.collect()
+            torch.cuda.empty_cache()
 
-        parent_dir = Path(__file__).parent.absolute()
-        fig_dir = parent_dir.joinpath("figs/")
+    df = pd.DataFrame(results_list)
 
-        prefix = "trans_coord_check"
-        if args.mup:
-            prefix += "_mup"
-        prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
+    parent_dir = Path(__file__).parent.absolute()
+    fig_dir = parent_dir.joinpath("figs/")
 
-        df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))
+    prefix = "trans_coord_check"
+    if args.mup:
+        prefix += "_mup"
+    prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
 
-        title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, d_models={d_models}"
-        if args.mup:
-            title = f"(mup[base-{args.min_d_model}]) " + title
-        for y in ALL_STATS:
-            fig_subdir = fig_dir.joinpath(y)
-            fig_subdir.mkdir(parents=True, exist_ok=True)
-            plot_from_df(
-                df, y=y, save_path=fig_subdir.joinpath(f"{prefix}_{y}.png"), title=title
-            )
+    df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))
+
+    title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, d_models={d_models}"
+    if args.mup:
+        title = f"(mup[base-{args.min_d_model}]) " + title
+    for y in ALL_STATS:
+        fig_subdir = fig_dir.joinpath(y)
+        fig_subdir.mkdir(parents=True, exist_ok=True)
+        plot_from_df(
+            df, y=y, save_path=fig_subdir.joinpath(f"{prefix}_{y}.png"), title=title
+        )

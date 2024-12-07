@@ -38,12 +38,11 @@ parameters:
       - 3072
   # 2**20 tok batch size: seq_len = 4096 = 2**12, batch_size * acc_steps = 256 = 2**8
   seq_length:
-    # 4096
-    value: !!int 2**12
+    value: 4096
   batch_size:
-    value: !!int 2**2
+    value: 4
   acc_steps:
-    value: !!int 2**6
+    value: 64
   num_steps:
     value: 1024
   report_interval:

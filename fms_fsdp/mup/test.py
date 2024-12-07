@@ -26,16 +26,39 @@ def test_get_transformer():
     outputs = model(inputs)
 
 
-def test_mup_init():
-    cfg = mup_config(
-        d_model=d_model,
-        head_dim=head_dim,
-        n_layer=n_layer,
-        seq_length=seq_length,
-        mup=True,
-        mup_base_d_model=d_model // 2,
-    )
-    model = get_transformer(cfg)
+class TestInit:
+    def test_init(self):
+        cfg = mup_config(
+            d_model=d_model,
+            head_dim=head_dim,
+            n_layer=n_layer,
+            seq_length=seq_length,
+            mup=True,
+            mup_base_d_model=d_model // 2,
+        )
+        model = get_transformer(cfg)
+
+    def test_mup_init_equivalence(self):
+        # mup and non-mup init should coincide when `d_model == mup_base_d_model`
+        kwargs = dict(
+            d_model=d_model, head_dim=head_dim, n_layer=n_layer, seq_length=seq_length
+        )
+        cfg = mup_config(mup=False, **kwargs)
+        mup_cfg = mup_config(mup=True, mup_base_d_model=d_model, **kwargs)
+
+        model = get_transformer(cfg)
+        mup_model = get_transformer(mup_cfg)
+
+        with torch.no_grad():
+            for (p_name, p), (mup_p_name, mup_p) in zip(
+                model.named_parameters(), mup_model.named_parameters()
+            ):
+                assert p_name == mup_p_name
+                try:
+                    torch.testing.assert_close(p, mup_p)
+                except Exception as e:
+                    print(f"Failed on parameter {p_name}")
+                    raise e
 
 
 class TestMupOptim:

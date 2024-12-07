@@ -1,3 +1,5 @@
+# Train two models with same d_model, one without mup and one with mup an mup_base_d_model=d_model
+# Training should be identical for all lrs.
 name: transformer-only-n_layer-4-base_width_test
 method: grid
 metric:

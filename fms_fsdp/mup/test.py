@@ -46,7 +46,9 @@ class TestInit:
         cfg = mup_config(mup=False, **kwargs)
         mup_cfg = mup_config(mup=True, mup_base_d_model=d_model, **kwargs)
 
+        torch.manual_seed(cfg.seed)
         model = get_transformer(cfg)
+        torch.manual_seed(cfg.seed)
         mup_model = get_transformer(mup_cfg)
 
         with torch.no_grad():

@@ -1,7 +1,5 @@
-import math
 import warnings
 from dataclasses import dataclass
-from functools import partial
 
 import torch
 import torch.nn as nn
@@ -29,50 +27,15 @@ def mup_cfg_check(cfg: MambaConfig) -> None:
 # Basically, just need to insert a scaling factors in various places.
 
 
-# NOTE: @goon - whether cfg.mup_ratio factors are inserted depends on which mup impl from 2203.03466
-# is used. Currently following Table 3, which requires no factors in _init_weights (but see the
-# cfg.mup_ratio in _apply_mup_init applied to the LM head.
-def _init_weights(
-    module: nn.Module,
-    cfg: mup_config,
-) -> None:
-    if isinstance(module, nn.Linear):
-        if module.bias is not None:
-            if not getattr(module.bias, "_no_reinit", False):
-                nn.init.zeros_(module.bias)
-    elif isinstance(module, nn.Embedding):
-        nn.init.normal_(module.weight, std=cfg.mup_initializer_range)
-
-    if cfg.mup_rescale_prenorm_residual:
-        # Reinitialize selected weights subject to the OpenAI GPT-2 Paper Scheme:
-        #   > A modified initialization which accounts for the accumulation on the residual path with model depth. Scale
-        #   > the weights of residual layers at initialization by a factor of 1/√N where N is the # of residual layers.
-        #   >   -- GPT-2 :: https://openai.com/blog/better-language-models/
-        #
-        # Reference (Megatron-LM): https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/model/gpt_model.py
-        for name, p in module.named_parameters():
-            if name in ["out_proj.weight", "fc2.weight"]:
-                # Special Scaled Initialization --> There are 2 Layer Norms per Transformer Block
-                # Following Pytorch init, except scale by 1/sqrt(2 * n_layer)
-                # We need to reinit p since this code could be called multiple times
-                # Having just p *= scale would repeatedly scale it down
-                nn.init.kaiming_uniform_(p, a=math.sqrt(5))
-                with torch.no_grad():
-                    p.div_(math.sqrt(cfg.n_residuals_per_layer * cfg.n_layer))
-
-
 def _apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     """
     Apply mup init.
 
-    Notes:
-
-    mamba-ssm already does some init:
-
-    - https://github.com/state-spaces/mamba/blob/442fab4b1fd5226c1b5939b37d91ede430b5d1ae/mamba_ssm/models/mixer_seq_simple.py#L175-L182
-    - https://github.com/state-spaces/mamba/blob/442fab4b1fd5226c1b5939b37d91ede430b5d1ae/mamba_ssm/models/mixer_seq_simple.py#L86-L86
-
-    This reapplies the same code, but with mup scaling factors inserted.
+    This is a very minimal implementation: follow the Table 3 impl from 2203.03466, and only rescale
+    the LM head. The nn.Linear layers remain default initialized (uniform distribution, mean=0,
+    var=1/(3*in_features)), whereas a stricter mup implementation would re-init from a normal
+    distribution. This seems close enough, and by not performing any re-inits, we ensure perfect
+    agreement between mup and no-mup in the d_model -> mup_base_d_model limit.
     """
     if not isinstance(model, MambaLMHeadModel):
         warnings.warn(
@@ -80,7 +43,6 @@ def _apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
         )
         return
     mup_cfg_check(cfg)
-    model.apply(partial(_init_weights, cfg=cfg))
     # Rescale the lm head weights, preserving init when mup_ratio=1
     with torch.no_grad():
         model.lm_head.weight.mul_(cfg.mup_ratio)

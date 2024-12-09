@@ -142,6 +142,7 @@ def plot_from_df(
     save_path: Optional[Union[pathlib.Path, str]] = None,
     ncols: int = 4,
     title: Optional[str] = None,
+    lineplot_kwargs: Optional[dict] = None,
 ) -> matplotlib.figure.Figure:
     if y not in ALL_STATS:
         raise ValueError(f"{y=} must be in {ALL_STATS}")
@@ -149,10 +150,15 @@ def plot_from_df(
     fig, axs = plt.subplots(
         ncols=ncols, nrows=nrows, sharey=True, figsize=(6 * ncols, 4 * nrows)
     )
+    lineplot_kwargs = lineplot_kwargs or {}
     for step in df.step.unique():
         row, col = divmod(step, ncols)
         plot = sns.lineplot(
-            data=df[df.step == step], x="d_model", y=y, hue="name", ax=axs[row, col]
+            data=df[df.step == step],
+            x="d_model",
+            y=y,
+            ax=axs[row, col],
+            **lineplot_kwargs,
         )
         # Log-log for positive quantities:
         plot.set(xscale="log")

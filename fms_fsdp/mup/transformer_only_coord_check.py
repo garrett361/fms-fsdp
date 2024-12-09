@@ -102,9 +102,21 @@ if __name__ == "__main__":
             f"(mup[base-{args.min_d_model}{'-simple' if args.mup_simple_scaling_impl else ''}]) "
             + title
         )
+    # Make the embedding curve dotted and the lm head dashed.
+    dashes = {n: (1, 0) for n in df.name.unique()}  # solid line defaults
+    dotted = (1, 2)
+    dashed = (4, 2)
+    dashes["embedding"] = dotted
+    dashes["lm_head"] = dashed
+    lineplot_kwargs = {"hue": "name", "style": "name", "dashes": dashes}
+
     for y in ALL_STATS:
         fig_subdir = fig_dir.joinpath(y)
         fig_subdir.mkdir(parents=True, exist_ok=True)
         plot_from_df(
-            df, y=y, save_path=fig_subdir.joinpath(f"{prefix}_{y}.png"), title=title
+            df,
+            y=y,
+            save_path=fig_subdir.joinpath(f"{prefix}_{y}.png"),
+            title=title,
+            lineplot_kwargs=lineplot_kwargs,
         )

@@ -15,18 +15,17 @@ if __name__ == "__main__":
     parser.add_argument("--train_steps", type=int, default=12)
     parser.add_argument("--vocab_size", type=int, default=128256)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--d_head", type=int, default=64)
-    parser.add_argument("--min_d_model", type=int, default=512)
-    parser.add_argument("--max_d_model", type=int, default=8192)
+    parser.add_argument("--min_d_model", type=int, default=64)
+    parser.add_argument("--max_d_model", type=int, default=4096)
     parser.add_argument("--d_model_step", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_seeds", type=int, default=3)
     parser.add_argument("--mup", action="store_true")
     parser.add_argument("--n_layer", type=int, default=6)
-    parser.add_argument("--head_dim", type=int, default=128)
+    parser.add_argument("--head_dim", type=int, default=64)
     args = parser.parse_args()
 
-    assert args.d_head <= args.min_d_model
+    assert args.head_dim <= args.min_d_model
     d_models = []
     dm = args.min_d_model
     while dm <= args.max_d_model:
@@ -45,7 +44,6 @@ if __name__ == "__main__":
         for d_model in tqdm(d_models, desc="d_model"):
             cfg = mup_config(
                 d_model=d_model,
-                d_head=args.d_head,
                 n_layer=args.n_layer,
                 seed=args.seed,
                 mup=args.mup,

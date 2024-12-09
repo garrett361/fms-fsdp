@@ -10,6 +10,8 @@ import seaborn as sns
 import matplotlib
 
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.modules.mlp import GatedMLP
+from mamba_ssm.modules.mha import MHA
 
 ALL_STATS = ("l2_mean", "std", "mean", "var", "l1_mean")
 
@@ -85,6 +87,27 @@ def get_stats(
                 other_data=other_data,
             )
         )
+        for submodule in block.modules():
+            if isinstance(submodule, GatedMLP):
+                hooks.append(
+                    StatsHook(
+                        submodule,
+                        f"mlp_{idx}",
+                        results_list=results_list,
+                        d_model=d_model,
+                        other_data=other_data,
+                    )
+                )
+            elif isinstance(submodule, MHA):
+                hooks.append(
+                    StatsHook(
+                        submodule,
+                        f"mha_{idx}",
+                        results_list=results_list,
+                        d_model=d_model,
+                        other_data=other_data,
+                    )
+                )
 
     lm_head = model.lm_head
     hooks.append(

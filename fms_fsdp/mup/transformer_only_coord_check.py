@@ -11,12 +11,13 @@ from fms_fsdp.mup import get_transformer, mup_config, get_mup_optim_iter
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seq_len", type=int, default=4096)
+    parser.add_argument("--seq_len", type=int, default=512)
     parser.add_argument("--train_steps", type=int, default=12)
     parser.add_argument("--vocab_size", type=int, default=128256)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--d_head", type=int, default=64)
     parser.add_argument("--min_d_model", type=int, default=512)
-    parser.add_argument("--max_d_model", type=int, default=4096)
+    parser.add_argument("--max_d_model", type=int, default=8192)
     parser.add_argument("--d_model_step", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_seeds", type=int, default=3)
@@ -25,9 +26,15 @@ if __name__ == "__main__":
     parser.add_argument("--head_dim", type=int, default=128)
     args = parser.parse_args()
 
+    assert args.d_head <= args.min_d_model
+    d_models = []
+    dm = args.min_d_model
+    while dm <= args.max_d_model:
+        d_models.append(dm)
+        dm *= 2
+
     results_list: list[dict] = []
     # Train repeatedly on fake data
-    d_models = list(range(args.min_d_model, args.max_d_model + 1, args.d_model_step))
     for seed in tqdm(range(args.seed, args.seed + args.n_seeds), desc="seed"):
         torch.manual_seed(seed)
         inputs_and_labels = torch.randint(
@@ -38,6 +45,7 @@ if __name__ == "__main__":
         for d_model in tqdm(d_models, desc="d_model"):
             cfg = mup_config(
                 d_model=d_model,
+                d_head=args.d_head,
                 n_layer=args.n_layer,
                 seed=args.seed,
                 mup=args.mup,

@@ -30,6 +30,8 @@ parameters:
     value: wandb
   n_layer:
     value: 4
+  head_dim:
+    value: 128
   d_model:
     values:
       - 512

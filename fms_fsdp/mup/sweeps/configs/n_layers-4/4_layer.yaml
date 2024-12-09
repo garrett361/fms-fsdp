@@ -38,6 +38,8 @@ parameters:
       - 2048
       - 4096
       - 8196
+  mup_base_d_model:
+    value: 256
   seq_length:
     value: 512
   batch_size:
@@ -52,8 +54,6 @@ parameters:
     values:
     - true
     - false
-  mup_base_d_model:
-    value: 256
   # LRs: log-spaced
   learning_rate:
     values:

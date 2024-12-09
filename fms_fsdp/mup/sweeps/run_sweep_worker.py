@@ -9,6 +9,10 @@ from fms_fsdp.mup.single_gpu_training_transformer_only import (
 )
 from fms_fsdp.mup import create_wandb_run_id
 
+"""
+Runs a single sweep worker for each available GPU.
+"""
+
 
 if __name__ == "__main__":
     SWEEP_ID = os.environ["SWEEP_ID"]

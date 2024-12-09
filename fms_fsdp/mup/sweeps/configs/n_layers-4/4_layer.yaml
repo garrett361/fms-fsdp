@@ -1,4 +1,4 @@
-name: 4-layer-sweep
+name: 4-layer-sweep-fixed-power
 method: grid
 metric:
   goal: minimize

@@ -1,0 +1,66 @@
+name: 4-layer-sweep
+method: grid
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  file_type:
+    value: auto
+  col_name:
+    value: contents
+  tokenizer_path:
+    value: /datasets/tokenizers/llama3
+  weights:
+    value: 1
+  vocab_size:
+    value: 128256
+  bos_token:
+    value: null
+  eos_token:
+    value: 128000
+  use_torch_compile:
+    value: False
+  data_path:
+    value: /datasets/dolma_v1_7
+  datasets:
+    value: dataset=cc_en_head
+  tracker:
+    value: wandb
+  n_layer:
+    value: 4
+  head_dim:
+    value: 128
+  d_model:
+    values:
+      - 256
+      - 512
+      - 1024
+      - 2048
+      - 4096
+      - 8196
+  seq_length:
+    value: 512
+  batch_size:
+    value: 4
+  acc_steps:
+    value: 16
+  num_steps:
+    value: 2048
+  report_interval:
+    value: 64
+  mup:
+    values:
+    - true
+    - false
+  mup_base_d_model:
+    value: 256
+  # LRs: log-spaced
+  learning_rate:
+    values:
+      - 1.000e-02
+      - 4.642e-03
+      - 2.154e-03
+      - 1.000e-03
+      - 4.642e-04
+      - 2.154e-04
+      - 1.000e-04

@@ -1,0 +1,68 @@
+# Tiny sweep
+name: tiny-n_layer-4
+method: grid
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  file_type:
+    value: auto
+  col_name:
+    value: contents
+  tokenizer_path:
+    value: /datasets/tokenizers/llama3
+  weights:
+    value: 1
+  vocab_size:
+    value: 128256
+  bos_token:
+    value: null
+  eos_token:
+    value: 128000
+  use_torch_compile:
+    value: False
+  data_path:
+    value: /datasets/dolma_v1_7
+  datasets:
+    value: dataset=cc_en_head
+  tracker:
+    value: wandb
+  head_dim:
+    value: 64
+  n_layer:
+    value: 4
+  d_model:
+    values:
+      - 64
+      - 128
+      - 256
+      - 512
+      - 1024
+      - 2048
+      - 4096
+  seq_length:
+    value: 512
+  batch_size:
+    value: 8
+  acc_steps:
+    value: 256
+  num_steps:
+    value: 8192
+  report_interval:
+    value: 64
+  mup:
+    values:
+    - true
+    - false
+  mup_base_d_model:
+    value: 64
+  # LRs: log-spaced between 1e-3 and 1e-5, inclusive. [f"{10**(-n/3):.3e}" for n in range(9, 16)]
+  learning_rate:
+    values:
+    - 1.000e-03
+    - 4.642e-04
+    - 2.154e-04
+    - 1.000e-04
+    - 4.642e-05
+    - 2.154e-05
+    - 1.000e-05

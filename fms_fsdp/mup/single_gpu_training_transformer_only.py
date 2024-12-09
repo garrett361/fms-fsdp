@@ -1,6 +1,7 @@
 import math
 import datetime
 import os
+import random
 import time
 from contextlib import nullcontext
 from dataclasses import asdict
@@ -281,6 +282,7 @@ def setup(cfg: mup_config) -> None:
     # ensure reproducibility
     torch.cuda.manual_seed(cfg.seed)
     torch.manual_seed(cfg.seed)
+    random.seed(cfg.seed)
 
     torch.cuda.set_device(0)
     torch.cuda.empty_cache()

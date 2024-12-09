@@ -19,6 +19,8 @@ class mup_config:
     # mup
     mup: bool = False
     mup_base_d_model: Optional[int] = None
+    # Use very simple scaling strategy
+    mup_simple_scaling_impl: bool = True
     # mup_init_kwargs
     mup_initializer_range: float = 0.02  # Now only used for embedding layer.
     mup_rescale_prenorm_residual: bool = True

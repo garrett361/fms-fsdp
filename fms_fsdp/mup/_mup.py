@@ -31,11 +31,6 @@ def _apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     """
     Apply mup init.
 
-    This is a very minimal implementation: follow the Table 3 impl from 2203.03466, and only rescale
-    the LM head. The nn.Linear layers remain default initialized (uniform distribution, mean=0,
-    var=1/(3*in_features)), whereas a stricter mup implementation would re-init from a normal
-    distribution. This seems close enough, and by not performing any re-inits, we ensure perfect
-    agreement between mup and no-mup in the d_model -> mup_base_d_model limit.
     """
     if not isinstance(model, MambaLMHeadModel):
         warnings.warn(
@@ -44,8 +39,34 @@ def _apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
         return
     mup_cfg_check(cfg)
     # Rescale the lm head weights, preserving init when mup_ratio=1
+    if cfg.mup_simple_scaling_impl:
+        _simple_mup_scaling_impl(model, cfg)
+    else:
+        _custom_mup_init(model, cfg)
+
+
+def _simple_mup_scaling_impl(model: MambaLMHeadModel, cfg: mup_config) -> None:
+    """
+    This is a very minimal implementation where we just approximate the Table 3 impl 2203.03466
+    through direct rescalings of the default mamba-ssm weights.
+
+    The default mamba-ssm init is roughly:
+    1) Normal-init the embedding layer with mean=0, std=.02
+    2) Default-init the nn.Linear layers: uniform distribution, mean=0, std=1/sqrt(3*in_features)
+
+    2) includes the LM head. The Table 3 impl instead requires that the LM head layer have a
+    1/in_features std, and so we multiply its values by (mup_base_d_model / d_model)**0.5, which
+    gives the right scaling while preserving the weights at `mup_base_d_model == d_model`
+
+
+
+    The nn.Linear layers remain default initialized (uniform distribution, mean=0,
+    var=1/(3*in_features)), whereas a stricter mup implementation would re-init from a normal
+    distribution. This seems close enough, and by not performing any re-inits, we ensure perfect
+    agreement between mup and no-mup in the d_model -> mup_base_d_model limit.
+    """
     with torch.no_grad():
-        model.lm_head.weight.mul_(cfg.mup_ratio)
+        model.lm_head.weight.mul_(cfg.mup_ratio**0.5)
 
 
 def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
@@ -66,13 +87,6 @@ def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     - Forces the nn.Embedding layer to have 0.02 init
     - Rescales some Linear weights following some prescription GPT-2 for residuals
     """
-    if not isinstance(model, MambaLMHeadModel):
-        warnings.warn(
-            f"Found model of type {model.__class__.__name__}, not MambaLMHeadModel. No op."
-        )
-        return
-    cfg = model.config
-    mup_cfg_check(cfg)
 
     # MambaLMHeadModel organization:
     # Embedding: MambaLMHeadModel.backbone.embedding

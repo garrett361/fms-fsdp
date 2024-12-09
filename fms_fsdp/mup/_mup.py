@@ -40,8 +40,10 @@ def _apply_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     mup_cfg_check(cfg)
     # Rescale the lm head weights, preserving init when mup_ratio=1
     if cfg.mup_simple_scaling_impl:
+        print("Using simple scaling mup init")
         _simple_mup_scaling_impl(model, cfg)
     else:
+        print("Using custom mup init")
         _custom_mup_init(model, cfg)
 
 

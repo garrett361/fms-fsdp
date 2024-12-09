@@ -106,7 +106,7 @@ def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
             if isinstance(layer, nn.Linear):
                 nn.init.normal_(layer.weight, mean=0.0, std=1 / layer.in_feature**0.5)
 
-    nn.init.normal_(model.lm_head.weight, mean=0.0, std=1 / cfg.d_model)
+    nn.init.normal_(model.lm_head.weight, mean=0.0, std=cfg.mup_ratio / (cfg.d_model))
 
 
 @dataclass

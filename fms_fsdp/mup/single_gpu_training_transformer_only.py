@@ -42,14 +42,6 @@ Minimal single-gpu script for quick training.  No checkpointing.
 """
 
 
-def print_device(*args, **kwargs):
-    device = os.environ["CUDA_VISIBLE_DEVICES"]
-    if len(device) == 1:
-        print(f"[{device=}]: ", *args, **kwargs)
-    else:
-        print(*args, **kwargs)
-
-
 def causal_lm(data_seq, prompt_len=1):
     """
     Perform causal language modeling by right-shifting the input sequence.
@@ -237,22 +229,22 @@ def train(
             tokens_remaining = total_tokens - tokens_seen
             secs_remaining = tokens_remaining / current_throughput
 
-            print_device("step:", batch_idx)
-            print_device("loss:", current_loss)
-            print_device("LR:", current_lr)
-            print_device("tokens seen:", tokens_seen)
-            print_device("gradient norm:", current_gnorm)
-            print_device("reserved memory:", reserved_mem)
-            print_device("allocated memory:", allocated_mem)
-            print_device("current step time:", current_step_time)
-            print_device("overall step time:", overall_step_time)
-            print_device("current token per gpu per sec:", current_throughput)
-            print_device("overall token per gpu per sec:", overall_throughput)
-            print_device(
+            print("step:", batch_idx)
+            print("loss:", current_loss)
+            print("LR:", current_lr)
+            print("tokens seen:", tokens_seen)
+            print("gradient norm:", current_gnorm)
+            print("reserved memory:", reserved_mem)
+            print("allocated memory:", allocated_mem)
+            print("current step time:", current_step_time)
+            print("overall step time:", overall_step_time)
+            print("current token per gpu per sec:", current_throughput)
+            print("overall token per gpu per sec:", overall_throughput)
+            print(
                 "overall token per day:",
                 int(tokens_seen / elapsed_time * 3600 * 24),
             )
-            print_device(
+            print(
                 "approx time remaining (H:M:S):",
                 str(datetime.timedelta(seconds=secs_remaining)),
                 "\n",
@@ -299,12 +291,12 @@ def get_model_optim_scheduler(
     # model = MambaLMHeadModel(mamba_config)
     model = get_transformer(cfg)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print_device(f"\n--> model has {total_params / 1e6} Million params\n")
-    print_device(f"{model=}")
+    print(f"\n--> model has {total_params / 1e6} Million params\n")
+    print(f"{model=}")
 
     # torch compile
     if cfg.use_torch_compile:
-        print_device("--> enabling torch compile...")
+        print("--> enabling torch compile...")
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
@@ -349,15 +341,15 @@ def main(cfg: mup_config) -> None:
     model, optimizer, scheduler = get_model_optim_scheduler(cfg)
 
     # get data loader
-    print_device("Constructing datasets...")
+    print("Constructing datasets...")
     if not cfg.use_dummy_dataset:
         train_loader = get_data_loader(cfg)
     else:
         train_loader = get_dummy_loader(cfg)
-    print_device("Datasets constructed!")
+    print("Datasets constructed!")
 
     # Train
-    print_device(f"Training for {cfg.num_steps} steps")
+    print(f"Training for {cfg.num_steps} steps")
     train(
         cfg,
         model,

@@ -12,7 +12,7 @@ from fms_fsdp.mup import get_transformer, mup_config, get_mup_optim_iter
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seq_len", type=int, default=512)
-    parser.add_argument("--train_steps", type=int, default=12)
+    parser.add_argument("--train_steps", type=int, default=20)
     parser.add_argument("--vocab_size", type=int, default=128256)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--min_d_model", type=int, default=64)
@@ -21,8 +21,10 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_seeds", type=int, default=3)
     parser.add_argument("--mup", action="store_true")
+    parser.add_argument("--mup_simple_scaling_impl", action="store_true")
     parser.add_argument("--n_layer", type=int, default=6)
     parser.add_argument("--head_dim", type=int, default=64)
+
     args = parser.parse_args()
 
     assert args.head_dim <= args.min_d_model
@@ -51,6 +53,7 @@ if __name__ == "__main__":
                 head_dim=args.head_dim,
                 learning_rate=args.lr,
                 vocab_size=args.vocab_size,
+                mup_simple_scaling_impl=args.mup_simple_scaling_impl,
             )
             torch.manual_seed(seed)
             model = get_transformer(cfg)
@@ -86,13 +89,19 @@ if __name__ == "__main__":
     prefix = "trans_coord_check"
     if args.mup:
         prefix += "_mup"
+        if args.mup_simple_scaling_impl:
+            prefix += "_simple"
+
     prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
 
     df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))
 
     title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, d_models={d_models}"
     if args.mup:
-        title = f"(mup[base-{args.min_d_model}]) " + title
+        title = (
+            f"(mup[base-{args.min_d_model}{'-simple' if args.mup_simple_scaling_impl else ''}]) "
+            + title
+        )
     for y in ALL_STATS:
         fig_subdir = fig_dir.joinpath(y)
         fig_subdir.mkdir(parents=True, exist_ok=True)

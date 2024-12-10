@@ -26,7 +26,6 @@ if __name__ == "__main__":
             else:
                 print(*args, **kwargs)
 
-        print = print_device
         with wandb.init(resume="never") as run:
             cfg_dict = wandb.config
             cfg = get_cfg_from_kwargs(**cfg_dict)

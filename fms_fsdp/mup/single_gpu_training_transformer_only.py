@@ -1,5 +1,6 @@
 import math
 import datetime
+import textwrap
 import os
 import random
 import time
@@ -40,6 +41,13 @@ from fms_fsdp.mup import (
 """
 Minimal single-gpu script for quick training.  No checkpointing.
 """
+# Prefix printing if on a non-rank-zero device
+devices = os.environ["CUDA_VISIBLE_DEVICES"]
+if len(devices) == 1 and devices[0] != "0":
+    wrapper = textwrap.TextWrapper(initial_indent=f"[device={devices[0]}]")
+
+    def print(s, *args, **kwargs):
+        print("\n".join(wrapper.wrap(s)), *args, **kwargs)
 
 
 def causal_lm(data_seq, prompt_len=1):

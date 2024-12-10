@@ -24,6 +24,7 @@ if __name__ == "__main__":
     parser.add_argument("--mup_simple_scaling_impl", action="store_true")
     parser.add_argument("--n_layer", type=int, default=6)
     parser.add_argument("--head_dim", type=int, default=64)
+    parser.add_argument("--optim", type=str, choices=("adamw", "sgd"), default="adamw")
 
     args = parser.parse_args()
 
@@ -54,17 +55,26 @@ if __name__ == "__main__":
                 learning_rate=args.lr,
                 vocab_size=args.vocab_size,
                 mup_simple_scaling_impl=args.mup_simple_scaling_impl,
+                optim=args.optim,
             )
             torch.manual_seed(seed)
             model = get_transformer(cfg)
-            optim_kwargs = dict(betas=(0.9, 0.95), weight_decay=0.1)
-            if args.mup:
-                optim_args = get_mup_optim_iter(model=model, cfg=cfg)
 
+            if cfg.optim == "adamw":
+                optim_cls = torch.optim.AdamW
+                optim_kwargs = {"betas": (0.9, 0.95), "weight_decay": 0.1}
+            elif cfg.optim == "sgd":
+                optim_cls = torch.optim.SGD
+                optim_kwargs = {}
             else:
-                optim_args = model.parameters()
-                optim_kwargs["lr"] = args.lr
-            optimizer = torch.optim.AdamW(optim_args, **optim_kwargs)
+                ValueError(f"Unexected {cfg.optim=}")
+            if cfg.mup:
+                assert cfg.mup_base_d_model is not None  # mypy
+                optimizer = optim_cls(get_mup_optim_iter(model, cfg), **optim_kwargs)
+            else:
+                optimizer = optim_cls(
+                    model.parameters(), lr=cfg.learning_rate, **optim_kwargs
+                )
 
             get_stats(
                 model=model,
@@ -92,11 +102,11 @@ if __name__ == "__main__":
         if args.mup_simple_scaling_impl:
             prefix += "_simple"
 
-    prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}"
+    prefix += f"_lr-{args.lr}_seq_len-{args.seq_len}_n_layer-{args.n_layer}_head_dim-{args.head_dim}_optim-{args.optim}"
 
     df.to_feather(fig_dir.joinpath(f"{prefix}.feather"))
 
-    title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, d_models={d_models}"
+    title = f"lr={args.lr}, seq_len={args.seq_len}, n_layer={args.n_layer}, head_dim={args.head_dim}, d_models={d_models}, optim={args.optim}"
     if args.mup:
         title = (
             f"(mup[base-{args.min_d_model}{'-simple' if args.mup_simple_scaling_impl else ''}]) "

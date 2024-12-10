@@ -22,7 +22,9 @@ class mup_config:
     # Use very simple scaling strategy
     mup_simple_scaling_impl: bool = True
     # mup_init_kwargs
-    mup_initializer_range: float = 0.02  # Now only used for embedding layer.
+    mup_initializer_range: float = (
+        0.02  # Sets the std of the embedding layer. Name from mamba-ssm
+    )
     mup_rescale_prenorm_residual: bool = True
     # From Davis; currently unused.
     mup_emb_scale: Optional[float] = None

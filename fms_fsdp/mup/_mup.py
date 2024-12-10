@@ -60,12 +60,9 @@ def _simple_mup_scaling_impl(model: MambaLMHeadModel, cfg: mup_config) -> None:
     1/in_features std, and so we multiply its values by (mup_base_d_model / d_model)**0.5, which
     gives the right scaling while preserving the weights at `mup_base_d_model == d_model`
 
-
-
-    The nn.Linear layers remain default initialized (uniform distribution, mean=0,
-    var=1/(3*in_features)), whereas a stricter mup implementation would re-init from a normal
-    distribution. This seems close enough, and by not performing any re-inits, we ensure perfect
-    agreement between mup and no-mup in the d_model -> mup_base_d_model limit.
+    The nn.Linear layers remain default initialized, whereas a stricter mup implementation would
+    re-init from a normal distribution. This seems close enough, and by not performing any re-inits,
+    we ensure perfect agreement between mup and no-mup in the d_model -> mup_base_d_model limit.
     """
     with torch.no_grad():
         model.lm_head.weight.mul_(cfg.mup_ratio**0.5)
@@ -95,10 +92,7 @@ def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     # Blocks: MambaLMHeadModel.backbone.layers
     # LM Head: MambaLMHeadModel.lm_head
 
-    # The embedding layer is an nn.Embedding which already performs unit-normal init and zeros out
-    # the padding entry, if needed.
-    # reset_parameters() perform unit-normal init and zeros out the padding entry, if applicable.
-    model.backbone.embedding.reset_parameters()
+    nn.init.normal_(model.backbone.embedding.weight, std=cfg.mup_initializer_range)
 
     blocks = model.backbone.layers
     for block in blocks:

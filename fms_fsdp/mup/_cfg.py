@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from fms_fsdp.utils.config_utils import update_config
 from typing import Optional, Any
 
+_OPTIMS = ("adamw", "sgd")
+
 
 @dataclass
 class mup_config:
@@ -90,6 +92,8 @@ class mup_config:
             raise ValueError("Only tracker in {None, 'wandb'} supported")
         if self.d_intermediate is None:
             self.d_intermediate = 4 * self.d_model
+        if self.optim not in _OPTIMS:
+            raise ValueError(f"{self.optim=} must be one of {_OPTIMS}")
 
     @property
     def mup_ratio(self) -> float:

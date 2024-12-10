@@ -176,19 +176,26 @@ def get_mup_optim_iter(
 
     # Create a list with a dict for each individual param. Annoying, but makes switching between
     # equivalent mup impls easier.
+    if cfg.optim == "adamw":
+        input_factor, hidden_factor, output_factor = 1, cfg.mup_ratio, cfg.mup_ratio
+    elif cfg.optim == "sgd":
+        input_factor, hidden_factor, output_factor = 1 / cfg.mup_ratio, 1, cfg.mup_ratio
+    else:
+        ValueError(f"Unexected {cfg.optim=}")
 
     optim_iter = [
-        {"params": [p], "lr": cfg.learning_rate} for p in mup_param_groups.input
+        {"params": [p], "lr": cfg.learning_rate * input_factor}
+        for p in mup_param_groups.input
     ]
     optim_iter.extend(
         [
-            {"params": [p], "lr": cfg.learning_rate * cfg.mup_ratio}
+            {"params": [p], "lr": cfg.learning_rate * hidden_factor}
             for p in mup_param_groups.hidden
         ]
     )
     optim_iter.extend(
         [
-            {"params": [p], "lr": cfg.learning_rate * cfg.mup_ratio}
+            {"params": [p], "lr": cfg.learning_rate * output_factor}
             for p in mup_param_groups.output
         ]
     )

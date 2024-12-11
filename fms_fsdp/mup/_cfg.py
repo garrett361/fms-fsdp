@@ -21,9 +21,9 @@ class mup_config:
     # mup
     mup: bool = False
     mup_base_d_model: Optional[int] = None
-    # Use very simple scaling strategy
+    # Use very simple scaling strategy?
     mup_simple_scaling_impl: bool = False
-    # mup_init_kwargs
+    # mup_init_kwargs, chosen to approximate the mamba-ssm init scheme
     mup_initializer_range: float = (
         0.02  # Sets the std of the embedding layer. Name from mamba-ssm
     )
@@ -32,6 +32,7 @@ class mup_config:
     # Make weight.normal_(std=mup_lin_std_scale/in_features ** 0.5) have same std as the default
     # nn.Linear init.
     mup_lin_std_scale: float = 1 / (3**0.5)
+
     # From Davis; currently unused.
     mup_emb_scale: Optional[float] = (
         None  # Probably the same thing as mup_initializer_range?

@@ -1,0 +1,74 @@
+name: 2-layer-sweep
+method: grid
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  file_type:
+    value: auto
+  col_name:
+    value: contents
+  tokenizer_path:
+    value: /datasets/tokenizers/llama3
+  weights:
+    value: 1
+  vocab_size:
+    value: 128256
+  bos_token:
+    value: null
+  eos_token:
+    value: 128000
+  use_torch_compile:
+    value: False
+  data_path:
+    value: /datasets/dolma_v1_7
+  datasets:
+    value: dataset=cc_en_head
+  tracker:
+    value: wandb
+  n_layer:
+    value: 2
+  head_dim:
+    value: 128
+  d_model:
+    values:
+      - 256
+      - 512
+      - 1024
+      - 2048
+      - 4096
+      - 8196
+  optim:
+    value: adamw
+  mup_base_d_model:
+    value: 256
+  seq_length:
+    value: 512
+  batch_size:
+    value: 4
+  acc_steps:
+    value: 16
+  num_steps:
+    value: 2048
+  report_interval:
+    value: 64
+  mup:
+    values:
+    - true
+    - false
+  mup_simple_scaling_impl:
+    value: false
+  # LRs: log-spaced
+  learning_rate:
+    values:
+    - 0.01
+    - 0.00630957344480193
+    - 0.003981071705534973
+    - 0.0025118864315095794
+    - 0.001584893192461114
+    - 0.001
+    - 0.000630957344480193
+    - 0.00039810717055349735
+    - 0.00025118864315095795
+    - 0.00015848931924611142
+    - 0.0001

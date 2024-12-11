@@ -29,6 +29,9 @@ class mup_config:
     )
     mup_rescale_prenorm_residual: bool = True
     mup_use_d_model_attn_scaling: bool = False
+    # Make weight.normal_(std=mup_lin_std_scale/in_features ** 0.5) have same std as the default
+    # nn.Linear init.
+    mup_lin_std_scale: float = 1 / (3**0.5)
     # From Davis; currently unused.
     mup_emb_scale: Optional[float] = (
         None  # Probably the same thing as mup_initializer_range?

@@ -1,3 +1,4 @@
+import math
 import warnings
 from dataclasses import dataclass
 
@@ -98,9 +99,21 @@ def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
     for block in blocks:
         assert isinstance(block.mixer, MHA), "MHA only for now"
         assert isinstance(block.mlp, GatedMLP), "GatedMLP only for now"
-        for layer in zip(block.mlp.modules(), block.mixer.modules()):
+        for name, layer in block.named_modules():
             if isinstance(layer, nn.Linear):
-                nn.init.normal_(layer.weight, mean=0.0, std=1 / layer.in_feature**0.5)
+                nn.init.normal_(
+                    layer.weight,
+                    mean=0.0,
+                    std=cfg.mup_lin_std_scale / layer.in_feature**0.5,
+                )
+                if hasattr(layer, "bias"):
+                    nn.init.zeros_(layer.bias)
+
+                if name.endswith("out_proj") or name.endswith("fc2.weight"):
+                    with torch.no_grad():
+                        layer.weight /= math.sqrt(
+                            cfg.n_residuals_per_layer * cfg.n_layer
+                        )
 
     nn.init.normal_(model.lm_head.weight, mean=0.0, std=cfg.mup_ratio / (cfg.d_model))
 

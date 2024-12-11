@@ -28,8 +28,11 @@ class mup_config:
         0.02  # Sets the std of the embedding layer. Name from mamba-ssm
     )
     mup_rescale_prenorm_residual: bool = True
+    mup_use_d_model_attn_scaling: bool = False
     # From Davis; currently unused.
-    mup_emb_scale: Optional[float] = None
+    mup_emb_scale: Optional[float] = (
+        None  # Probably the same thing as mup_initializer_range?
+    )
     mup_head_scale: Optional[float] = None
     mup_a_f_skew: Optional[float] = None
     mup_attn_temp: Optional[float] = None
@@ -86,6 +89,8 @@ class mup_config:
                 # Apparently rotary_emb_dim = head_dim // 2 for mamba-ssm:
                 "rotary_emb_dim": self.head_dim // 2,
             }
+            if self.mup and self.mup_use_d_model_attn_scaling:
+                self.attn_cfg["softmax_scale"] = 1 / self.head_dim
         if self.mup and not self.mup_base_d_model:
             raise ValueError("mup can only be specified along with a base_width")
         if self.tracker and self.tracker != "wandb":

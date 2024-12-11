@@ -28,23 +28,15 @@ def test_get_transformer():
     outputs = model(inputs)
 
 
-@pytest.mark.parametrize("optim", ("adamw", "sgd"))
-def test_get_optimizer(optim):
-    cfg = mup_config(
-        d_model=d_model, head_dim=head_dim, n_layer=n_layer, seq_length=seq_length
-    )
-    model = get_transformer(cfg)
-    optimizer = get_optimizer(cfg, model)
-
-
 class TestInit:
-    def test_init(self):
+    @pytest.mark.parametrize("mup", (True, False))
+    def test_init(self, mup):
         cfg = mup_config(
             d_model=d_model,
             head_dim=head_dim,
             n_layer=n_layer,
             seq_length=seq_length,
-            mup=True,
+            mup=mup,
             mup_base_d_model=d_model // 2,
         )
         model = get_transformer(cfg)
@@ -77,7 +69,23 @@ class TestInit:
                     raise e
 
 
-class TestMupOptim:
+class TestOptim:
+    @pytest.mark.parametrize("mup", (True, False))
+    @pytest.mark.parametrize("optim", ("adamw", "sgd"))
+    def test_get_optimizer(self, optim, mup):
+        cfg = mup_config(
+            d_model=d_model,
+            head_dim=head_dim,
+            n_layer=n_layer,
+            seq_length=seq_length,
+            mup=mup,
+            mup_base_d_model=d_model / 100,
+            optim=optim,
+        )
+        model = get_transformer(cfg)
+        optimizer = get_optimizer(cfg, model)
+        assert optimizer is not None
+
     @pytest.mark.parametrize("optim", ("adamw", "sgd"))
     def test_mup_optim_iter(self, optim):
         cfg = mup_config(

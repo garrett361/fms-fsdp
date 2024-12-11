@@ -90,6 +90,9 @@ class mup_config:
                 "rotary_emb_dim": self.head_dim // 2,
             }
             if self.mup and self.mup_use_d_model_attn_scaling:
+                # If we are not scaling up head_dim, but rather just adding more heads, then it
+                # doesn't make much sense to use the ~1/head_dim softmax normalization, but we
+                # include it as a non-default option.
                 self.attn_cfg["softmax_scale"] = 1 / self.head_dim
         if self.mup and not self.mup_base_d_model:
             raise ValueError("mup can only be specified along with a base_width")

@@ -1,4 +1,5 @@
 from fms_fsdp.mup import get_mup_optim_iter, mup_config, get_transformer
+import pytest
 
 import torch
 
@@ -64,7 +65,8 @@ class TestInit:
 
 
 class TestMupOptim:
-    def test_mup_optim_iter(self):
+    @pytest.mark.parametrize("optim", ("adamw", "sgd"))
+    def test_mup_optim_iter(self, optim):
         cfg = mup_config(
             d_model=d_model,
             head_dim=head_dim,
@@ -72,11 +74,13 @@ class TestMupOptim:
             seq_length=seq_length,
             mup=True,
             mup_base_d_model=d_model // 2,
+            optim=optim,
         )
         model = get_transformer(cfg)
         get_mup_optim_iter(model, cfg)
 
-    def test_width_equals_base_limit(self):
+    @pytest.mark.parametrize("optim", ("adamw", "sgd"))
+    def test_width_equals_base_limit(self, optim):
         cfg = mup_config(
             d_model=d_model,
             head_dim=head_dim,
@@ -84,6 +88,7 @@ class TestMupOptim:
             seq_length=seq_length,
             mup=True,
             mup_base_d_model=d_model,
+            optim=optim,
         )
         model = get_transformer(cfg)
         optim_iter = get_mup_optim_iter(model, cfg)

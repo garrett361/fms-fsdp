@@ -27,9 +27,7 @@ from fms_fsdp.utils.dataset_utils import (
     SamplingDataset,
     StreamingDocDataset,
 )
-from fms_fsdp.utils.train_utils import (
-    setup_environ_flags,
-)
+from fms_fsdp.utils.train_utils import setup_environ_flags
 from fms_fsdp.mup import (
     mup_config,
     get_cfg_from_kwargs,

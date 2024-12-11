@@ -226,6 +226,7 @@ def get_transformer(cfg: mup_config, device: str = "cuda") -> MambaLMHeadModel:
 
 
 def get_optimizer(cfg: mup_config, model: MambaLMHeadModel) -> torch.optim.Optimizer:
+    # TODO: @goon - add option to avoid applying weight decay to norm weights (and maybe biases?)
     if cfg.optim == "adamw":
         optim_cls = torch.optim.AdamW
         optim_kwargs = {

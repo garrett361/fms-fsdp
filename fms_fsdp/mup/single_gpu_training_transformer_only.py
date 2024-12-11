@@ -313,10 +313,6 @@ def get_model_optim_scheduler(
     optimizer = get_optimizer(cfg, model)
     print(f"Created {optimizer=}")
 
-    # Override loaded optim hyperparams with the current values
-    for g in optimizer.param_groups:
-        g["initial_lr"] = cfg.learning_rate
-
     # LR schedule  (cosine 0.01 decay)
     warmup_interval = min(1000, cfg.num_steps // 10)
     schedule = lambda x: min(

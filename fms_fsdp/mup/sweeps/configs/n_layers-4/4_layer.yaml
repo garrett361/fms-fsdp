@@ -1,4 +1,4 @@
-name: 4-layer-sweep-fixed-power
+name: 4-layer-sweep
 method: grid
 metric:
   goal: minimize
@@ -38,6 +38,8 @@ parameters:
       - 2048
       - 4096
       - 8196
+  optim:
+    value: adamw
   mup_base_d_model:
     value: 256
   seq_length:
@@ -54,13 +56,19 @@ parameters:
     values:
     - true
     - false
+  mup_simple_scaling_impl:
+    value: false
   # LRs: log-spaced
   learning_rate:
     values:
-      - 1.000e-02
-      - 4.642e-03
-      - 2.154e-03
-      - 1.000e-03
-      - 4.642e-04
-      - 2.154e-04
-      - 1.000e-04
+    - 0.01
+    - 0.00630957344480193
+    - 0.003981071705534973
+    - 0.0025118864315095794
+    - 0.001584893192461114
+    - 0.001
+    - 0.000630957344480193
+    - 0.00039810717055349735
+    - 0.00025118864315095795
+    - 0.00015848931924611142
+    - 0.0001

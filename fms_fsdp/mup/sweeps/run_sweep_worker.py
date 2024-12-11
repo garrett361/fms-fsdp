@@ -19,13 +19,6 @@ if __name__ == "__main__":
     assert os.getenv("WANDB_PROJECT"), "Must set WANDB_PROJECT env var"
 
     def main_wrapper():
-        def print_device(*args, **kwargs):
-            device = os.environ["CUDA_VISIBLE_DEVICES"]
-            if len(device) == 1:
-                print(f"[{device=}]: ", *args, **kwargs)
-            else:
-                print(*args, **kwargs)
-
         with wandb.init(resume="never") as run:
             cfg_dict = wandb.config
             cfg = get_cfg_from_kwargs(**cfg_dict)

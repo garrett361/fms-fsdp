@@ -1,4 +1,5 @@
 import datetime
+import mutiprocessing as mp
 import math
 import os
 import random
@@ -8,7 +9,6 @@ from contextlib import nullcontext
 from dataclasses import asdict
 from functools import cache
 from pathlib import Path
-from typing import Union
 
 import fire
 import torch
@@ -39,7 +39,6 @@ from fms_fsdp.utils.dataset_utils import (
 )
 from fms_fsdp.utils.train_utils import (
     get_policies,
-    train,
 )
 
 
@@ -351,93 +350,91 @@ def get_scheduler(cfg: mup_config, optimizer: optim.Optimizer) -> LambdaLR:
     return scheduler
 
 
-def main(cfg: mup_config) -> None:
-    def setup(cfg, rank) -> None:
-        torch.cuda.manual_seed(cfg.seed)
-        torch.manual_seed(cfg.seed)
-        random.seed(cfg.seed)
-        os.environ["RANK"] = os.environ["LOCAL_RANK"] = str(rank)  # single-node
-        os.environ["WORLD_SIZE"] = str(cfg.world_size)
-        os.environ["MASTER_ADDR"] = "127.0.0.1"
-        os.environ["MASTER_PORT"] = "29500"
-        torch.cuda.set_device(rank)
-        torch.cuda.empty_cache()
-        os.environ["TRITON_CACHE_DIR"] = os.path.join(
-            Path.home(), ".triton", "cache", str(rank)
+def setup(cfg, rank) -> None:
+    torch.cuda.manual_seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    random.seed(cfg.seed)
+    os.environ["RANK"] = os.environ["LOCAL_RANK"] = str(rank)  # single-node
+    os.environ["WORLD_SIZE"] = str(cfg.world_size)
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = "29500"
+    torch.cuda.set_device(rank)
+    torch.cuda.empty_cache()
+    os.environ["TRITON_CACHE_DIR"] = os.path.join(
+        Path.home(), ".triton", "cache", str(rank)
+    )
+    os.environ["TORCH_SHOW_CPP_STACKTRACES"] = str(1)
+    os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
+
+
+def target(cfg: mup_config) -> None:
+    try:
+        dist.init_process_group(backend="nccl")
+
+        # Non-FSDP model
+        model = get_transformer(cfg)
+        block = Block
+        (
+            mixed_precision_policy,
+            wrapping_policy,
+            sharding_strategy_policy,
+            apply_selective_ac,
+            param_init_fn,
+        ) = get_policies(cfg, get_rank(), block)
+        model = FSDP(
+            model,
+            auto_wrap_policy=wrapping_policy,
+            mixed_precision=mixed_precision_policy,
+            sharding_strategy=sharding_strategy_policy,
+            use_orig_params=cfg.use_torch_compile,
+            device_id=torch.cuda.current_device(),
+            limit_all_gathers=True,
+            param_init_fn=param_init_fn,
         )
-        os.environ["TORCH_SHOW_CPP_STACKTRACES"] = str(1)
-        os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
-    def target(cfg: mup_config, rank: int) -> None:
+        # fsdp activation checkpointing
+        if cfg.fsdp_activation_checkpointing:
+            if not get_rank():
+                print("--> applying FSDP activation checkpointing...")
+            apply_selective_ac(model, p=cfg.selective_checkpointing)
+
+        # torch compile
+        if cfg.use_torch_compile:
+            if not get_rank():
+                print("--> enabling torch compile...")
+            # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
+            torch._dynamo.config.accumulated_cache_size_limit = 128
+            model = torch.compile(model)
+
+        optimizer = get_optimizer(cfg, model)
+        scheduler = get_scheduler(cfg, model)
+
+        # get data loader
+        print("Constructing datasets...")
+        if not cfg.use_dummy_dataset:
+            train_loader = get_data_loader(cfg)
+        else:
+            train_loader = get_dummy_loader(cfg)
+        print("Datasets constructed!")
+
+        # Train
+        print(f"Training for {cfg.num_steps} steps")
+        train(
+            cfg,
+            model,
+            train_loader,
+            optimizer,
+            scheduler,
+        )
+    finally:
+        dist.destroy_process_group()
+
+
+def main(cfg: mup_config) -> None:
+    def wrapped_target(cfg: mup_config, rank: int) -> None:
+        # The wandb context only needs to be started on the reporting rank
         setup(cfg, rank)
-        try:
-            dist.init_process_group(backend="nccl")
-
-            # Non-FSDP model
-            model = get_transformer(cfg)
-            block = Block
-            (
-                mixed_precision_policy,
-                wrapping_policy,
-                sharding_strategy_policy,
-                apply_selective_ac,
-                param_init_fn,
-            ) = get_policies(cfg, rank, block)
-            model = FSDP(
-                model,
-                auto_wrap_policy=wrapping_policy,
-                mixed_precision=mixed_precision_policy,
-                sharding_strategy=sharding_strategy_policy,
-                use_orig_params=cfg.use_torch_compile,
-                device_id=torch.cuda.current_device(),
-                limit_all_gathers=True,
-                param_init_fn=param_init_fn,
-            )
-
-            # fsdp activation checkpointing
-            if cfg.fsdp_activation_checkpointing:
-                if rank == 0:
-                    print("--> applying FSDP activation checkpointing...")
-                apply_selective_ac(model, p=cfg.selective_checkpointing)
-
-            # torch compile
-            if cfg.use_torch_compile:
-                if rank == 0:
-                    print("--> enabling torch compile...")
-                # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
-                torch._dynamo.config.accumulated_cache_size_limit = 128
-                model = torch.compile(model)
-
-            optimizer = get_optimizer(cfg, model)
-            scheduler = get_scheduler(cfg, model)
-
-            # get data loader
-            print("Constructing datasets...")
-            if not cfg.use_dummy_dataset:
-                train_loader = get_data_loader(cfg)
-            else:
-                train_loader = get_dummy_loader(cfg)
-            print("Datasets constructed!")
-
-            # Train
-            print(f"Training for {cfg.num_steps} steps")
-            train(
-                cfg,
-                model,
-                train_loader,
-                optimizer,
-                scheduler,
-            )
-        finally:
-            dist.destroy_process_group()
-
-
-if __name__ == "__main__":
-
-    def run(**kwargs) -> None:
-        cfg = get_cfg_from_kwargs(**kwargs)
-        ctx: Union[wandb.Run, nullcontext]
-        if cfg.tracker == "wandb":
+        if cfg.tracker == "wandb" and not rank:
             ctx = wandb.init(
                 project=cfg.tracker_project_name,
                 dir=cfg.tracker_dir,
@@ -451,8 +448,29 @@ if __name__ == "__main__":
             # Important: for some reason there are frequent hangs if we use a non-trivial id in
             # wandb.init when this script is run under mutiprocessing, but it works fine if we
             # just set the name by hand.
-            if cfg.tracker == "wandb":
+            if cfg.tracker == "wandb" and not rank:
                 run.name = cfg.tracker_run_id
-            main(cfg)
+            target(cfg)
+
+    ranks = [int(d) for d in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
+    if cfg.world_size > len(ranks):
+        raise ValueError(f"{cfg.world_size=} requsted, but only {ranks=} available.")
+    if cfg.world_size <= 1:
+        raise ValueError(f"{cfg.world_size=} must be larger than 1.")
+
+    print(f"Launching on {cfg.world_size} ranks")
+    processes = [mp.Process(target=wrapped_target, args=(cfg, rank)) for rank in ranks]
+
+    for p in processes:
+        p.start()
+    for p in processes:
+        p.join()
+
+
+if __name__ == "__main__":
+
+    def run(**kwargs) -> None:
+        cfg = get_cfg_from_kwargs(**kwargs)
+        main(cfg)
 
     fire.Fire(run)

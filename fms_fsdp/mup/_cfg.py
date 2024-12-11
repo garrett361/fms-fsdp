@@ -22,7 +22,7 @@ class mup_config:
     mup: bool = False
     mup_base_d_model: Optional[int] = None
     # Use very simple scaling strategy
-    mup_simple_scaling_impl: bool = True
+    mup_simple_scaling_impl: bool = False
     # mup_init_kwargs
     mup_initializer_range: float = (
         0.02  # Sets the std of the embedding layer. Name from mamba-ssm

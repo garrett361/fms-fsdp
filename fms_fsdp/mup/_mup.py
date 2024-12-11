@@ -17,7 +17,7 @@ Basic mup implementation following Table 3 of 2203.03466. Specific to MambaLMHea
 """
 
 
-def mup_cfg_check(cfg: MambaConfig) -> None:
+def mup_cfg_check(cfg: mup_config) -> None:
     if not cfg.mup:
         raise ValueError("Must have mup=True")
     if cfg.tie_embeddings:

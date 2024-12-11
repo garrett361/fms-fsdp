@@ -169,8 +169,6 @@ def get_mup_optim_iter(
     expected_optims = ("adamw", "sgd")
     if cfg.optim not in expected_optims:
         raise ValueError(f"Expected {cfg.optim=} to be in {expected_optims}")
-    if cfg.optim == "sgd":
-        raise NotImplementedError("Just adamw for now.")
 
     mup_param_groups = _get_mup_param_groups(model)
 

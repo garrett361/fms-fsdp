@@ -1,5 +1,5 @@
 import datetime
-import mutiprocessing as mp
+import multiprocessing as mp
 import math
 import os
 import random
@@ -58,8 +58,8 @@ def get_world_size() -> int:
 
 
 @cache
-def get_device() -> int:
-    return torch.cuda.device(get_local_rank())
+def get_device() -> torch.device:
+    return torch.device(f"cuda:{get_local_rank()}")
 
 
 """
@@ -238,7 +238,7 @@ def train(
         (loss / cfg.acc_steps).backward()
 
         if is_last_mini_batch:
-            gnorm = model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+            gnorm = model.clip_grad_norm_(cfg.grad_clip_thresh)
             gnorm_history.append(gnorm)
             optimizer.step()
             scheduler.step()
@@ -387,7 +387,7 @@ def target(cfg: mup_config) -> None:
             mixed_precision=mixed_precision_policy,
             sharding_strategy=sharding_strategy_policy,
             use_orig_params=cfg.use_torch_compile,
-            device_id=torch.cuda.current_device(),
+            device_id=get_device(),
             limit_all_gathers=True,
             param_init_fn=param_init_fn,
         )
@@ -407,7 +407,7 @@ def target(cfg: mup_config) -> None:
             model = torch.compile(model)
 
         optimizer = get_optimizer(cfg, model)
-        scheduler = get_scheduler(cfg, model)
+        scheduler = get_scheduler(cfg, optimizer)
 
         # get data loader
         print("Constructing datasets...")
@@ -452,14 +452,21 @@ def main(cfg: mup_config) -> None:
                 run.name = cfg.tracker_run_id
             target(cfg)
 
-    ranks = [int(d) for d in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
-    if cfg.world_size > len(ranks):
-        raise ValueError(f"{cfg.world_size=} requsted, but only {ranks=} available.")
+    n_avail_devices = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
+    if cfg.world_size > n_avail_devices:
+        raise ValueError(
+            f"{cfg.world_size=} requsted, but only {n_avail_devices} available."
+        )
     if cfg.world_size <= 1:
         raise ValueError(f"{cfg.world_size=} must be larger than 1.")
 
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(n) for n in range(cfg.world_size))
+
     print(f"Launching on {cfg.world_size} ranks")
-    processes = [mp.Process(target=wrapped_target, args=(cfg, rank)) for rank in ranks]
+    processes = [
+        mp.Process(target=wrapped_target, args=(cfg, rank))
+        for rank in range(cfg.world_size)
+    ]
 
     for p in processes:
         p.start()

@@ -13,7 +13,8 @@ from mamba_ssm.modules.mlp import GatedMLP
 from fms_fsdp.mup._cfg import mup_config
 
 """
-Basic mup implementation following Table 3 of 2203.03466. Specific to MambaLMHeadModel.
+Basic mup implementation following Table 3 of 2203.03466. Would be easy to implement Table 8 or 9,
+too, but Table 3 is slightly easier and is fine as long as there's no weight tying.
 """
 
 

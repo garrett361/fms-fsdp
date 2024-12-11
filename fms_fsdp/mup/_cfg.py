@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
+from typing import Any, Optional, Union
+
 from fms_fsdp.utils.config_utils import update_config
-from typing import Optional, Any
 
 _OPTIMS = ("adamw", "sgd")
 
@@ -57,6 +58,7 @@ class mup_config:
     bol_token: Optional[int] = None
     eol_token: Optional[int] = None
     strip_tokens: str = ""
+    logical_shards: int = 1024
     num_workers: int = 1
 
     # training spec
@@ -71,6 +73,14 @@ class mup_config:
     beta_0: float = 0.9
     beta_1: float = 0.95
     weight_decay: float = 0.1
+
+    # FSDP
+    world_size: int = 1
+    sharding_strategy: str = "fsdp"
+    fsdp_activation_checkpointing: bool = False
+    selective_checkpointing: Union[float, str] = 1  # percentage of blocks to apply ac
+    mixed_precision: bool = True
+    low_cpu_fsdp: bool = False
 
     # logging
     report_interval: int = 100

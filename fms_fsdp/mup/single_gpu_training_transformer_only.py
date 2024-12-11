@@ -299,10 +299,6 @@ def setup(cfg: mup_config) -> None:
 def get_model_optim_scheduler(
     cfg: mup_config,
 ) -> tuple[nn.Module, optim.Optimizer, LambdaLR]:
-    # get model
-    # config_data = get_model_config(cfg.model_variant)
-    # mamba_config = MambaConfig(**config_data)
-    # model = MambaLMHeadModel(mamba_config)
     model = get_transformer(cfg)
 
     # torch compile

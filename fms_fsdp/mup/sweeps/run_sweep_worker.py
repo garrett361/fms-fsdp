@@ -22,6 +22,8 @@ if __name__ == "__main__":
         with wandb.init(resume="never") as run:
             cfg_dict = wandb.config
             cfg = get_cfg_from_kwargs(**cfg_dict)
+            if cfg.world_size != 1:
+                raise ValueError(f"{cfg.world_size=} must equal 1.")
             # Important: for some reason there are frequent hangs if we use a non-trivial id in
             # wandb.init when this script is run under mutiprocessing, but it works fine if we
             # just set the name by hand.

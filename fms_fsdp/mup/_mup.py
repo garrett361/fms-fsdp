@@ -182,19 +182,12 @@ def get_mup_optim_iter(
         ValueError(f"Unexected {cfg.optim=}")
 
     optim_iter = [
-        {"params": [p], "lr": cfg.learning_rate * input_factor}
-        for p in mup_param_groups.input
+        {"params": mup_param_groups.input, "lr": cfg.learning_rate * input_factor}
     ]
-    optim_iter.extend(
-        [
-            {"params": [p], "lr": cfg.learning_rate * hidden_factor}
-            for p in mup_param_groups.hidden
-        ]
+    optim_iter.append(
+        {"params": mup_param_groups.hidden, "lr": cfg.learning_rate * hidden_factor}
     )
-    optim_iter.extend(
-        [
-            {"params": [p], "lr": cfg.learning_rate * output_factor}
-            for p in mup_param_groups.output
-        ]
+    optim_iter.append(
+        {"params": mup_param_groups.output, "lr": cfg.learning_rate * output_factor}
     )
     return optim_iter

@@ -119,11 +119,9 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     output_params: list[nn.Parameter] = []
 
     # Embedding and lm head are in- and output-params respectively
-    emb = model.backbone.embedding
-    input_params_and_biases.append(emb.weight)
+    input_params_and_biases.append(model.backbone.embedding.weight)
 
-    lm_head = model.lm_head
-    output_params.append(lm_head.weight)
+    output_params.append(model.lm_head.weight)
 
     # There is also a final layer norm in the backbone
     for p_name, p in model.backbone.norm_f.named_parameters():

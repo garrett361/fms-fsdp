@@ -1,6 +1,7 @@
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from inspect import signature
 
 import torch
 import torch.nn as nn
@@ -197,3 +198,48 @@ def get_mup_optim_iter(
         {"params": mup_param_groups.output, "lr": cfg.learning_rate * output_factor},
     ]
     return optim_iter
+
+
+def get_mamba_cfg_from_mup_cfg(cfg: mup_config) -> MambaConfig:
+    filtered_kwargs = {
+        k: v for k, v in asdict(cfg).items() if k in signature(MambaConfig).parameters
+    }
+    # Force the model to be transformer-only:
+    filtered_kwargs["attn_layer_idx"] = list(range(cfg.n_layer))
+    return MambaConfig(**filtered_kwargs)
+
+
+def get_transformer(cfg: mup_config, device: str = "cuda") -> MambaLMHeadModel:
+    """
+    Creates a transformer-only model. Applies mup-init, if applicable.
+    """
+    # The mup paper discusses scaling up the attn_cfg.softmax_scale property, but that only seems
+    # relevant if we are scaling up head_dim, which we are not currently doing.
+
+    mamba_cfg = get_mamba_cfg_from_mup_cfg(cfg)
+    print(f"Building model with {mamba_cfg=}")
+    model = MambaLMHeadModel(mamba_cfg, device=device)
+    if cfg.mup:
+        _apply_mup_init(model, cfg)
+    return model
+
+
+def get_optimizer(cfg: mup_config, model: MambaLMHeadModel) -> torch.optim.Optimizer:
+    if cfg.optim == "adamw":
+        optim_cls = torch.optim.AdamW
+        optim_kwargs = {
+            "betas": (cfg.beta_0, cfg.beta_1),
+            "weight_decay": cfg.weight_decay,
+        }
+    elif cfg.optim == "sgd":
+        optim_cls = torch.optim.SGD
+        optim_kwargs = {}
+    else:
+        ValueError(f"Unexected {cfg.optim=}")
+
+    if cfg.mup:
+        assert cfg.mup_base_d_model is not None  # mypy
+        optimizer = optim_cls(get_mup_optim_iter(model, cfg), **optim_kwargs)
+    else:
+        optimizer = optim_cls(model.parameters(), lr=cfg.learning_rate, **optim_kwargs)
+    return optimizer

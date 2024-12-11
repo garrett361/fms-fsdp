@@ -7,7 +7,7 @@ import torch
 from tqdm import tqdm
 
 from coord_check import ALL_STATS, get_stats, plot_from_df
-from fms_fsdp.mup import get_transformer, mup_config, get_mup_optim_iter
+from fms_fsdp.mup import get_transformer, mup_config
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -59,22 +59,7 @@ if __name__ == "__main__":
             )
             torch.manual_seed(seed)
             model = get_transformer(cfg)
-
-            if cfg.optim == "adamw":
-                optim_cls = torch.optim.AdamW
-                optim_kwargs = {"betas": (0.9, 0.95), "weight_decay": 0.1}
-            elif cfg.optim == "sgd":
-                optim_cls = torch.optim.SGD
-                optim_kwargs = {}
-            else:
-                ValueError(f"Unexected {cfg.optim=}")
-            if cfg.mup:
-                assert cfg.mup_base_d_model is not None  # mypy
-                optimizer = optim_cls(get_mup_optim_iter(model, cfg), **optim_kwargs)
-            else:
-                optimizer = optim_cls(
-                    model.parameters(), lr=cfg.learning_rate, **optim_kwargs
-                )
+            optimizer = get_optimizer(cfg, model)
 
             get_stats(
                 model=model,

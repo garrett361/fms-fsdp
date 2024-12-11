@@ -1,7 +1,8 @@
-from fms_fsdp.mup import get_mup_optim_iter, mup_config, get_transformer
+from fms_fsdp.mup import get_mup_optim_iter, mup_config, get_transformer, get_optimizer
 import pytest
 
 import torch
+
 
 num_heads = 2
 n_layer = 2
@@ -27,6 +28,15 @@ def test_get_transformer():
     outputs = model(inputs)
 
 
+@pytest.mark.parametrize("optim", ("adamw", "sgd"))
+def test_get_optimizer(optim):
+    cfg = mup_config(
+        d_model=d_model, head_dim=head_dim, n_layer=n_layer, seq_length=seq_length
+    )
+    model = get_transformer(cfg)
+    optimizer = get_optimizer(cfg, model)
+
+
 class TestInit:
     def test_init(self):
         cfg = mup_config(
@@ -40,12 +50,15 @@ class TestInit:
         model = get_transformer(cfg)
 
     def test_mup_init_equivalence(self):
-        # mup and non-mup init should coincide when `d_model == mup_base_d_model`
+        # mup and non-mup init should coincide when `d_model == mup_base_d_model` and
+        # mup_simple_scaling_impl=True
         kwargs = dict(
             d_model=d_model, head_dim=head_dim, n_layer=n_layer, seq_length=seq_length
         )
         cfg = mup_config(mup=False, **kwargs)
-        mup_cfg = mup_config(mup=True, mup_base_d_model=d_model, **kwargs)
+        mup_cfg = mup_config(
+            mup=True, mup_simple_scaling_impl=True, mup_base_d_model=d_model, **kwargs
+        )
 
         torch.manual_seed(cfg.seed)
         model = get_transformer(cfg)

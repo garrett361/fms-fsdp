@@ -67,6 +67,9 @@ class mup_config:
     grad_clip_thresh: float = 1.0
     seed: int = 2023
     optim: str = "adamw"
+    beta_0: float = 0.9
+    beta_1: float = 0.95
+    weight_decay: float = 0.1
 
     # logging
     report_interval: int = 100

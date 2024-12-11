@@ -33,8 +33,8 @@ from fms_fsdp.utils.train_utils import (
 from fms_fsdp.mup import (
     mup_config,
     get_cfg_from_kwargs,
-    get_mup_optim_iter,
     get_transformer,
+    get_optimizer,
 )
 
 
@@ -310,20 +310,7 @@ def get_model_optim_scheduler(
         model = torch.compile(model)
 
     # Model init and Optimizer
-    if cfg.optim == "adamw":
-        optim_cls = optim.AdamW
-        optim_kwargs = {"betas": (0.9, 0.95), "weight_decay": 0.1}
-    elif cfg.optim == "sgd":
-        optim_cls = optim.SGD
-        optim_kwargs = {}
-    else:
-        ValueError(f"Unexected {cfg.optim=}")
-    if cfg.mup:
-        assert cfg.mup_base_d_model is not None  # mypy
-        optimizer = optim_cls(get_mup_optim_iter(model, cfg), **optim_kwargs)
-    else:
-        optimizer = optim_cls(model.parameters(), lr=cfg.learning_rate, **optim_kwargs)
-
+    optimizer = get_optimizer(cfg, model)
     print(f"Created {optimizer=}")
 
     # Override loaded optim hyperparams with the current values

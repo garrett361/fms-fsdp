@@ -90,7 +90,7 @@ class mup_config:
     tracker_run_id: Optional[str] = None  # run id, for job resume purpose
 
     # compile
-    use_torch_compile: bool = True
+    use_torch_compile: bool = False
 
     def __post_init__(self) -> None:
         num_heads, remainder = divmod(self.d_model, self.head_dim)

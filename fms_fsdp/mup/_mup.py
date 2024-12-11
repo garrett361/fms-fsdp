@@ -120,7 +120,6 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
 
     # Embedding and lm head are in- and output-params respectively
     emb = model.backbone.embedding
-    # I think the fan_in for the embedding weight is 1?
     input_params_and_biases.append(emb.weight)
 
     lm_head = model.lm_head

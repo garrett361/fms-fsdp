@@ -104,9 +104,9 @@ def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
                 nn.init.normal_(
                     layer.weight,
                     mean=0.0,
-                    std=cfg.mup_lin_std_scale / layer.in_feature**0.5,
+                    std=cfg.mup_lin_std_scale / (layer.in_features**0.5),
                 )
-                if hasattr(layer, "bias"):
+                if layer.bias is not None:
                     nn.init.zeros_(layer.bias)
 
                 if name.endswith("out_proj") or name.endswith("fc2.weight"):

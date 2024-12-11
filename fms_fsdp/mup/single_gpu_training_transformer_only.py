@@ -41,13 +41,6 @@ from fms_fsdp.mup import (
 """
 Minimal single-gpu script for quick training.  No checkpointing.
 """
-# Prefix printing if on a non-rank-zero device
-devices = os.environ["CUDA_VISIBLE_DEVICES"]
-if len(devices) == 1 and devices[0] != "0":
-    wrapper = textwrap.TextWrapper(initial_indent=f"[device={devices[0]}]")
-
-    def print(s, *args, **kwargs):
-        print("\n".join(wrapper.wrap(s)), *args, **kwargs)
 
 
 def causal_lm(data_seq, prompt_len=1):
@@ -170,6 +163,19 @@ def train(
     optimizer,
     scheduler,
 ):
+    # Prefix printing with the device number
+    device = os.environ["CUDA_VISIBLE_DEVICES"]
+    assert len(device) == 1, f"{device=}"
+    wrapper = textwrap.TextWrapper(initial_indent=f"[device={device}] ")
+
+    def print_device(s, *args, **kwargs):
+        print("\n".join(wrapper.wrap(s)), *args, **kwargs)
+
+    print_device(f"Training for {cfg.num_steps} steps")
+    print_device(
+        f"\n--> model has {sum(p.numel() for p in model.parameters() if p.requires_grad):.2e} Million params\n"
+    )
+    print_device(f"{model=}")
     model.train()
 
     start = time.time()
@@ -237,22 +243,22 @@ def train(
             tokens_remaining = total_tokens - tokens_seen
             secs_remaining = tokens_remaining / current_throughput
 
-            print("step:", batch_idx)
-            print("loss:", current_loss)
-            print("LR:", current_lr)
-            print("tokens seen:", tokens_seen)
-            print("gradient norm:", current_gnorm)
-            print("reserved memory:", reserved_mem)
-            print("allocated memory:", allocated_mem)
-            print("current step time:", current_step_time)
-            print("overall step time:", overall_step_time)
-            print("current token per gpu per sec:", current_throughput)
-            print("overall token per gpu per sec:", overall_throughput)
-            print(
+            print_device("step:", batch_idx)
+            print_device("loss:", current_loss)
+            print_device("LR:", current_lr)
+            print_device("tokens seen:", tokens_seen)
+            print_device("gradient norm:", current_gnorm)
+            print_device("reserved memory:", reserved_mem)
+            print_device("allocated memory:", allocated_mem)
+            print_device("current step time:", current_step_time)
+            print_device("overall step time:", overall_step_time)
+            print_device("current token per gpu per sec:", current_throughput)
+            print_device("overall token per gpu per sec:", overall_throughput)
+            print_device(
                 "overall token per day:",
                 int(tokens_seen / elapsed_time * 3600 * 24),
             )
-            print(
+            print_device(
                 "approx time remaining (H:M:S):",
                 str(datetime.timedelta(seconds=secs_remaining)),
                 "\n",
@@ -298,9 +304,6 @@ def get_model_optim_scheduler(
     # mamba_config = MambaConfig(**config_data)
     # model = MambaLMHeadModel(mamba_config)
     model = get_transformer(cfg)
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"\n--> model has {total_params / 1e6} Million params\n")
-    print(f"{model=}")
 
     # torch compile
     if cfg.use_torch_compile:
@@ -340,7 +343,6 @@ def main(cfg: mup_config) -> None:
     print("Datasets constructed!")
 
     # Train
-    print(f"Training for {cfg.num_steps} steps")
     train(
         cfg,
         model,

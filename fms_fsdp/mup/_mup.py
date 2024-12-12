@@ -128,6 +128,9 @@ class MupParamGroups:
 
 
 def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
+    # NOTE: @goon - For this to work properly with a FSDP-wrapped module, it's crucial to have
+    # use_orig_params=True, otherwise the param counting check below fails (because params are
+    # grouped into flat params)
     total_params = len(list(model.parameters()))
     print(f"{total_params=}", flush=True)
     for idx, (named_param, _) in enumerate(model.named_parameters()):

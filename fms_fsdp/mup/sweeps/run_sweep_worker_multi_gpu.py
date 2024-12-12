@@ -8,7 +8,6 @@ from fms_fsdp.mup.multi_gpu_training_transformer_only import (
     main,
     setup,
     get_world_size,
-    print_rank,
 )
 from fms_fsdp.mup import get_cfg_from_kwargs
 
@@ -42,7 +41,7 @@ if __name__ == "__main__":
                         f"Mismatch: {cfg.world_size=} while {get_world_size()=}"
                     )
                 setup(cfg, rank)
-                print_rank(f"Setup done on {rank=}")
+                print(f"Setup done on {rank=}, {os.environ['RANK']=}")
                 # Important: for some reason there are frequent hangs if we use a non-trivial id in
                 # wandb.init when this script is run under mutiprocessing, but it works fine if we
                 # just set the name by hand.

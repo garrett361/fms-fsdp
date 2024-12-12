@@ -129,9 +129,9 @@ class MupParamGroups:
 
 def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     total_params = len(list(model.parameters()))
-    print(f"{total_params=}")
-    for idx, (named_param, _) in enumerate(model.parameters()):
-        print(f"{idx=}, {named_param=}")
+    print(f"{total_params=}", flush=True)
+    for idx, (named_param, _) in enumerate(model.named_parameters()):
+        print(f"{idx=}, {named_param=}", flush=True)
 
     # Nomenclature of 2203.03466
     input_params_and_biases: list[nn.Parameter] = []

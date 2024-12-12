@@ -7,6 +7,9 @@ import wandb
 from fms_fsdp.mup.multi_gpu_training_transformer_only import main, setup, get_world_size
 from fms_fsdp.mup import get_cfg_from_kwargs
 
+"""
+Runs multi-gpu sweep workers within a node via nested mutiprocessing.
+"""
 
 if __name__ == "__main__":
     SWEEP_ID = os.environ["SWEEP_ID"]
@@ -14,7 +17,7 @@ if __name__ == "__main__":
     world_size = int(os.getenv("WORLD_SIZE"))
     assert world_size is not None, "Must set WORLD_SIZE env var"
     n_avail_devices = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
-    n_proc_groups, remainder = divmod(world_size, n_avail_devices)
+    n_proc_groups, remainder = divmod(n_avail_devices, world_size)
     if remainder:
         raise ValueError(f"{world_size} must perfectly divide the {n_avail_devices=}")
 

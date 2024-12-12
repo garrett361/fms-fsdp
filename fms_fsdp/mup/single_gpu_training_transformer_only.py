@@ -346,27 +346,31 @@ def main(cfg: mup_config) -> None:
     )
 
 
+def main_wrapper(cfg: mup_config) -> None:
+    ctx: Union[wandb.Run, nullcontext]
+    if cfg.tracker == "wandb":
+        ctx = wandb.init(
+            project=cfg.tracker_project_name,
+            dir=cfg.tracker_dir,
+            resume="never",
+            id=None,
+            config=asdict(cfg),
+        )
+    else:
+        ctx = nullcontext()
+    with ctx as run:
+        # Important: for some reason there are frequent hangs if we use a non-trivial id in
+        # wandb.init when this script is run under mutiprocessing, but it works fine if we
+        # just set the name by hand.
+        if cfg.tracker == "wandb":
+            run.name = cfg.tracker_run_id
+        main(cfg)
+
+
 if __name__ == "__main__":
 
     def run(**kwargs) -> None:
         cfg = get_cfg_from_kwargs(**kwargs)
-        ctx: Union[wandb.Run, nullcontext]
-        if cfg.tracker == "wandb":
-            ctx = wandb.init(
-                project=cfg.tracker_project_name,
-                dir=cfg.tracker_dir,
-                resume="never",
-                id=None,
-                config=asdict(cfg),
-            )
-        else:
-            ctx = nullcontext()
-        with ctx as run:
-            # Important: for some reason there are frequent hangs if we use a non-trivial id in
-            # wandb.init when this script is run under mutiprocessing, but it works fine if we
-            # just set the name by hand.
-            if cfg.tracker == "wandb":
-                run.name = cfg.tracker_run_id
-            main(cfg)
+        main_wrapper(cfg)
 
     fire.Fire(run)

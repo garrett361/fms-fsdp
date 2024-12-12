@@ -141,7 +141,7 @@ def create_wandb_run_id(cfg: mup_config) -> str:
         + ("_" if user_run_id else "")
         + f"n_layer-{cfg.n_layer}_d_model-{cfg.d_model}_lr-{cfg.learning_rate}"
         + f"_bsz-{cfg.batch_size}_acc-{cfg.acc_steps}_seq_len-{cfg.seq_length}_steps"
-        + f"-{cfg.num_steps}"
+        + f"-{cfg.num_steps}_world_size-{cfg.world_size}"
     )
     if cfg.mup:
         run_id += f"_mup[base-{cfg.mup_base_d_model}]"

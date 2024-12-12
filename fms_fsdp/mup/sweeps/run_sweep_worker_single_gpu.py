@@ -4,7 +4,7 @@ import os
 import wandb
 
 from fms_fsdp.mup.single_gpu_training_transformer_only import (
-    main,
+    target,
     get_cfg_from_kwargs,
 )
 from fms_fsdp.mup import create_wandb_run_id
@@ -29,7 +29,7 @@ if __name__ == "__main__":
             # just set the name by hand.
             run_name = create_wandb_run_id(cfg)
             run.name = run_name
-            main(cfg)
+            target(cfg)
 
     def target(device_idx: str):
         os.environ["CUDA_VISIBLE_DEVICES"] = device_idx

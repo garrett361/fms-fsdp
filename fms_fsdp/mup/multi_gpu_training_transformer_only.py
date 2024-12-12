@@ -367,7 +367,7 @@ def setup(cfg, rank) -> None:
     os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
-def target(cfg: mup_config) -> None:
+def main(cfg: mup_config) -> None:
     try:
         dist.init_process_group(backend="nccl")
 
@@ -430,8 +430,8 @@ def target(cfg: mup_config) -> None:
         dist.destroy_process_group()
 
 
-def main(cfg: mup_config) -> None:
-    def wrapped_target(cfg: mup_config, rank: int) -> None:
+def main_wrapper(cfg: mup_config) -> None:
+    def target(cfg: mup_config, rank: int) -> None:
         # The wandb context only needs to be started on the reporting rank
         setup(cfg, rank)
         if cfg.tracker == "wandb" and not rank:
@@ -450,7 +450,7 @@ def main(cfg: mup_config) -> None:
             # just set the name by hand.
             if cfg.tracker == "wandb" and not rank:
                 run.name = cfg.tracker_run_id
-            target(cfg)
+            main(cfg)
 
     n_avail_devices = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
     if cfg.world_size > n_avail_devices:
@@ -464,8 +464,7 @@ def main(cfg: mup_config) -> None:
 
     print(f"Launching on {cfg.world_size} ranks")
     processes = [
-        mp.Process(target=wrapped_target, args=(cfg, rank))
-        for rank in range(cfg.world_size)
+        mp.Process(target=target, args=(cfg, rank)) for rank in range(cfg.world_size)
     ]
 
     for p in processes:
@@ -478,6 +477,6 @@ if __name__ == "__main__":
 
     def run(**kwargs) -> None:
         cfg = get_cfg_from_kwargs(**kwargs)
-        main(cfg)
+        main_wrapper(cfg)
 
     fire.Fire(run)

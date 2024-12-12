@@ -159,6 +159,11 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
                     input_params_and_biases.append(p)
 
     total_params = len(list(model.parameters()))
+    print(f"{model=}")
+    print(f"{list(model.parameters())=}")
+    print(f"{input_params_and_biases=}")
+    print(f"{hidden_params=}")
+    print(f"{output_params=}")
     params_accounted_for = (
         len(input_params_and_biases) + len(hidden_params) + len(output_params)
     )

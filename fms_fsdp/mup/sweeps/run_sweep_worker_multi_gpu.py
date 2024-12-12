@@ -4,7 +4,12 @@ import os
 
 import wandb
 
-from fms_fsdp.mup.multi_gpu_training_transformer_only import main, setup, get_world_size
+from fms_fsdp.mup.multi_gpu_training_transformer_only import (
+    main,
+    setup,
+    get_world_size,
+    print_rank,
+)
 from fms_fsdp.mup import get_cfg_from_kwargs
 
 """
@@ -29,7 +34,7 @@ if __name__ == "__main__":
     def main_wrapper() -> None:
         def target(rank: int) -> None:
             # The wandb context only needs to be started on the reporting rank
-            with wandb.init(resume="never") as run:
+            with wandb.init() as run:
                 cfg_dict = wandb.config
                 cfg = get_cfg_from_kwargs(**cfg_dict)
                 if int(cfg.world_size) != get_world_size():
@@ -37,6 +42,7 @@ if __name__ == "__main__":
                         f"Mismatch: {cfg.world_size=} while {get_world_size()=}"
                     )
                 setup(cfg, rank)
+                print_rank(f"Setup done on {rank=}")
                 # Important: for some reason there are frequent hangs if we use a non-trivial id in
                 # wandb.init when this script is run under mutiprocessing, but it works fine if we
                 # just set the name by hand.

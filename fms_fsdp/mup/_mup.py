@@ -150,7 +150,7 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     # Everything else is blocks
     blocks = model.backbone.layers
     for block in blocks:
-        for name, module in block.named_modules():
+        for module in block.modules():
             if isinstance(module, nn.Linear):
                 hidden_params.append(module.weight)
                 if module.bias is not None:
@@ -165,6 +165,7 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     params_accounted_for = (
         len(input_params_and_biases) + len(hidden_params) + len(output_params)
     )
+    total_params = len(list(model.parameters()))
     assert (
         total_params == params_accounted_for
     ), f"{total_params=}, {params_accounted_for}"

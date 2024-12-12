@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     proc_group_ranks = torch.arange(n_avail_devices).reshape(n_proc_groups, -1)
     cuda_vis_devices_list = [
-        [str(r) for r in ranks.tolist()] for ranks in proc_group_ranks
+        ",".join(str(r) for r in ranks.tolist()) for ranks in proc_group_ranks
     ]
 
     def main_wrapper() -> None:

@@ -11,7 +11,7 @@ from fms_fsdp.mup import get_cfg_from_kwargs
 if __name__ == "__main__":
     SWEEP_ID = os.environ["SWEEP_ID"]
     assert os.getenv("WANDB_PROJECT"), "Must set WANDB_PROJECT env var"
-    world_size = os.getenv("WORLD_SIZE")
+    world_size = int(os.getenv("WORLD_SIZE"))
     assert world_size is not None, "Must set WORLD_SIZE env var"
     n_avail_devices = len(os.environ["CUDA_VISIBLE_DEVICES"].split(","))
     n_proc_groups, remainder = divmod(world_size, n_avail_devices)
@@ -29,6 +29,10 @@ if __name__ == "__main__":
             with wandb.init(resume="never") as run:
                 cfg_dict = wandb.config
                 cfg = get_cfg_from_kwargs(**cfg_dict)
+                if int(cfg.world_size) != get_world_size():
+                    raise ValueError(
+                        f"Mismatch: {cfg.world_size=} while {get_world_size()=}"
+                    )
                 setup(cfg, rank)
                 # Important: for some reason there are frequent hangs if we use a non-trivial id in
                 # wandb.init when this script is run under mutiprocessing, but it works fine if we

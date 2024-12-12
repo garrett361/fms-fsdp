@@ -32,7 +32,8 @@ if __name__ == "__main__":
 
     def main_wrapper() -> None:
         def target(rank: int) -> None:
-            # The wandb context only needs to be started on the reporting rank
+            # Need to wandb.init on all ranks, so they all have access to the config, though only
+            # rank==0 will report.
             with wandb.init() as run:
                 cfg_dict = wandb.config
                 cfg = get_cfg_from_kwargs(**cfg_dict)
@@ -46,7 +47,7 @@ if __name__ == "__main__":
                 # wandb.init when this script is run under mutiprocessing, but it works fine if we
                 # just set the name by hand.
                 if cfg.tracker == "wandb" and not rank:
-                    run.name = cfg.tracker_run_id
+                    run.name = cfg.tracker_run_id + f"_rank-{rank}"
                 main(cfg)
 
         processes = [

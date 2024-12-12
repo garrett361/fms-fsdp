@@ -379,17 +379,15 @@ def main(cfg: mup_config) -> None:
             wrapping_policy,
             sharding_strategy_policy,
             apply_selective_ac,
-            param_init_fn,
+            _,
         ) = get_policies(cfg, get_rank(), block)
         model = FSDP(
             model,
             auto_wrap_policy=wrapping_policy,
             mixed_precision=mixed_precision_policy,
             sharding_strategy=sharding_strategy_policy,
-            use_orig_params=cfg.use_torch_compile,
+            use_orig_params=True,
             device_id=get_device(),
-            limit_all_gathers=True,
-            param_init_fn=param_init_fn,
         )
 
         # fsdp activation checkpointing

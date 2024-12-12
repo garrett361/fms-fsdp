@@ -128,6 +128,11 @@ class MupParamGroups:
 
 
 def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
+    total_params = len(list(model.parameters()))
+    print(f"{total_params=}")
+    for idx, (named_param, _) in enumerate(model.parameters()):
+        print(f"{idx=}, {named_param=}")
+
     # Nomenclature of 2203.03466
     input_params_and_biases: list[nn.Parameter] = []
     hidden_params: list[nn.Parameter] = []
@@ -159,7 +164,6 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
                     assert len(p.shape) == 1, f"{p_name=}, {len(p.shape)=}"
                     input_params_and_biases.append(p)
 
-    total_params = len(list(model.parameters()))
     print(f"{model=}")
     print(f"{len(list(model.parameters()))=}")
     print(f"{len(input_params_and_biases)=}")

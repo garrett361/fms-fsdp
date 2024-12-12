@@ -1,15 +1,14 @@
 import multiprocessing as mp
-import torch
 import os
 
+import torch
 import wandb
-
+from fms_fsdp.mup import create_wandb_run_id, get_cfg_from_kwargs
 from fms_fsdp.mup.multi_gpu_training_transformer_only import (
+    get_world_size,
     main,
     setup,
-    get_world_size,
 )
-from fms_fsdp.mup import get_cfg_from_kwargs
 
 """
 Runs multi-gpu sweep workers within a node via nested mutiprocessing.
@@ -46,8 +45,8 @@ if __name__ == "__main__":
                 # Important: for some reason there are frequent hangs if we use a non-trivial id in
                 # wandb.init when this script is run under mutiprocessing, but it works fine if we
                 # just set the name by hand.
-                if cfg.tracker == "wandb" and not rank:
-                    run.name = cfg.tracker_run_id + f"_rank-{rank}"
+                run_name = create_wandb_run_id(cfg)
+                run.name = run_name + f"_rank-{rank}"
                 main(cfg)
 
         processes = [

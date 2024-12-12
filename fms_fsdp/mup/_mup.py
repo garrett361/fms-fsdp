@@ -130,11 +130,7 @@ class MupParamGroups:
 def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     # NOTE: @goon - For this to work properly with a FSDP-wrapped module, it's crucial to have
     # use_orig_params=True, otherwise the param counting check below fails (because params are
-    # grouped into flat params)
-    total_params = len(list(model.parameters()))
-    print(f"{total_params=}", flush=True)
-    for idx, (named_param, _) in enumerate(model.named_parameters()):
-        print(f"{idx=}, {named_param=}", flush=True)
+    # grouped into flat params).
 
     # Nomenclature of 2203.03466
     input_params_and_biases: list[nn.Parameter] = []
@@ -155,7 +151,6 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
     blocks = model.backbone.layers
     for block in blocks:
         for name, module in block.named_modules():
-            print(f"{name=}")
             if isinstance(module, nn.Linear):
                 hidden_params.append(module.weight)
                 if module.bias is not None:
@@ -167,11 +162,6 @@ def _get_mup_param_groups(model: MambaLMHeadModel) -> MupParamGroups:
                     assert len(p.shape) == 1, f"{p_name=}, {len(p.shape)=}"
                     input_params_and_biases.append(p)
 
-    print(f"{model=}")
-    print(f"{len(list(model.parameters()))=}")
-    print(f"{len(input_params_and_biases)=}")
-    print(f"{len(hidden_params)=}")
-    print(f"{len(output_params)=}")
     params_accounted_for = (
         len(input_params_and_biases) + len(hidden_params) + len(output_params)
     )

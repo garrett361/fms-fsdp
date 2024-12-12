@@ -41,7 +41,6 @@ if __name__ == "__main__":
                         f"Mismatch: {cfg.world_size=} while {get_world_size()=}"
                     )
                 setup(cfg, rank)
-                print(f"Setup done on {rank=}, {os.environ['RANK']=}")
                 # Important: for some reason there are frequent hangs if we use a non-trivial id in
                 # wandb.init when this script is run under mutiprocessing, but it works fine if we
                 # just set the name by hand.

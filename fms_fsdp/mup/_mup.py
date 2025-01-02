@@ -68,7 +68,7 @@ def _simple_mup_scaling_impl(model: MambaLMHeadModel, cfg: mup_config) -> None:
     we ensure perfect agreement between mup and no-mup in the d_model -> mup_base_d_model limit.
     """
     with torch.no_grad():
-        model.lm_head.weight.mul_(cfg.mup_ratio**0.5)
+        model.lm_head.weight.mul_(cfg.mup_ratio ** (cfg.mup_s / 2))
 
 
 def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
@@ -117,7 +117,9 @@ def _custom_mup_init(model: MambaLMHeadModel, cfg: mup_config) -> None:
                             cfg.n_residuals_per_layer * cfg.n_layer
                         )
 
-    nn.init.normal_(model.lm_head.weight, mean=0.0, std=cfg.mup_ratio / (cfg.d_model))
+    nn.init.normal_(
+        model.lm_head.weight, mean=0.0, std=cfg.mup_ratio**cfg.mup_s / (cfg.d_model)
+    )
 
 
 @dataclass
@@ -191,9 +193,17 @@ def get_mup_optim_iter(
     # Create a list with a dict for each individual param. Annoying, but makes switching between
     # equivalent mup impls easier.
     if cfg.optim == "adamw":
-        input_factor, hidden_factor, output_factor = 1, cfg.mup_ratio, cfg.mup_ratio
+        input_factor, hidden_factor, output_factor = (
+            cfg.mup_ratio ** ((1 - cfg.mup_s) / 2),
+            cfg.mup_ratio ** ((3 - cfg.mup_s) / 2),
+            cfg.mup_ratio,
+        )
     elif cfg.optim == "sgd":
-        input_factor, hidden_factor, output_factor = 1 / cfg.mup_ratio, 1, cfg.mup_ratio
+        input_factor, hidden_factor, output_factor = (
+            cfg.mup_ratio ** (-cfg.mup_s),
+            cfg.mup_ratio ** (1.0 - cfg.mup_s),
+            cfg.mup_ratio,
+        )
     else:
         ValueError(f"Unexected {cfg.optim=}")
 

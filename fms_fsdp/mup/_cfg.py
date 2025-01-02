@@ -8,6 +8,7 @@ _OPTIMS = ("adamw", "sgd")
 
 @dataclass
 class mup_config:
+    # TODO: @goon - just inherit from MambaConfig?
     # model
     d_model: int = 512
     d_intermediate: Optional[int] = None  # Will default to 4*width if not provided
@@ -22,6 +23,8 @@ class mup_config:
     # mup
     mup: bool = False
     mup_base_d_model: Optional[int] = None
+    # The s-parameter from 2210.04909. s=1.0 is what muTransfer uses
+    mup_s: float = 1.0
     # Use very simple scaling strategy?
     mup_simple_scaling_impl: bool = False
     # mup_init_kwargs, chosen to approximate the mamba-ssm init scheme

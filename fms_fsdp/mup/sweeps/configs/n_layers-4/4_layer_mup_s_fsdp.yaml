@@ -1,0 +1,86 @@
+name: 4-layer-sweep-mup-s
+method: grid
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  file_type:
+    value: auto
+  col_name:
+    value: contents
+  tokenizer_path:
+    value: /datasets/tokenizers/llama3
+  weights:
+    value: 1
+  vocab_size:
+    value: 128256
+  bos_token:
+    value: null
+  eos_token:
+    value: 128000
+  use_torch_compile:
+    value: False
+  data_path:
+    value: /datasets/dolma_v1_7
+  datasets:
+    value: dataset=cc_en_head
+  tracker:
+    value: wandb
+  n_layer:
+    value: 4
+  head_dim:
+    value: 128
+  d_model:
+    values:
+      - 256
+      - 512
+      - 1024
+      - 2048
+      - 4096
+      - 8196
+  optim:
+    value: adamw
+  mup_base_d_model:
+    value: 256
+  seq_length:
+    value: 512
+  batch_size:
+    value: 8
+  acc_steps:
+    value: 1
+  world_size:
+    value: 8
+  num_steps:
+    value: 8192
+  report_interval:
+    value: 64
+  mup:
+    value: true
+  mup_simple_scaling_impl:
+    value: false
+  mup_s:
+    values:
+      -  0.0
+      -  0.333333
+      -  0.666666
+      -  1.0
+  # LRs: log-spaced
+  learning_rate:
+    values:
+      - 0.01
+      - 0.005623413251903491
+      - 0.0031622776601683794
+      - 0.0017782794100389228
+      - 0.001
+      - 0.0005623413251903491
+      - 0.00031622776601683794
+      - 0.00017782794100389227
+      - 0.0001
+      - 5.623413251903491e-05
+      - 3.1622776601683795e-05
+      - 1.778279410038923e-05
+      - 1e-05
+      - 5.623413251903491e-06
+      - 3.162277660168379e-06
+      - 1.778279410038923e-06
+      - 1e-06

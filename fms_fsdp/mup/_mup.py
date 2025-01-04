@@ -190,12 +190,10 @@ def get_mup_optim_iter(
 
     mup_param_groups = _get_mup_param_groups(model)
 
-    # Create a list with a dict for each individual param. Annoying, but makes switching between
-    # equivalent mup impls easier.
     if cfg.optim == "adamw":
         input_factor, hidden_factor, output_factor = (
-            cfg.mup_ratio ** ((1 - cfg.mup_s) / 2),
-            cfg.mup_ratio ** ((3 - cfg.mup_s) / 2),
+            cfg.mup_ratio ** ((1.0 - cfg.mup_s) / 2),
+            cfg.mup_ratio ** ((3.0 - cfg.mup_s) / 2),
             cfg.mup_ratio,
         )
     elif cfg.optim == "sgd":

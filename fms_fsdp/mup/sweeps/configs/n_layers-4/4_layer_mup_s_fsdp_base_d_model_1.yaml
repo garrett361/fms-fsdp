@@ -1,4 +1,4 @@
-name: 4-layer-sweep-long-wide-large-lrs
+name: 4-layer-sweep-mup-s-base_d_model-1
 method: grid
 metric:
   goal: minimize
@@ -37,12 +37,11 @@ parameters:
       - 1024
       - 2048
       - 4096
-      - 8196
-      - 16392
+      - 8192
   optim:
     value: adamw
   mup_base_d_model:
-    value: 256
+    value: 1
   seq_length:
     value: 512
   batch_size:
@@ -56,11 +55,15 @@ parameters:
   report_interval:
     value: 64
   mup:
-    values:
-    - true
-    - false
+    value: true
   mup_simple_scaling_impl:
     value: false
+  mup_s:
+    values:
+      -  0.0
+      -  0.333333
+      -  0.666666
+      -  1.0
   # LRs: log-spaced
   learning_rate:
     values:
@@ -68,3 +71,20 @@ parameters:
       - 0.05623413251903491
       - 0.031622776601683794
       - 0.017782794100389228
+      - 0.01
+      - 0.005623413251903491
+      - 0.0031622776601683794
+      - 0.0017782794100389228
+      - 0.001
+      - 0.0005623413251903491
+      - 0.00031622776601683794
+      - 0.00017782794100389227
+      - 0.0001
+      - 5.623413251903491e-05
+      - 3.1622776601683795e-05
+      - 1.778279410038923e-05
+      - 1e-05
+      - 5.623413251903491e-06
+      - 3.162277660168379e-06
+      - 1.778279410038923e-06
+      - 1e-06

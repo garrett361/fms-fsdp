@@ -37,7 +37,7 @@ parameters:
       - 1024
       - 2048
       - 4096
-      - 8196
+      - 8192
   optim:
     value: sgd
   mup_base_d_model:

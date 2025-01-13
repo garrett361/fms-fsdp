@@ -1,4 +1,3 @@
-import math
 import os
 from pathlib import Path
 
@@ -95,13 +94,13 @@ def main(**kwargs):
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
+            print("--> applying FSDP activation checkpointing...")
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # torch compile
     if cfg.use_torch_compile:
         if rank == 0:
-            print(f"--> enabling torch compile...")
+            print("--> enabling torch compile...")
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
@@ -134,7 +133,6 @@ def main(**kwargs):
     if cfg.training_stage == "annealing":
         schedule = lambda x: 1 - x / cfg.num_steps
     else:
-        
         # (cosine 0.01 decay)
         # warmup_interval = min(1000, cfg.num_steps // 10)
         # schedule = lambda x: min(
@@ -144,13 +142,11 @@ def main(**kwargs):
         #     * (1 - 0.01)
         #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         # )
-        
+
         # (constant schedule)
-        # warmup_interval = 1000  
-        # schedule = lambda x: (
-        #     min(x, warmup_interval) / warmup_interval
-        # )
-        schedule = lambda x: min(1.0, x)
+        warmup_interval = 1000
+        schedule = lambda x: (min(x, warmup_interval) / warmup_interval)
+        # schedule = lambda x: min(1.0, x)
 
         # (cosine 0.1 decay)
         # warmup_interval = min(2000, cfg.num_steps // 20)
@@ -161,7 +157,7 @@ def main(**kwargs):
         #     * (1 - 0.1)
         #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         # # )
-        
+
         # linear decay to 50b tokens and then constant lr
         # schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
 

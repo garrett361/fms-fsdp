@@ -133,37 +133,22 @@ def main(**kwargs):
     # LR schedule
     if cfg.training_stage == "annealing":
         schedule = lambda x: 1 - x / cfg.num_steps
-    else:
-        
+    elif cfg.scheduler == "cos":
+
         # (cosine 0.01 decay)
         # warmup_interval = min(1000, cfg.num_steps // 10)
-        # schedule = lambda x: min(
-        #     1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-        #     0.01
-        #     + 0.5
-        #     * (1 - 0.01)
-        #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-        # )
-        
-        # (constant schedule)
-        # warmup_interval = 1000  
-        # schedule = lambda x: (
-        #     min(x, warmup_interval) / warmup_interval
-        # )
-        schedule = lambda x: min(1.0, x)
+        schedule = lambda x: (
+            0.01
+            + 0.5
+            * (1 - 0.01)
+            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi))
+        )
 
-        # (cosine 0.1 decay)
-        # warmup_interval = min(2000, cfg.num_steps // 20)
-        # schedule = lambda x: min(
-        #     1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
-        #     0.1
-        #     + 0.5
-        #     * (1 - 0.1)
-        #     * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
-        # # )
-        
-        # linear decay to 50b tokens and then constant lr
-        # schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
+    elif cfg.scheduler == "const":
+        schedule = lambda x: 1.0
+
+    else:
+        raise ValueError(f"Unexpected {cfg.scheduler=}")
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 

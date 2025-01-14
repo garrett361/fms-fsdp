@@ -35,6 +35,7 @@ class train_config:
     low_cpu_fsdp: bool = False
 
     # training spec
+    scheduler: str = "cos"
     batch_size: int = 2
     num_steps: int = 1000000
     training_stage: str = "initial"

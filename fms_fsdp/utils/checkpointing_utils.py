@@ -213,6 +213,7 @@ class Checkpointer:
             self.report(f"Prior checkpoint {load_path} detected.")
             model_load_time = time.time()
             if os.path.isfile(load_path):
+                self.report(f"Loading model state ONLY.")
                 checkpoint_data = torch.load(load_path, map_location="cpu")
                 if is_compiled:
                     model._orig_mod.load_state_dict(
@@ -232,6 +233,7 @@ class Checkpointer:
                 )
                 return model, optimizer, dataloader, 0, 0, is_resuming
             else:
+                self.report(f"Loading model, optimizer, and dataloader state.")
                 # Load model
                 with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
                     state_dict = model.state_dict()

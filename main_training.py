@@ -41,6 +41,7 @@ def main(**kwargs):
 
     if rank == 0:
         print(f"--> running with these configs {cfg}")
+        print(f"--> received {kwargs=}")
 
     # some setups
     setup()
@@ -134,7 +135,6 @@ def main(**kwargs):
     if cfg.training_stage == "annealing":
         schedule = lambda x: 1 - x / cfg.num_steps
     elif cfg.scheduler == "cos":
-
         # (cosine 0.01 decay)
         # warmup_interval = min(1000, cfg.num_steps // 10)
         schedule = lambda x: (
@@ -146,7 +146,6 @@ def main(**kwargs):
 
     elif cfg.scheduler == "const":
         schedule = lambda x: 1.0
-
     else:
         raise ValueError(f"Unexpected {cfg.scheduler=}")
 

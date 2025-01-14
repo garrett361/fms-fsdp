@@ -41,7 +41,6 @@ def main(**kwargs):
 
     if rank == 0:
         print(f"--> running with these configs {cfg}")
-        print(f"--> received {kwargs=}")
 
     # some setups
     setup()

@@ -598,9 +598,6 @@ class CheckpointDataset(_WrapperDataset):
     def load_from_path(self, path: str):
         save_path = self._validate_ckp_path(self.path, False)
         if len(save_path) > 0:
-            self.report(
-                f"  Dataset: Detected a checkpoint in the save directory {save_path}. Restoring from this checkpoint."
-            )
             path = save_path
         else:
             load_path = self._validate_ckp_path(self.load_path, True)
@@ -610,6 +607,9 @@ class CheckpointDataset(_WrapperDataset):
                 path = load_path
                 # When loading from external ckp, always reset step count
                 self.step = 0
+        self.report(
+            f"  Dataset: Detected a checkpoint in the save directory {path}. Restoring from this checkpoint."
+        )
         # Proceed
         start = time.time()
         self.dataset.load_from_path(path)

@@ -124,6 +124,8 @@ def main(**kwargs):
         else cfg.ckpt_load_path,
         strict=False,
     )
+    if rank == 0:
+        print(f"{is_resuming=}")
     if not is_resuming:
         start_step = 0
         # Override loaded optim hyperparams with the current values

@@ -96,6 +96,8 @@ def main(**kwargs):
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
     )
+    if rank == 0:
+        print(model)
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:

@@ -72,3 +72,6 @@ class train_config:
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96
     stage2_seq_length: int = 256
+
+    # context parallel
+    context_parallel: bool = False

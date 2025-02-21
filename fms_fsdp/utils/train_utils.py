@@ -44,7 +44,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             if rank == 0:
-                print(f"--> wandb is enabled!")
+                print("--> wandb is enabled!")
                 try:
                     wandb.init(
                         project=project_name,
@@ -64,7 +64,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to aim but aim is not installed.")
             if rank == 0:
-                print(f"--> aim is enabled!")
+                print("--> aim is enabled!")
                 run = Run(
                     experiment=project_name,
                     repo=tracker_dir,
@@ -145,6 +145,7 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
+                print(f"Total tok/step: {world_size * cfg.batch_size * cfg.seq_length}")
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
@@ -201,11 +202,11 @@ def get_mixed_precision_policy(cfg, rank):
         if bf16_ready:
             mixed_precision_policy = bfSixteen
             if rank == 0:
-                print(f"bFloat16 enabled for mixed precision - using bfSixteen policy")
+                print("bFloat16 enabled for mixed precision - using bfSixteen policy")
         else:
             mixed_precision_policy = fpSixteen
             if rank == 0:
-                print(f"FP16 enabled")
+                print("FP16 enabled")
     else:
         mixed_precision_policy = None
 

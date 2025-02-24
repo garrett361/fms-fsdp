@@ -68,7 +68,9 @@ def main(**kwargs):
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
     model = MambaLMHeadModel(
-        mamba_config, cp_mesh=mesh if cfg.context_parallel else None
+        mamba_config,
+        cp_mesh=mesh if cfg.context_parallel else None,
+        cp_impl=cfg.cp_impl if cfg.context_parallel else None,
     )
 
     if rank == 0:

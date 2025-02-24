@@ -75,3 +75,4 @@ class train_config:
 
     # context parallel
     context_parallel: bool = False
+    cp_impl: str = "allreduce"  # "allreduce" or "serial"

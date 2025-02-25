@@ -74,6 +74,8 @@ def main(**kwargs):
                 mesh_dim_names=("inter_node", "cp"),
             )
             cp_mesh = mesh["cp"]
+    else:
+        cp_mesh = None
 
     # get model
     config_data = get_model_config(cfg.model_variant)

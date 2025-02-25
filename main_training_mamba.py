@@ -61,15 +61,26 @@ def main(**kwargs):
         param_init_fn,
     ) = get_policies(cfg, rank, block)
 
-    # For CP. Currently only CP over the entire world.
-    mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
+    # For CP.
+    if cfg.cp:
+        if cfg.cp_in_node:
+            num_gpu_per_node = torch.cuda.device_count()
+            assert world_size % num_gpu_per_node == 0
+            mesh = dist.device_mesh.init_device_mesh(
+                "cuda",
+                (world_size // num_gpu_per_node, num_gpu_per_node),
+                mesh_dim_names=("inter_node", "cp"),
+            )
+            cp_mesh = mesh["cp"]
+        else:
+            cp_mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
 
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
     model = MambaLMHeadModel(
         mamba_config,
-        cp_mesh=mesh if cfg.cp else None,
+        cp_mesh=cp_mesh if cfg.cp else None,
         cp_impl=cfg.cp_impl if cfg.cp else None,
     )
 

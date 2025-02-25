@@ -62,8 +62,8 @@ def main(**kwargs):
         param_init_fn,
     ) = get_policies(cfg, rank, block)
 
-    # CP.
-
+    # Meshes for FSDP and CP. NOTE: @goon - Getting hangs and/or OOMs if I don't explicitly specify
+    # the FSDP mesh when using 4+ nodes with HSDP + in-node-CP.
     def get_1D_world_mesh(world_size: int) -> DeviceMesh:
         mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
         return mesh

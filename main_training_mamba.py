@@ -63,7 +63,9 @@ def main(**kwargs):
 
     # For CP.
     if cfg.cp:
-        if cfg.cp_in_node:
+        if cfg.cp_over_world:
+            cp_mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
+        else:
             num_gpu_per_node = torch.cuda.device_count()
             assert world_size % num_gpu_per_node == 0
             mesh = dist.device_mesh.init_device_mesh(
@@ -72,8 +74,6 @@ def main(**kwargs):
                 mesh_dim_names=("inter_node", "cp"),
             )
             cp_mesh = mesh["cp"]
-        else:
-            cp_mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
 
     # get model
     config_data = get_model_config(cfg.model_variant)

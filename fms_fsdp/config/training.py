@@ -76,4 +76,4 @@ class train_config:
     # context parallel
     cp: bool = False
     cp_impl: str = "allreduce"  # "allreduce" or "serial"
-    cp_in_node: bool = False
+    cp_over_world: bool = False

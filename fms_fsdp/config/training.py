@@ -74,5 +74,5 @@ class train_config:
     stage2_seq_length: int = 256
 
     # context parallel
-    context_parallel: bool = False
+    cp: bool = False
     cp_impl: str = "allreduce"  # "allreduce" or "serial"

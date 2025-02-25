@@ -61,10 +61,28 @@ def main(**kwargs):
         param_init_fn,
     ) = get_policies(cfg, rank, block)
 
+    # For CP.
+    if cfg.cp:
+        if cfg.cp_over_world:
+            cp_mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
+        else:
+            num_gpu_per_node = torch.cuda.device_count()
+            assert world_size % num_gpu_per_node == 0
+            mesh = dist.device_mesh.init_device_mesh(
+                "cuda",
+                (world_size // num_gpu_per_node, num_gpu_per_node),
+                mesh_dim_names=("inter_node", "cp"),
+            )
+            cp_mesh = mesh["cp"]
+
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
-    model = MambaLMHeadModel(mamba_config)
+    model = MambaLMHeadModel(
+        mamba_config,
+        cp_mesh=cp_mesh if cfg.cp else None,
+        cp_impl=cfg.cp_impl if cfg.cp else None,
+    )
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -91,24 +109,29 @@ def main(**kwargs):
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
     )
+    if rank == 0:
+        print(model)
 
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
+            print("--> applying FSDP activation checkpointing...")
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # torch compile
     if cfg.use_torch_compile:
         if rank == 0:
-            print(f"--> enabling torch compile...")
+            print("--> enabling torch compile...")
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
 
     # Optimizer
     optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+        model.parameters(),
+        lr=cfg.learning_rate,
+        betas=(0.9, 0.95),
+        weight_decay=0.1,
     )
 
     # optionally load from checkpoint (when continue pretraining)

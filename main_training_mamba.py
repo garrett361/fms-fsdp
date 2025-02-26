@@ -81,10 +81,13 @@ def main(**kwargs):
     if cfg.cp:
         if cfg.cp_over_world:
             cp_mesh = get_1D_world_mesh(world_size)
+            dp_degree = 1
         else:
             cp_mesh = get_2D_world_mesh(world_size)["intra_node"]
+            dp_degree = world_size // torch.cuda.device_count()
     else:
         cp_mesh = None
+        dp_degree = world_size
 
     if cfg.sharding_strategy == "fsdp":
         fsdp_mesh = get_1D_world_mesh(world_size)
@@ -110,7 +113,7 @@ def main(**kwargs):
     if rank == 0:
         print("Constructing datasets...")
     if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size)
+        train_loader = get_data_loader(cfg, rank, world_size, dp_degree)
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:

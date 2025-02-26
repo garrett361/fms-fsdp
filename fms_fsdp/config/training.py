@@ -75,6 +75,6 @@ class train_config:
 
     # context parallel
     cp: bool = False
-    cp_mamba_impl: str = "allreduce"  # "allreduce" or "serial"
+    cp_mamba_impl: str = "allgather"  # "allgather" or "serial"
     cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
     cp_over_world: bool = False

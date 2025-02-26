@@ -81,7 +81,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         cp_worldsize = world_size // dp_degree
         cp_rank = rank % cp_worldsize
         world_size = dp_degree
-        rank = rank // dp_degree
+        rank = rank // cp_worldsize
 
     datasets, weights = parse_data_args(cfg.datasets, cfg.weights)
 

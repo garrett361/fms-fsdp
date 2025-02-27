@@ -91,7 +91,8 @@ def train(
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
         if batch_idx==1:
-            torch.save([input.cpu(), output.argmax(dim=-1).cpu()], os.path.join(cfg.ckpt_load_path, f"step1_{rank}.pth"))
+            print("GOTHERE")
+            torch.save([input.cpu(), output.argmax(dim=-1).cpu()], os.path.join(cfg.ckpt_save_path, f"step1_{rank}.pth"))
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()

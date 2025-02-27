@@ -93,6 +93,11 @@ def main(**kwargs):
     else:
         fsdp_mesh = None
 
+    if rank == 0 and fsdp_mesh is not None:
+        print(f"{fsdp_mesh=}")
+    if cp_mesh is not None:
+        print(f"[{rank=}]: {cp_mesh=}")
+
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)

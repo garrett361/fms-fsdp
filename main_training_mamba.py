@@ -102,7 +102,8 @@ def main(**kwargs):
     model = MambaLMHeadModel(
         mamba_config,
         cp_mesh=cp_mesh if cfg.cp else None,
-        cp_impl=cfg.cp_impl if cfg.cp else None,
+        cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
+        cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
     )
 
     if rank == 0:

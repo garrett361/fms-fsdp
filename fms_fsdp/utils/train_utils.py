@@ -92,7 +92,8 @@ def train(
 
         if batch_idx==1:
             print("GOTHERE")
-            torch.save([input.cpu(), output.argmax(dim=-1).cpu()], os.path.join(cfg.ckpt_save_path, f"step1_{rank}.pth"))
+            l = torch.nn.CrossEntropyLoss(reduction='none')(output.view(-1, output.size(-1)), label.view(-1).long()).view(*input.size())
+            torch.save([input.cpu(), output.argmax(dim=-1).cpu(), l.cpu()], os.path.join(cfg.ckpt_save_path, f"step1_{rank}.pth"))
 
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()

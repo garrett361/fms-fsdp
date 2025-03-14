@@ -200,7 +200,7 @@ def get_model_config(model_variant):
                 "out_proj_bias": False,
                 "qkv_proj_bias": False,
                 "rotary_emb_dim": 64,
-                "rope_theta": 80000,
+                "rotary_emb_base": 80000,
             },
             "rms_norm": True,
             "residual_in_fp32": True,

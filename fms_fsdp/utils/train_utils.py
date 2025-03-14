@@ -2,7 +2,6 @@ import os
 from dataclasses import asdict
 from functools import partial
 
-
 try:
     import packaging.version
 except ImportError:
@@ -90,13 +89,21 @@ def train(
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
 
-        if batch_idx==1:
+        if batch_idx == 1:
             print("GOTHERE")
-            l = torch.nn.CrossEntropyLoss(reduction='none')(output.view(-1, output.size(-1)), label.view(-1).long()).view(*input.size())
-            torch.save([input.cpu(), output.argmax(dim=-1).cpu(), l.cpu()], os.path.join(cfg.ckpt_save_path, f"step1_{rank}.pth"))
+            l = torch.nn.CrossEntropyLoss(reduction="none")(
+                output.view(-1, output.size(-1)), label.view(-1).long()
+            ).view(*input.size())
+            torch.save(
+                [input.cpu(), output.argmax(dim=-1).cpu(), l.cpu()],
+                os.path.join(cfg.ckpt_save_path, f"step1_{rank}.pth"),
+            )
 
         loss.backward()
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        local_grad_norm = model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        # TODO: @goon - DELETE print test
+        print(f"[{rank=}]: {local_grad_norm=}")
+        ddp_stats[1] += local_grad_norm
         optimizer.step()
         scheduler.step()
 

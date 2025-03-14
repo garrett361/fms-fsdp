@@ -103,7 +103,7 @@ def train(
         loss.backward()
         # TODO: @goon - DELETE
         local_grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1e3)
-        print(f"[{batch_idx=}, {rank=}]: {local_grad_norm=}")
+        print(f"[{batch_idx=}, {rank=}]: {local_grad_norm=}, {loss=}")
 
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()

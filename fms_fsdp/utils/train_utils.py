@@ -101,10 +101,7 @@ def train(
             )
 
         loss.backward()
-        local_grad_norm = model.clip_grad_norm_(cfg.grad_clip_thresh).item()
-        # TODO: @goon - DELETE print test
-        print(f"[{rank=}]: {local_grad_norm=}")
-        ddp_stats[1] += local_grad_norm
+        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 

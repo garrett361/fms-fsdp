@@ -29,6 +29,7 @@ def train(
     checkpointer,
     start_step,
     tokens_seen,
+    cp_degree: int = 1,
 ):
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -120,7 +121,11 @@ def train(
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             new_tokens_seen = (
-                (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
+                (batch_idx - start_step)
+                * world_size
+                * cfg.batch_size
+                * cfg.seq_length
+                // cp_degree
             )
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
@@ -130,10 +135,10 @@ def train(
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (batch_idx - start_step)
                 current_throughput = int(
-                    cfg.batch_size * cfg.seq_length / current_step_time
+                    cfg.batch_size * cfg.seq_length / cp_degree / current_step_time
                 )
                 overall_throughput = int(
-                    cfg.batch_size * cfg.seq_length / overall_step_time
+                    cfg.batch_size * cfg.seq_length / cp_degree / overall_step_time
                 )
                 reserved_mem = torch.cuda.max_memory_reserved(
                     device=torch.cuda.current_device()

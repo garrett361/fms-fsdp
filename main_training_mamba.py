@@ -81,13 +81,14 @@ def main(**kwargs):
     if cfg.cp:
         if cfg.cp_over_world:
             cp_mesh = get_1D_world_mesh(world_size)
-            dp_degree = 1
+            cp_degree = world_size
         else:
             cp_mesh = get_2D_world_mesh(world_size)["intra_node"]
-            dp_degree = world_size // torch.cuda.device_count()
+            cp_degree = torch.cuda.device_count()
     else:
         cp_mesh = None
-        dp_degree = world_size
+        cp_degree = 1
+    dp_degree = world_size // cp_degree
 
     if cfg.sharding_strategy == "fsdp":
         fsdp_mesh = get_1D_world_mesh(world_size)
@@ -211,6 +212,7 @@ def main(**kwargs):
         checkpointer,
         start_step,
         tokens_seen,
+        cp_degree,
     )
 
     checkpointer.save_single_file(cfg.num_steps, model)

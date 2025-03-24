@@ -41,6 +41,8 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
     seed: int = 2023
+    z_loss: Optional[float] = None
+
 
     # continued training spec
     resuming_dataset: bool = False
@@ -72,3 +74,35 @@ class train_config:
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96
     stage2_seq_length: int = 256
+
+    # MoE settings
+    ep_degree: int = 1
+    moe_impl: str = "torch"
+    # MoE sharding & related
+    reshard_lm_head_after_fwd: bool = True
+    explicit_fwd_prefetch: bool = False
+    explicit_bwd_prefetch: bool = False
+    # Option to avoid fsdp act-ckpt on the
+    act_ckpt_mixer_only: bool = True
+    tok_count_hooks: bool = False
+    block_mag_hooks: bool = False
+    # loss_free moe balancing
+    loss_free_balancing_lr: Optional[float] = None
+
+    # PP settings
+    # [PP Batch Config]
+    # For pp, the batch_size sets the total batch size per pipeline instance, which further split
+    # into batch_size / n_microbatches sized microbatches which are pipelined through the model.
+    n_microbatches: Optional[int] = None
+
+    # Misc
+    foreach: Optional[bool] = None
+    fused: Optional[bool] = None
+
+    # Dev/debug options
+    skip_ckpt: bool = False
+    skip_clip: bool = False
+    skip_optim_step: bool = False
+    extra_timing: bool = False
+    sanity_prints: bool = False
+    pg_timeout: Optional[int] = None

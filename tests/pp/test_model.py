@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import torch
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
@@ -45,6 +47,18 @@ class TestModel:
     dtype = torch.bfloat16
     factory_kwargs = {"device": "cuda", "dtype": dtype}
 
+    def get_input_toks(self, seed: int = 42) -> torch.Tensor:
+        torch.manual_seed(seed)
+        return torch.randint(
+            self.vocab_size, size=(self.batch_size, self.seqlen), device=self.device
+        )
+
+    def get_inputs(self, seed: int = 42) -> torch.Tensor:
+        torch.manual_seed(seed)
+        return torch.randn(
+            self.batch_size, self.seqlen, self.d_model, **self.factory_kwargs
+        )
+
     def get_model(self) -> MambaLMHeadModel:
         return MambaLMHeadModel(self.cfg, **self.factory_kwargs)
 
@@ -53,16 +67,94 @@ class TestModel:
 
     def test_model_equality(self) -> None:
         """
-        Verify
+        Verify our PP class agrees with the standard mamba model.
         """
         torch.manual_seed(42)
         model = self.get_model()
         torch.manual_seed(42)
         model_pp = self.get_model_pp()
 
-        inputs = torch.randint(
-            self.vocab_size, size=(self.batch_size, self.seqlen), device=self.device
+        # Test weight init
+        torch.testing.assert_close(
+            model.backbone.embedding.weight, model_pp.backbone.embedding.weight
         )
+        for layer_idx in range(len(model.backbone.layers)):
+            for p1, p2 in zip(
+                model.backbone.layers[layer_idx].parameters(),
+                model_pp.backbone.layers[str(layer_idx)].parameters(),
+            ):
+                torch.testing.assert_close(p1, p2)
+        torch.testing.assert_close(model.lm_head.weight, model_pp.lm_head.weight)
+
+        # And output equality
+        inputs = self.get_input_toks()
         outputs = model(inputs).logits
         outputs_pp = model_pp(inputs)
         torch.testing.assert_close(outputs, outputs_pp)
+
+    def test_first_stage_pp(self) -> None:
+        """
+        Verify we can remove every stage but the embedding layer.
+        """
+        model_pp = self.get_model_pp()
+        model_pp.lm_head = None
+        for layer_idx in model_pp.backbone.layers:
+            model_pp.backbone.layers[layer_idx] = None
+
+        inputs = self.get_input_toks()
+        outputs_pp = model_pp(inputs)
+        assert isinstance(outputs_pp, torch.Tensor)
+
+    def test_middle_stage_pp(self) -> None:
+        """
+        Verify we can remove the embedding and lm head.
+        """
+        model_pp = self.get_model_pp()
+        model_pp.lm_head = model_pp.backbone.embedding = None
+
+        inputs = self.get_inputs()
+        outputs_pp = model_pp(inputs)
+        assert isinstance(outputs_pp, torch.Tensor)
+
+    def test_final_stage_pp(self) -> None:
+        """
+        Verify we can remove every stage but the lm head layer.
+        """
+        model_pp = self.get_model_pp()
+        model_pp.backbone.embedding = None
+        for layer_idx in model_pp.backbone.layers:
+            model_pp.backbone.layers[layer_idx] = None
+
+        inputs = self.get_inputs()
+        outputs_pp = model_pp(inputs)
+        assert isinstance(outputs_pp, torch.Tensor)
+
+    def test_fake_pp(self) -> None:
+        """
+        Verify a fake mock pipeline works.
+        """
+        torch.manual_seed(42)
+        model = self.get_model_pp()
+
+        model_pp_first = deepcopy(model)
+        model_pp_middle = deepcopy(model)
+        model_pp_last = deepcopy(model)
+
+        model_pp_first.lm_head = None
+        for layer_idx in model_pp_first.backbone.layers:
+            model_pp_first.backbone.layers[layer_idx] = None
+
+        model_pp_middle.lm_head = model_pp_middle.backbone.embedding = None
+
+        model_pp_last.backbone.embedding = None
+        for layer_idx in model_pp_last.backbone.layers:
+            model_pp_last.backbone.layers[layer_idx] = None
+
+        inputs = self.get_input_toks()
+        outputs = model(inputs)
+
+        outputs_pp_first = model_pp_first(inputs)
+        outputs_pp_middle = model_pp_middle(outputs_pp_first)
+        outputs_pp_last = model_pp_last(outputs_pp_middle)
+
+        torch.testing.assert_close(outputs, outputs_pp_last)

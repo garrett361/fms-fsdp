@@ -1,9 +1,11 @@
 # Copyright (c) 2023, Albert Gu, Tri Dao.
 
 from functools import partial
+from typing import Optional
 
 import torch
 import torch.nn as nn
+from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import (
     MambaLMHeadModel,
     _init_weights,
@@ -42,7 +44,9 @@ class MixerModelPP(nn.Module):
         super().__init__()
         self.residual_in_fp32 = residual_in_fp32
 
-        self.embedding = nn.Embedding(vocab_size, d_model, **factory_kwargs)
+        self.embedding: Optional[nn.Embedding] = nn.Embedding(
+            vocab_size, d_model, **factory_kwargs
+        )
 
         # We change the order of residual and layer norm:
         # Instead of LN -> Attn / MLP -> Add, we do:
@@ -88,19 +92,25 @@ class MixerModelPP(nn.Module):
             )
         )
 
-    def forward(self, inputs):
-        if self.embedding is not None:
-            inputs = self.embedding(inputs)
+    def forward(self, inputs) -> torch.Tensor:
+        hidden_states = self.embedding(inputs) if self.embedding is not None else inputs
         residual = None
+        num_layers = len(self.layers)
         # Extra safety: explicitly iterate over layers in order. Should not be necessary, though,
         # with recent py versions.
-        for layer_idx in len(self.layers):
+        for layer_idx in range(num_layers):
             layer = self.layers[str(layer_idx)]
             if layer is not None:
                 hidden_states, residual = layer(
-                    inputs,
+                    hidden_states,
                     residual,
                 )
+
+        # Only perform the final norm if this instance contains the last layer:
+        has_last_layer = self.layers[str(num_layers - 1)] is not None
+        if not has_last_layer:
+            return hidden_states
+
         if not self.fused_add_norm:
             residual = (
                 (hidden_states + residual) if residual is not None else hidden_states
@@ -125,6 +135,60 @@ class MambaLMHeadModelPP(MambaLMHeadModel):
     """
     Custom class mirroring MambaLMHeadModel, but with convenient changes to make PP easier.
     """
+
+    def __init__(
+        self,
+        config: MambaConfig,
+        initializer_cfg=None,
+        device=None,
+        dtype=None,
+    ) -> None:
+        self.config = config
+        d_model = config.d_model
+        n_layer = config.n_layer
+        d_intermediate = config.d_intermediate
+        vocab_size = config.vocab_size
+        ssm_cfg = config.ssm_cfg
+        attn_layer_idx = config.attn_layer_idx
+        attn_cfg = config.attn_cfg
+        rms_norm = config.rms_norm
+        residual_in_fp32 = config.residual_in_fp32
+        fused_add_norm = config.fused_add_norm
+        pad_vocab_size_multiple = config.pad_vocab_size_multiple
+        factory_kwargs = {"device": device, "dtype": dtype}
+
+        nn.Module.__init__(self)
+        if vocab_size % pad_vocab_size_multiple != 0:
+            vocab_size += pad_vocab_size_multiple - (
+                vocab_size % pad_vocab_size_multiple
+            )
+        self.backbone = MixerModelPP(
+            d_model=d_model,
+            n_layer=n_layer,
+            d_intermediate=d_intermediate,
+            vocab_size=vocab_size,
+            ssm_cfg=ssm_cfg,
+            attn_layer_idx=attn_layer_idx,
+            attn_cfg=attn_cfg,
+            rms_norm=rms_norm,
+            initializer_cfg=initializer_cfg,
+            fused_add_norm=fused_add_norm,
+            residual_in_fp32=residual_in_fp32,
+            **factory_kwargs,
+        )
+        self.lm_head: Optional[nn.Linear] = nn.Linear(
+            d_model, vocab_size, bias=False, **factory_kwargs
+        )
+
+        # Initialize weights and apply final processing
+        self.apply(
+            partial(
+                _init_weights,
+                n_layer=n_layer,
+                **(initializer_cfg if initializer_cfg is not None else {}),
+            )
+        )
+        self.tie_weights()
 
     def forward(self, inputs) -> torch.Tensor:
         outputs = self.backbone(inputs)

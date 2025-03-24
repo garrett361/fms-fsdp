@@ -92,12 +92,23 @@ class MixerModelPP(nn.Module):
             )
         )
 
-    def forward(self, inputs) -> torch.Tensor:
-        hidden_states = self.embedding(inputs) if self.embedding is not None else inputs
-        residual = None
-        num_layers = len(self.layers)
+    def forward(self, *inputs) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        # TODO: @goon - change Block so that only hidden_states are passed between layers. For
+        # minimizing PP comms.
+        if self.embedding is not None:
+            assert len(inputs) == 1
+            hidden_states, residual = self.embedding(inputs[0]), None
+        else:
+            assert len(inputs) == 2
+            hidden_states, residual = inputs
+
+        # Corner case: embedding only
+        if not any(layer is not None for layer in self.layers.values()):
+            return hidden_states, None
+
         # Extra safety: explicitly iterate over layers in order. Should not be necessary, though,
         # with recent py versions.
+        num_layers = len(self.layers)
         for layer_idx in range(num_layers):
             layer = self.layers[str(layer_idx)]
             if layer is not None:
@@ -109,7 +120,7 @@ class MixerModelPP(nn.Module):
         # Only perform the final norm if this instance contains the last layer:
         has_last_layer = self.layers[str(num_layers - 1)] is not None
         if not has_last_layer:
-            return hidden_states
+            return hidden_states, residual
 
         if not self.fused_add_norm:
             residual = (
@@ -128,7 +139,7 @@ class MixerModelPP(nn.Module):
                 residual_in_fp32=self.residual_in_fp32,
                 is_rms_norm=isinstance(self.norm_f, RMSNorm),
             )
-        return hidden_states
+        return hidden_states, residual
 
 
 class MambaLMHeadModelPP(MambaLMHeadModel):
@@ -190,8 +201,8 @@ class MambaLMHeadModelPP(MambaLMHeadModel):
         )
         self.tie_weights()
 
-    def forward(self, inputs) -> torch.Tensor:
-        outputs = self.backbone(inputs)
+    def forward(self, *inputs) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        outputs, residual = self.backbone(*inputs)
         if self.lm_head is not None:
             outputs = self.lm_head(outputs)
-        return outputs
+        return outputs, residual

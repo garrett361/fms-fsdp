@@ -89,7 +89,7 @@ class TestModel:
         # And output equality
         inputs = self.get_input_toks()
         outputs = model(inputs).logits
-        outputs_pp = model_pp(inputs)
+        outputs_pp, _ = model_pp(inputs)
         torch.testing.assert_close(outputs, outputs_pp)
 
     def test_first_stage_pp(self) -> None:
@@ -102,8 +102,9 @@ class TestModel:
             model_pp.backbone.layers[layer_idx] = None
 
         inputs = self.get_input_toks()
-        outputs_pp = model_pp(inputs)
+        outputs_pp, residuals = model_pp(inputs)
         assert isinstance(outputs_pp, torch.Tensor)
+        assert residuals is None
 
     def test_middle_stage_pp(self) -> None:
         """
@@ -112,9 +113,10 @@ class TestModel:
         model_pp = self.get_model_pp()
         model_pp.lm_head = model_pp.backbone.embedding = None
 
-        inputs = self.get_inputs()
-        outputs_pp = model_pp(inputs)
+        residuals = inputs = self.get_inputs()
+        outputs_pp, residuals = model_pp(inputs, residuals)
         assert isinstance(outputs_pp, torch.Tensor)
+        assert isinstance(residuals, torch.Tensor)
 
     def test_final_stage_pp(self) -> None:
         """
@@ -125,9 +127,10 @@ class TestModel:
         for layer_idx in model_pp.backbone.layers:
             model_pp.backbone.layers[layer_idx] = None
 
-        inputs = self.get_inputs()
-        outputs_pp = model_pp(inputs)
+        residuals = inputs = self.get_inputs()
+        outputs_pp, residuals = model_pp(inputs, residuals)
         assert isinstance(outputs_pp, torch.Tensor)
+        assert residuals is None
 
     def test_fake_pp(self) -> None:
         """
@@ -151,10 +154,10 @@ class TestModel:
             model_pp_last.backbone.layers[layer_idx] = None
 
         inputs = self.get_input_toks()
-        outputs = model(inputs)
+        outputs, _ = model(inputs)
 
-        outputs_pp_first = model_pp_first(inputs)
-        outputs_pp_middle = model_pp_middle(outputs_pp_first)
-        outputs_pp_last = model_pp_last(outputs_pp_middle)
+        outputs_pp_first, residuals = model_pp_first(inputs)
+        outputs_pp_middle, residuals = model_pp_middle(outputs_pp_first, residuals)
+        outputs_pp_last, _ = model_pp_last(outputs_pp_middle, residuals)
 
         torch.testing.assert_close(outputs, outputs_pp_last)

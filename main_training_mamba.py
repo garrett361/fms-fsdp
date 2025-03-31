@@ -78,24 +78,24 @@ def main(**kwargs):
         )
         return mesh
 
-    if cfg.cp:
-        if cfg.cp_over_world:
-            cp_mesh = get_1D_world_mesh(world_size)
-            cp_degree = world_size
-        else:
-            cp_mesh = get_2D_world_mesh(world_size)["intra_node"]
-            cp_degree = torch.cuda.device_count()
+    requires_2d_mesh = (cfg.sharding_strategy == "hsdp") or (
+        cfg.cp and not cfg.cp_over_world
+    )
+    if requires_2d_mesh:
+        mesh = get_2D_world_mesh(world_size)
+        fsdp_mesh = mesh
+        cp_mesh = mesh["intra_node"] if cfg.cp else None
     else:
-        cp_mesh = None
-        cp_degree = 1
-    dp_degree = world_size // cp_degree
+        mesh = get_1D_world_mesh(world_size)
+        fsdp_mesh = mesh
+        cp_mesh = mesh if cfg.cp else None
 
-    if cfg.sharding_strategy == "fsdp":
-        fsdp_mesh = get_1D_world_mesh(world_size)
-    elif cfg.sharding_strategy == "hsdp":
-        fsdp_mesh = get_2D_world_mesh(world_size)
+    if cfg.cp:
+        cp_degree = world_size if cfg.cp_over_world else torch.cuda.device_count()
     else:
-        fsdp_mesh = None
+        cp_degree = 1
+
+    dp_degree = world_size // cp_degree
 
     # get model
     config_data = get_model_config(cfg.model_variant)

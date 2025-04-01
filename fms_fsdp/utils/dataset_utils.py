@@ -754,7 +754,7 @@ class DocSliceDataset(_WrapperDataset):
                 unslice = doclist[1+nslice:-1]
                 sliced = []
                 for doc in slice:
-                    assert len(doc)//3 > self.overlap, f"Doc length {len(doc)} too small for random slice with desired overlap {self.overlap}"
+                    assert len(doc)//3 > self.overlap, f"Doc length {len(doc)} too small for random slice with desired overlap {self.overlap}: {[len(begin), [len(x) for x in slice], [len(x) for x in unslice], len(end)]}"
                     i = torch.randint(0, len(doc)//3, [1], generator=self.generator).item() + len(doc)//3
                     sliced.append([doc[:i], doc[i-self.overlap:]])
                 slice = sliced

@@ -137,10 +137,10 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         pack_hard=True,
     )
     # Slice and rearrange docs to force long-context retrieval
-    data = DocSliceDataset(
-        data,
-        cfg.eos_token,
-    )
+    # data = DocSliceDataset(
+    #     data,
+    #     cfg.eos_token,
+    # )
 
     # Apply desired postprocessing steps in sequence
     data = PreprocessDataset(data, torch.IntTensor)

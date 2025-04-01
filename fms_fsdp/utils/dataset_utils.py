@@ -1034,12 +1034,12 @@ class StreamingDocDataset(_StatefulDataset):
             # Assemble length of each owned shard file
 
             countfiles = []
-            if os.path.exists(os.path.join(pardir, "meta")):
-                countfiles = [
-                    x
-                    for x in os.listdir(os.path.join(pardir, "meta"))
-                    if "counts" in x and "csv" in x
-                ]
+            # if os.path.exists(os.path.join(pardir, "meta")):
+            #     countfiles = [
+            #         x
+            #         for x in os.listdir(os.path.join(pardir, "meta"))
+            #         if "counts" in x and "csv" in x
+            #     ]
             doc_counts = {}
             if len(countfiles) > 0:
                 # Count file exists, use it

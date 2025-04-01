@@ -705,6 +705,87 @@ class PreloadBufferDataset(_WrapperDataset):
         # Manually set buffer size
         self.buffer_size = len(self.buffer)
         return sharded_dicts
+    
+
+class DocSliceDataset(_WrapperDataset):
+    """
+    Wrapper for a StatefulDataset that implements document slicing.
+    ...
+    Args
+    ----
+    dataset : _StatefulDataset
+        Fully instantiated dataset
+    delimiter_token : int
+        Value used for delimiter
+    slice_rate : float
+        Proportion of documents to slice
+    overlap : int
+        Number of tokens to overlap for slice retrieval
+    """
+
+    def __init__(self, dataset: _StatefulDataset, delimiter_token: int, slice_rate: float = 0.5, overlap: int = 3):
+        super().__init__(dataset)
+        self.g_state = None
+        self.generator = torch.Generator().manual_seed(self.rank)
+        self.state_params = ["g_state"]
+        self.delimiter = delimiter_token
+        self.slicerate = slice_rate
+        self.overlap = overlap
+
+    def __iter__(self):
+        dataset = iter(self.dataset)
+        while True:
+            inp = next(dataset)
+            inplen = len(inp)
+            doclist = []
+            last_delim = 0
+            for i in range(len(inp)):
+                if inp[i] == self.delimiter:
+                    doclist.append(inp[last_delim:i])
+                    last_delim = i+1
+            doclist.append(inp[last_delim:])
+            nslice = int((len(doclist)-2)*self.slicerate)
+            if len(doclist) < 3 or nslice < 2:
+                yield inp
+            else:
+                begin = doclist[0]
+                end = doclist[-1]
+                slice = doclist[1:1+nslice]
+                unslice = doclist[1+nslice:-1]
+                sliced = []
+                for doc in slice:
+                    assert len(doc)//3 > self.overlap, f"Doc length {len(doc)} too small for random slice with desired overlap {self.overlap}"
+                    i = torch.randint(0, len(doc)//3, [1], generator=self.generator).item() + len(doc)//3
+                    sliced.append([doc[:i], doc[i-self.overlap:]])
+                slice = sliced
+                doclist = [slice[0][0], slice[1][0], slice[0][1], slice[1][1]]
+                for docpair in slice[2:]:
+                    inds = torch.randperm(len(doclist)+1, generator=self.generator)[:2].tolist()
+                    inds.sort()
+                    inds[1] += 1
+                    doclist = doclist[:inds[0]] + [docpair[0]] + doclist[inds[0]:inds[1]-1] + [docpair[1]] + doclist[inds[1]-1:]
+                for doc in unslice:
+                    i = torch.randint(0, len(doclist)+1, [1], generator=self.generator).item()
+                    doclist = doclist[:i] + [doc] + doclist[i:]
+                out = begin + [self.delimiter]
+                for doc in doclist:
+                    out = out + doc
+                    out.append(self.delimiter)
+                out = out + end
+                yield out[:inplen]
+
+    def state_dict(self):
+        # Write generator state manually
+        self.g_state = self.generator.get_state()
+        out = super().state_dict()
+        return out
+
+    def load_state_dict(self, state_dicts, sharded_input=False):
+        sharded_dicts = super().load_state_dict(state_dicts, sharded_input)
+        # Manually set generator state if it exists
+        if self.g_state is not None:
+            self.generator.set_state(self.g_state)
+        return sharded_dicts
 
 
 class BufferDataset(_WrapperDataset):

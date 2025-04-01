@@ -5,6 +5,7 @@ from fms_fsdp.utils.dataset_utils import (
     AutoHandler,
     BufferDataset,
     CheckpointDataset,
+    DocSliceDataset,
     ParquetHandler,
     PreloadBufferDataset,
     PreprocessDataset,
@@ -107,7 +108,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         cfg.eos_token,
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),
-        min_length=3,
+        min_length=300,
         seed=cfg.seed,
     )
     # Add rescaling/resharding
@@ -125,6 +126,8 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         weights=weights,
         verbose=(rank == 0),
     )
+    # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
+    data = PreloadBufferDataset(data, 10000)
     # Wrap above dataset in packing logic to form constant-length lines.
     data = BufferDataset(
         data,
@@ -133,8 +136,11 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         eos_token=cfg.eol_token,
         pack_hard=True,
     )
-    # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
-    data = PreloadBufferDataset(data, 10000)
+    # Slice and rearrange docs to force long-context retrieval
+    data = DocSliceDataset(
+        data,
+        cfg.eos_token,
+    )
 
     # Apply desired postprocessing steps in sequence
     data = PreprocessDataset(data, torch.IntTensor)

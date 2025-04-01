@@ -59,8 +59,15 @@ def main(**kwargs):
         wrapping_policy,
         sharding_strategy_policy,
         apply_selective_ac,
-        param_init_fn,
+        _, # NOTE: @goon - We'll override param_init_fn for mamba below
     ) = get_policies(cfg, rank, block)
+    if cfg.low_cpu_fsdp:
+        # NOTE: @goon - the params will be junk after using this. Only intended to be used in
+        # conjunction with loading proper weights from a checkpoint.
+        def param_init_fn(module):
+            module.to_empty(device=torch.cuda.current_device())
+    else:
+        param_init_fn = None
 
     # Meshes for FSDP and CP. NOTE: @goon - Getting hangs and/or OOMs if I don't explicitly specify
     # the FSDP mesh when using 4+ nodes with HSDP + in-node-CP.
@@ -100,12 +107,22 @@ def main(**kwargs):
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
-    model = MambaLMHeadModel(
-        mamba_config,
-        cp_mesh=cp_mesh if cfg.cp else None,
-        cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
-        cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
-    )
+
+    if cfg.low_cpu_fsdp:
+        with torch.device("meta"):
+            model = MambaLMHeadModel(
+                mamba_config,
+                cp_mesh=cp_mesh if cfg.cp else None,
+                cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
+                cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
+            )
+    else:
+        model = MambaLMHeadModel(
+            mamba_config,
+            cp_mesh=cp_mesh if cfg.cp else None,
+            cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
+            cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
+        )
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

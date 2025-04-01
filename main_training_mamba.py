@@ -4,6 +4,7 @@ from pathlib import Path
 
 import fire
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
@@ -11,6 +12,7 @@ from mamba_ssm.modules.block import Block
 from torch import distributed as dist
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.wrap import CustomPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -52,14 +54,14 @@ def main(**kwargs):
         Path.home(), ".triton", "cache", str(local_rank)
     )
 
-    # get policy
+    # get policy. NOTE: @goon - overriding {wrapping_policy, param_init_fn} below
     block = Block
     (
         mixed_precision_policy,
-        wrapping_policy,
+        _,
         sharding_strategy_policy,
         apply_selective_ac,
-        _, # NOTE: @goon - We'll override param_init_fn for mamba below
+        _,  # NOTE: @goon - We'll override param_init_fn for mamba below
     ) = get_policies(cfg, rank, block)
     if cfg.low_cpu_fsdp:
         # NOTE: @goon - the params will be junk after using this. Only intended to be used in
@@ -123,6 +125,11 @@ def main(**kwargs):
             cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
             cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
         )
+
+    def lambda_fn(module: nn.Module):
+        return isinstance(module, (Block, nn.Embedding)) or module is model.lm_head
+
+    wrapping_policy = CustomPolicy(lambda_fn)
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

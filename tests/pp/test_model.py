@@ -20,7 +20,7 @@ class TestModel:
     num_heads = d_model // head_dim
     ssm_cfg = {"layer": "Mamba2"}
     vocab_size = 1024
-    n_layer = 2
+    n_layer = 3
     attn_layer_idx = [n_layer - 1]
     attn_cfg = {
         "causal": True,

@@ -216,6 +216,38 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
+    elif model_variant == "mamba_moe_lite":
+        # Scaled down model for testing
+        model_config = {
+            "d_model": 2048,
+            "d_intermediate": 5461,
+            "n_layer": 16,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [5, 9, 13],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 32,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+            },
+            "moe_layer_idx": list(range(1, 16)),
+            "moe_cfg": {
+                "n_routed_experts": 32,
+                "n_activated_experts": 4,
+                "n_shared_experts": 1,
+                "hidden_features": 512,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 

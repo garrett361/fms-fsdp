@@ -95,8 +95,6 @@ def main(**kwargs):
             if cp_degree == world_size
             else get_2D_world_mesh(world_size, cp_degree)["inner"]
         )
-        if rank == 0:
-            print(f"{cp_mesh=}")
     else:
         cp_mesh = None
         cp_degree = 1

@@ -11,7 +11,7 @@ class train_config:
 
     # dataset and dataloader
     use_dummy_dataset: bool = False
-    print_detokenized: bool = False
+    sanity_print_toks: bool = False
     data_path: str = "/fsx/data"
     file_type: str = "arrow"
     col_name: str = "tokens"

@@ -99,6 +99,8 @@ def main(**kwargs):
         cp_degree = 1
     dp_degree = world_size // cp_degree
 
+    # NOTE: @goon - for some reason, just creating a single 1 or 2D mesh and using slices of that
+    # as appropriate seems to give much less stable behavior.
     if cfg.sharding_strategy == "fsdp":
         fsdp_mesh = get_1D_world_mesh(world_size)
     elif cfg.sharding_strategy == "hsdp":

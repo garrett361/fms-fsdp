@@ -78,11 +78,18 @@ def train(
     start = time.time()
     loop_start = time.time()
     train_loss = -1
+    if cfg.sanity_print_toks:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=True)
+
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         if batch_idx > cfg.num_steps:
             break
         input = input.to(local_rank)
         label = label.to(local_rank)
+        if cfg.sanity_print_toks:
+            print(f"[{rank=}]: inputs {tokenizer.decode(input.cpu().tolist())}")
 
         optimizer.zero_grad()
         output = model(input)

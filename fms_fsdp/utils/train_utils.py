@@ -89,7 +89,9 @@ def train(
         input = input.to(local_rank)
         label = label.to(local_rank)
         if cfg.sanity_print_toks:
-            print(f"[{rank=}]: inputs {tokenizer.decode(input.cpu().tolist())}")
+            toks_list = input.cpu().tolist()
+            for toks in toks_list:
+                print(f"[{rank=}]:  {tokenizer.decode(toks)}")
 
         optimizer.zero_grad()
         output = model(input)

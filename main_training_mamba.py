@@ -77,34 +77,35 @@ def main(**kwargs):
         mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
         return mesh
 
-    def get_2D_world_mesh(world_size: int) -> DeviceMesh:
-        num_gpu_per_node = torch.cuda.device_count()
-        assert world_size % num_gpu_per_node == 0
+    def get_2D_world_mesh(world_size: int, inner_size: int) -> DeviceMesh:
+        assert world_size % inner_size == 0
         mesh = dist.device_mesh.init_device_mesh(
             "cuda",
-            (world_size // num_gpu_per_node, num_gpu_per_node),
-            mesh_dim_names=("inter_node", "intra_node"),
+            (world_size // inner_size, inner_size),
+            mesh_dim_names=("outer", "inner"),
         )
         return mesh
 
+    # NOTE: @goon - for some reason, just creating a single 1D or 2D mesh and using slices of that
+    # as appropriate seems to give much less stable behavior and making separate CP and FSDP meshes.
     if cfg.cp:
-        if cfg.cp_over_world:
-            cp_mesh = get_1D_world_mesh(world_size)
-            cp_degree = world_size
-        else:
-            cp_mesh = get_2D_world_mesh(world_size)["intra_node"]
-            cp_degree = torch.cuda.device_count()
+        cp_degree = cfg.cp_degree or torch.cuda.device_count()
+        cp_mesh = (
+            get_1D_world_mesh(world_size)
+            if cp_degree == world_size
+            else get_2D_world_mesh(world_size, cp_degree)["inner"]
+        )
+        if rank == 0:
+            print(f"{cp_mesh=}")
     else:
         cp_mesh = None
         cp_degree = 1
     dp_degree = world_size // cp_degree
 
-    # NOTE: @goon - for some reason, just creating a single 1 or 2D mesh and using slices of that
-    # as appropriate seems to give much less stable behavior.
     if cfg.sharding_strategy == "fsdp":
         fsdp_mesh = get_1D_world_mesh(world_size)
     elif cfg.sharding_strategy == "hsdp":
-        fsdp_mesh = get_2D_world_mesh(world_size)
+        fsdp_mesh = get_2D_world_mesh(world_size, torch.cuda.device_count())
     else:
         fsdp_mesh = None
 

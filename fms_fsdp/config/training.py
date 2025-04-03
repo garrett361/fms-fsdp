@@ -79,4 +79,4 @@ class train_config:
     cp: bool = False
     cp_mamba_impl: str = "allgather"  # "allgather" or "serial"
     cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
-    cp_over_world: bool = False
+    cp_degree: Optional[int] = None

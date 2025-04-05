@@ -165,7 +165,7 @@ def train(
                     f"Total tok/step: {world_size * cfg.batch_size * cfg.seq_length // cp_degree}"
                 )
                 remaining_steps = cfg.num_steps - batch_idx + 1
-                remaining_secs = remaining_steps / current_step_time
+                remaining_secs = remaining_steps * current_step_time
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
 
                 if cfg.tracker:

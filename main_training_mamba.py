@@ -87,7 +87,8 @@ def main(**kwargs):
         return mesh
 
     # NOTE: @goon - for some reason, just creating a single 1D or 2D mesh and using slices of that
-    # as appropriate seems to give much less stable behavior and making separate CP and FSDP meshes.
+    # as appropriate seems to give much less stable behavior than making separate CP and FSDP
+    # meshes.
     if cfg.cp:
         cp_degree = cfg.cp_degree or torch.cuda.device_count()
         cp_mesh = (

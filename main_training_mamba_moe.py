@@ -16,6 +16,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 )
 from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
+import torch.nn as nn
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -79,7 +80,13 @@ def main(**kwargs):
     else:
         mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
 
-    model = MambaLMHeadModel(mamba_config, ep_mesh=mesh)
+    if cfg.low_cpu_fsdp:
+        if rank ==0:
+            print("Building model on meta device...")
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config, ep_mesh=mesh)
+    else:
+        model = MambaLMHeadModel(mamba_config, ep_mesh=mesh)
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"\n--> model has {total_params / 1e6} Million params\n")
@@ -116,6 +123,21 @@ def main(**kwargs):
             reshard_after_forward=is_not_last_block,
         )
     fully_shard(model, mesh=mesh, reshard_after_forward=False, mp_policy=mp_policy)
+
+    if cfg.low_cpu_fsdp:
+        if rank ==0:
+            print("Moving model to CUDA...")
+        # Move to cuda and initialize.
+        model.to_empty(device=torch.cuda.current_device())
+        # TODO: proper normalization; just normal init for now
+        for p in model.parameters():
+            nn.init.normal_(p)
+
+    else:
+        # Must also manually move the ignored experts to cuda, as fully_shard doesn't do so.
+        for block in model.backbone.layers.values():
+            if isinstance(block.mlp, MoE):
+                block.mlp.experts.to(device=torch.cuda.current_device())
 
     if rank == 0:
         print(f"{model=}")

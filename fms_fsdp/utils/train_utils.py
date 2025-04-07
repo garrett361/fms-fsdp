@@ -84,7 +84,8 @@ def train(
         tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=True)
 
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        if batch_idx > cfg.num_steps:
+        step_idx, grad_acc_idx = divmod(batch_idx, cfg.grad_acc_steps)
+        if step_idx > cfg.num_steps:
             break
         input = input.to(local_rank)
         label = label.to(local_rank)
@@ -102,43 +103,39 @@ def train(
             loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
 
         loss.backward()
-
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
-        optimizer.step()
-        scheduler.step()
-
         ddp_stats[0] += loss.item()
         ddp_stats[2] += 1
+        if grad_acc_idx != 0:
+            continue
+
+        ddp_stats[1] += (
+            cfg.grad_acc_steps * model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        )
+        optimizer.step()
+        scheduler.step()
 
         if profiler:
             profiler.step()
 
-        if batch_idx % cfg.report_interval == 0:
+        if step_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[2]
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
-            new_tokens_seen = (
-                (batch_idx - start_step)
-                * world_size
-                * cfg.batch_size
-                * cfg.seq_length
-                // cp_degree
+            tok_per_gpu = (
+                cfg.batch_size * cfg.seq_length * cfg.grad_acc_steps // cp_degree
             )
+            new_tokens_seen = (step_idx - start_step) * world_size * tok_per_gpu
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
                 current_step_time = (time.time() - start) / cfg.report_interval
-                overall_step_time = elapsed_time / (batch_idx - start_step)
-                current_throughput = int(
-                    cfg.batch_size * cfg.seq_length / cp_degree / current_step_time
-                )
-                overall_throughput = int(
-                    cfg.batch_size * cfg.seq_length / cp_degree / overall_step_time
-                )
+                overall_step_time = elapsed_time / (step_idx - start_step)
+                current_throughput = int(tok_per_gpu / current_step_time)
+                overall_throughput = int(tok_per_gpu / overall_step_time)
                 reserved_mem = torch.cuda.max_memory_reserved(
                     device=torch.cuda.current_device()
                 )
@@ -146,7 +143,7 @@ def train(
                     device=torch.cuda.current_device()
                 )
 
-                print("step:", batch_idx)
+                print("step:", step_idx)
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
@@ -161,10 +158,8 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
-                print(
-                    f"Total tok/step: {world_size * cfg.batch_size * cfg.seq_length // cp_degree}"
-                )
-                remaining_steps = cfg.num_steps - batch_idx + 1
+                print(f"Total tok/step: {world_size * tok_per_gpu}")
+                remaining_steps = cfg.num_steps - step_idx + 1
                 remaining_secs = remaining_steps * current_step_time
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
 
@@ -183,15 +178,15 @@ def train(
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":
                         tracker_fn = run.track
-                    tracker_fn(vals_to_track, step=batch_idx)
+                    tracker_fn(vals_to_track, step=step_idx)
 
             start = time.time()
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if batch_idx % cfg.checkpoint_interval == 0:
+        if step_idx % cfg.checkpoint_interval == 0:
             checkpointer.save(
-                batch_idx,
+                step_idx,
                 model,
                 optimizer,
                 None,

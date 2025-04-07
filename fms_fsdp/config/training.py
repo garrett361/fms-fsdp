@@ -43,6 +43,7 @@ class train_config:
     grad_clip_thresh: float = 1.0
     seed: int = 2023
     z_loss: Optional[float] = None
+    grad_acc_steps: int = 1
 
     # continued training spec
     resuming_dataset: bool = False

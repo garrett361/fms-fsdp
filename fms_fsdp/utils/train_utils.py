@@ -106,7 +106,7 @@ def train(
             loss = loss / cfg.grad_acc_steps
 
         loss.backward()
-        ddp_stats[0] += loss.item()
+        ddp_stats[0] += loss.detach().item()
         if grad_acc_idx != 0:
             continue
 

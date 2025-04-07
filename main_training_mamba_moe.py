@@ -86,7 +86,7 @@ def main(**kwargs):
 
     # AC
     if cfg.fsdp_activation_checkpointing:
-        for layer_index, block in enumerate(model.backbone.layers):
+        for layer_index, block in model.backbone.layers.items():
             model.backbone.layers[layer_index] = checkpoint_wrapper(
                 block, preserve_rng_state=False
             )

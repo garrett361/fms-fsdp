@@ -112,8 +112,6 @@ def main(**kwargs):
         ignored_params = set()
         if isinstance(block.mlp, MoE):
             ignored_params.add(block.mlp.experts.parameters())
-            # Must also manually move the ignored experts to cuda
-            block.mlp.experts.cuda()
         is_not_last_block = int(idx) < len(model.backbone.layers) - 1
         fully_shard(
             block,

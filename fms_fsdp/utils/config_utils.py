@@ -217,7 +217,7 @@ def get_model_config(model_variant):
             "tie_embeddings": False,
         }
     elif model_variant == "mamba_moe_lite":
-        # Scaled down model for testing
+        # Scaled down model for testing. ~2B params.
         model_config = {
             "d_model": 2048,
             "d_intermediate": 5461,

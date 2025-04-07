@@ -91,10 +91,12 @@ def main(**kwargs):
                 block, preserve_rng_state=False
             )
 
+    # TODO: @goon - selective AC
+
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
     )
-    # Assumed: no tied params
+    # Assumption: no tied params
     fully_shard(model.lm_head, mesh=mesh, mp_policy=mp_policy)
     fully_shard(model.backbone.embedding, mesh=mesh, mp_policy=mp_policy)
     # NOTE: @goon - model.backbone.layers is a module_dict on the MoE branch

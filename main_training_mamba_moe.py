@@ -84,9 +84,9 @@ def main(**kwargs):
         if rank ==0:
             print("Building model on meta device...")
         with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config, ep_mesh=mesh)
+            model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
     else:
-        model = MambaLMHeadModel(mamba_config, ep_mesh=mesh)
+        model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"\n--> model has {total_params / 1e6} Million params\n")
@@ -108,10 +108,11 @@ def main(**kwargs):
     fully_shard(model.backbone.embedding, mesh=mesh, mp_policy=mp_policy)
     # NOTE: @goon - model.backbone.layers is a module_dict on the MoE branch
     for idx, block in model.backbone.layers.items():
-        # The ignored_params arg requires torch nightly (> 2.6.0)
-        ignored_params = set()
-        if isinstance(block.mlp, MoE):
-            ignored_params.add(block.mlp.experts.parameters())
+        if cfg.ep:
+            # The ignored_params arg requires torch nightly (> 2.6.0)
+            ignored_params = set()
+            if isinstance(block.mlp, MoE):
+                ignored_params.add(block.mlp.experts.parameters())
         is_not_last_block = int(idx) < len(model.backbone.layers) - 1
         fully_shard(
             block,
@@ -135,9 +136,10 @@ def main(**kwargs):
 
     else:
         # Must also manually move the ignored experts to cuda, as fully_shard doesn't do so.
-        for block in model.backbone.layers.values():
-            if isinstance(block.mlp, MoE):
-                block.mlp.experts.to(device=torch.cuda.current_device())
+        if cfg.ep:
+            for block in model.backbone.layers.values():
+                if isinstance(block.mlp, MoE):
+                    block.mlp.experts.to(device=torch.cuda.current_device())
 
     if rank == 0:
         print(f"{model=}")

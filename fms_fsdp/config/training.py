@@ -35,6 +35,9 @@ class train_config:
     mixed_precision: bool = True
     low_cpu_fsdp: bool = False
 
+    # Expert parallel
+    ep: bool = False
+
     # training spec
     batch_size: int = 2
     num_steps: int = 1000000

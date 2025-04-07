@@ -202,14 +202,21 @@ def main(**kwargs):
             g["initial_lr"] = cfg.learning_rate
 
     # LR schedule
+    warmup_interval = min(2000, cfg.num_steps // 20)
+    warmup = lambda x: 1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2
     # linear decay for annealing
     if cfg.training_stage == "annealing":
-        schedule = lambda x: 1 - x / cfg.num_steps
+        schedule = lambda x: min(
+            warmup(x),
+            1 - x / cfg.num_steps,
+        )
+    elif cfg.training_stage == "constant":
+        # no decay for intermediate jobs
+        schedule = warmup
     else:
         # cosine decay
-        warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
-            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+            warmup(x),
             0.1
             + 0.5
             * (1 - 0.1)

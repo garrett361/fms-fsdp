@@ -130,6 +130,8 @@ def main(**kwargs):
         # TODO: proper normalization; just normal init for now
         for p in model.parameters():
             nn.init.normal_(p)
+        nn.init.normal_(model.backbone.embedding.weight, std=.02)
+
 
     else:
         # Must also manually move the ignored experts to cuda, as fully_shard doesn't do so.

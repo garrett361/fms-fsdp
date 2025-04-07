@@ -1,4 +1,6 @@
+import re
 from copy import deepcopy
+
 from fms.models.llama import LLaMAConfig
 
 from fms_fsdp.config import train_config
@@ -26,7 +28,7 @@ BAMBA_9B_BASE_CFG = {
     "pad_vocab_size_multiple": 16,
     "tie_embeddings": False,
 }
-ROTARY_EMB_BASE_DEFAULT =10_000.0
+ROTARY_EMB_BASE_DEFAULT = 10_000.0
 
 
 def update_config(config, **kwargs):
@@ -187,26 +189,12 @@ def get_model_config(model_variant):
         )
     elif model_variant == "mamba_9.8b":
         model_config = BAMBA_9B_BASE_CFG
-    # 32k
-    elif model_variant == "mamba_9.8b_8x":
-        model_config=deepcopy(BAMBA_9B_BASE_CFG)
-        model_config["attn_cfg"]["rotary_emb_base"] = 8*ROTARY_EMB_BASE_DEFAULT
-    # 64k
-    elif model_variant == "mamba_9.8b_16x":
-        model_config=deepcopy(BAMBA_9B_BASE_CFG)
-        model_config["attn_cfg"]["rotary_emb_base"] = 16*ROTARY_EMB_BASE_DEFAULT
-    # 128k
-    elif model_variant == "mamba_9.8b_32x":
-        model_config=deepcopy(BAMBA_9B_BASE_CFG)
-        model_config["attn_cfg"]["rotary_emb_base"] = 32*ROTARY_EMB_BASE_DEFAULT
-    # 256k
-    elif model_variant == "mamba_9.8b_64x":
-        model_config=deepcopy(BAMBA_9B_BASE_CFG)
-        model_config["attn_cfg"]["rotary_emb_base"] = 64*ROTARY_EMB_BASE_DEFAULT
-    # 512k
-    elif model_variant == "mamba_9.8b_128x":
-        model_config=deepcopy(BAMBA_9B_BASE_CFG)
-        model_config["attn_cfg"]["rotary_emb_base"] = 128*ROTARY_EMB_BASE_DEFAULT
+    # Long ctx configs
+    elif mamba_multiplier := re.search(r"mamba_9.8b_(\d+)x", model_variant):
+        mul = int(mamba_multiplier.group(1))
+        model_config = deepcopy(BAMBA_9B_BASE_CFG)
+        model_config["attn_cfg"]["rotary_emb_base"] = mul * ROTARY_EMB_BASE_DEFAULT
+        print(f"Using {mul}x mamba_9.8b config ({4096 * mul} seqlen)")
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 

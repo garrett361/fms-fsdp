@@ -102,15 +102,16 @@ def train(
         if cfg.z_loss is not None:
             loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
 
+        if cfg.grad_acc_steps != 1:
+            loss = loss / cfg.grad_acc_steps
+
         loss.backward()
         ddp_stats[0] += loss.item()
-        ddp_stats[2] += 1
         if grad_acc_idx != 0:
             continue
 
-        ddp_stats[1] += (
-            cfg.grad_acc_steps * model.clip_grad_norm_(cfg.grad_clip_thresh).item()
-        )
+        ddp_stats[2] += 1
+        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 

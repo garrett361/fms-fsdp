@@ -98,7 +98,7 @@ def train(
         optimizer.step()
         scheduler.step()
 
-        ddp_stats[0] += loss.item()
+        ddp_stats[0] += loss.detach().item()
         ddp_stats[1] += 1
 
         if profiler:

@@ -92,6 +92,9 @@ def main(**kwargs):
             model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
     else:
         model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
+    if rank == 0:
+        total_params_local = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"\n--> Local model has {total_params_local / 1e6} Million params\n")
 
     # AC
     if cfg.fsdp_activation_checkpointing:

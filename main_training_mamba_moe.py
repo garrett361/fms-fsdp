@@ -172,6 +172,8 @@ def main(**kwargs):
             elif cfg.ep_degree == world_size:
                 # No replication in this case.
                 ignored_params.add(block.mlp.experts.parameters())
+                # Seems like we also need to explicitly change to bloat16 in this case?
+                block.mlp.experts.to(torch.bfloat16)
             else:
                 for expert in block.mlp.experts.values():
                     # Don't reshard due to comms costs

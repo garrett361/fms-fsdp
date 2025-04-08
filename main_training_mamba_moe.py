@@ -102,6 +102,8 @@ def main(**kwargs):
     )
 
     if rank == 0:
+        print(f"{ep_mesh}=")
+        print(f"{fsdp_mesh}=")
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
         with torch.device("meta"):
             total_params = sum(

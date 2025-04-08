@@ -130,11 +130,7 @@ def train(
             if cfg.force_equal_loads:
                 for layer_idx, block in model.backbone.layers.items():
                     if isinstance(block.mlp, MoE):
-                        tok_counts = {
-                            idx: expert._tok_count
-                            for idx, expert in block.mlp.experts.items()
-                        }
-                        print(f"[{rank=}]: {layer_idx=}, {tok_counts=}")
+                        print(f"[{rank=}]: {layer_idx=}, toks={block.mlp._tok_count}")
 
             if cfg.extra_timing:
                 fwd_time_mean_s = fwd_timer.get_mean_time_s()

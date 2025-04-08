@@ -4,6 +4,7 @@ from pathlib import Path
 
 import fire
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
@@ -16,7 +17,6 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 )
 from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
-import torch.nn as nn
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -104,15 +104,23 @@ def main(**kwargs):
     if rank == 0:
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
         with torch.device("meta"):
-            total_params = sum(p.numel() for p in MambaLMHeadModel(mamba_config).parameters() if p.requires_grad)
+            total_params = sum(
+                p.numel()
+                for p in MambaLMHeadModel(mamba_config).parameters()
+                if p.requires_grad
+            )
         print(f"\n--> Logical model has {total_params / 1e6} Million params\n")
     if cfg.low_cpu_fsdp:
         if rank == 0:
             print("Building model on meta device...")
         with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["inner"])
+            model = MambaLMHeadModel(
+                mamba_config, ep_mesh=None if ep_mesh is None else ep_mesh["inner"]
+            )
     else:
-        model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["inner"])
+        model = MambaLMHeadModel(
+            mamba_config, ep_mesh=None if ep_mesh is None else ep_mesh["inner"]
+        )
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
         total_params_local = sum(
@@ -180,7 +188,6 @@ def main(**kwargs):
         for p in model.parameters():
             nn.init.normal_(p)
         nn.init.normal_(model.backbone.embedding.weight, std=0.02)
-
 
     else:
         # Must also manually move the ignored experts to cuda, as fully_shard doesn't do so.

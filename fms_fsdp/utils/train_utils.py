@@ -45,7 +45,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             if rank == 0:
-                print(f"--> wandb is enabled!")
+                print("--> wandb is enabled!")
                 try:
                     wandb.init(
                         project=project_name,
@@ -65,7 +65,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to aim but aim is not installed.")
             if rank == 0:
-                print(f"--> aim is enabled!")
+                print("--> aim is enabled!")
                 run = Run(
                     experiment=project_name,
                     repo=tracker_dir,
@@ -80,7 +80,13 @@ def train(
     start = time.time()
     loop_start = time.time()
     train_loss = -1
-    fwd_timer, bwd_timer = CUDATimer(), CUDATimer()
+    if cfg.extra_timing:
+        fwd_timer, bwd_timer = CUDATimer(), CUDATimer()
+    else:
+        from contextlib import nullcontext
+
+        fwd_timer = bwd_timer = nullcontext()
+
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
         with fwd_timer:
             if batch_idx > cfg.num_steps:
@@ -96,7 +102,11 @@ def train(
         with bwd_timer:
             loss.backward()
         # .full_tensor() return the correct global norm
-        g_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh).full_tensor().item())
+        g_norms.append(
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
+            .full_tensor()
+            .item()
+        )
 
         optimizer.step()
         scheduler.step()
@@ -116,22 +126,24 @@ def train(
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
 
-            fwd_time_mean_s = fwd_timer.get_mean_time_s()
-            fwd_time_std_s = fwd_timer.get_std_time_s()
-            fwd_timer.reset()
+            if cfg.extra_timing:
+                fwd_time_mean_s = fwd_timer.get_mean_time_s()
+                fwd_time_std_s = fwd_timer.get_std_time_s()
+                fwd_timer.reset()
 
-            bwd_time_mean_s = bwd_timer.get_mean_time_s()
-            bwd_time_std_s = bwd_timer.get_std_time_s()
-            bwd_timer.reset()
+                bwd_time_mean_s = bwd_timer.get_mean_time_s()
+                bwd_time_std_s = bwd_timer.get_std_time_s()
+                bwd_timer.reset()
+                if rank == 0:
+                    print(f"{fwd_time_mean_s=}")
+                    print(f"{fwd_time_std_s=}")
+                    print(f"{bwd_time_mean_s=}")
+                    print(f"{bwd_time_std_s=}")
             if rank == 0:
-                print(f"{fwd_time_mean_s=}")
-                print(f"{fwd_time_std_s=}")
-                print(f"{bwd_time_mean_s=}")
-                print(f"{bwd_time_std_s=}")
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
-                current_gnorm = sum(g_norms)  / len(g_norms)
+                current_gnorm = sum(g_norms) / len(g_norms)
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (batch_idx - start_step)
                 current_throughput = int(
@@ -218,11 +230,11 @@ def get_mixed_precision_policy(cfg, rank):
         if bf16_ready:
             mixed_precision_policy = bfSixteen
             if rank == 0:
-                print(f"bFloat16 enabled for mixed precision - using bfSixteen policy")
+                print("bFloat16 enabled for mixed precision - using bfSixteen policy")
         else:
             mixed_precision_policy = fpSixteen
             if rank == 0:
-                print(f"FP16 enabled")
+                print("FP16 enabled")
     else:
         mixed_precision_policy = None
 

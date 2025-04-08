@@ -8,7 +8,6 @@ class train_config:
     model_variant: str = "7b"
     ckpt_load_path: str = "/fsx/output/ckpt"
     ckpt_save_path: str = "/fsx/output/ckpt"
-    skip_ckpt: bool = False
 
     # dataset and dataloader
     use_dummy_dataset: bool = False
@@ -76,3 +75,7 @@ class train_config:
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96
     stage2_seq_length: int = 256
+
+    # Dev/debug options
+    skip_ckpt: bool = False
+    extra_timing: bool = False

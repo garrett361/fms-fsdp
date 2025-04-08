@@ -177,7 +177,7 @@ def main(**kwargs):
                     # Don't reshard due to comms costs
                     fully_shard(
                         expert,
-                        mesh=ep_mesh,
+                        mesh=ep_mesh["outer"],
                         mp_policy=mp_policy,
                         reshard_after_forward=False,
                     )

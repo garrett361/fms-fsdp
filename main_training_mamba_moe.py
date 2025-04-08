@@ -120,9 +120,9 @@ def main(**kwargs):
     fully_shard(model.backbone.embedding, mesh=fsdp_mesh, mp_policy=mp_policy)
     # NOTE: @goon - model.backbone.layers is a module_dict on the MoE branch
     for idx, block in model.backbone.layers.items():
+        # The ignored_params arg requires torch nightly (> 2.6.0)
+        ignored_params = set()
         if cfg.ep:
-            # The ignored_params arg requires torch nightly (> 2.6.0)
-            ignored_params = set()
             if isinstance(block.mlp, MoE):
                 ignored_params.add(block.mlp.experts.parameters())
         is_not_last_block = int(idx) < len(model.backbone.layers) - 1

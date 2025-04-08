@@ -78,7 +78,13 @@ def main(**kwargs):
     if cfg.sharding_strategy == "hsdp":
         raise NotImplementedError("Just full FSDP for now")
     else:
-        mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
+        fsdp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("fsdp",))
+
+    # NOTE: @goon - In context parallel, training was much more stable when using separate meshes
+    # for fsdp and CP. Trying the same thing here with EP, but not sure it matters. Don't think it
+    # should, in principle. Also, we may just need separate meshes in the future for more complex
+    # scenarios.
+    ep_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("ep",)) if cfg.ep else None
 
     if rank == 0:
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
@@ -89,9 +95,10 @@ def main(**kwargs):
         if rank ==0:
             print("Building model on meta device...")
         with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
+            model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh)
     else:
-        model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
+        model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh)
+    # NOTE: @goon - Sanity checking param count:
     if rank == 0:
         total_params_local = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"\n--> Local model has {total_params_local / 1e6} Million params\n")
@@ -109,8 +116,8 @@ def main(**kwargs):
         param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
     )
     # Assumption: no tied params
-    fully_shard(model.lm_head, mesh=mesh, mp_policy=mp_policy)
-    fully_shard(model.backbone.embedding, mesh=mesh, mp_policy=mp_policy)
+    fully_shard(model.lm_head, mesh=fsdp_mesh, mp_policy=mp_policy)
+    fully_shard(model.backbone.embedding, mesh=fsdp_mesh, mp_policy=mp_policy)
     # NOTE: @goon - model.backbone.layers is a module_dict on the MoE branch
     for idx, block in model.backbone.layers.items():
         if cfg.ep:
@@ -121,12 +128,12 @@ def main(**kwargs):
         is_not_last_block = int(idx) < len(model.backbone.layers) - 1
         fully_shard(
             block,
-            mesh=mesh,
+            mesh=fsdp_mesh,
             ignored_params=ignored_params,
             mp_policy=mp_policy,
             reshard_after_forward=is_not_last_block,
         )
-    fully_shard(model, mesh=mesh, reshard_after_forward=False, mp_policy=mp_policy)
+    fully_shard(model, mesh=fsdp_mesh, reshard_after_forward=False, mp_policy=mp_policy)
 
     if cfg.low_cpu_fsdp:
         if rank ==0:

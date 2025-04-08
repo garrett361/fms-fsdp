@@ -2,6 +2,7 @@ import os
 from dataclasses import asdict
 from functools import partial
 
+import torch
 
 try:
     import packaging.version
@@ -79,19 +80,21 @@ def train(
     start = time.time()
     loop_start = time.time()
     train_loss = -1
+    fwd_timer, bwd_timer = CUDATimer(), CUDATimer()
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        if batch_idx > cfg.num_steps:
-            break
-        input = input.to(local_rank)
-        label = label.to(local_rank)
+        with fwd_timer:
+            if batch_idx > cfg.num_steps:
+                break
+            input = input.to(local_rank)
+            label = label.to(local_rank)
 
-        optimizer.zero_grad()
-        output = model(input)
-        output = output.logits if hasattr(output, "logits") else output
-        ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
-
-        loss.backward()
+            optimizer.zero_grad()
+            output = model(input)
+            output = output.logits if hasattr(output, "logits") else output
+            ce_loss = torch.nn.CrossEntropyLoss()
+            loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+        with bwd_timer:
+            loss.backward()
         # .full_tensor() return the correct global norm
         g_norms.append(torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh).full_tensor().item())
 
@@ -112,7 +115,19 @@ def train(
             new_tokens_seen = (
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
+
+            fwd_time_mean_s = fwd_timer.get_mean_time_s()
+            fwd_time_std_s = fwd_timer.get_std_time_s()
+            fwd_timer.reset()
+
+            bwd_time_mean_s = bwd_timer.get_mean_time_s()
+            bwd_time_std_s = bwd_timer.get_std_time_s()
+            bwd_timer.reset()
             if rank == 0:
+                print(f"{fwd_time_mean_s=}")
+                print(f"{fwd_time_std_s=}")
+                print(f"{bwd_time_mean_s=}")
+                print(f"{bwd_time_std_s=}")
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
@@ -269,3 +284,48 @@ def get_profiler(cfg, rank):
         with_stack=False,
         record_shapes=True,
     )
+
+
+class CUDATimer:
+    def __init__(self) -> None:
+        self._start_events: list[torch.cuda.Event] = []
+        self._stop_events: list[torch.cuda.Event] = []
+
+    def __enter__(self) -> "CUDATimer":
+        start = torch.cuda.Event(enable_timing=True)
+        stop = torch.cuda.Event(enable_timing=True)
+        start.record()
+        self._start_events.append(start)
+        self._stop_events.append(stop)
+        return self
+
+    def __exit__(self, *args, **kwargs) -> None:
+        self._stop_events[-1].record()
+
+    def __len__(self) -> int:
+        return len(self._start_events)
+
+    def get_time_list_s(self) -> list[float]:
+        if not self._start_events:
+            return [0.0]
+        torch.cuda.synchronize()
+        time_list_s = [
+            start.elapsed_time(stop) / 1e3
+            for start, stop in zip(self._start_events, self._stop_events)
+        ]
+        return time_list_s
+
+    def get_total_time_s(self) -> float:
+        return sum(self.get_time_list_s())
+
+    def get_mean_time_s(self) -> float:
+        time_list_s = self.get_time_list_s()
+        return sum(time_list_s) / len(time_list_s)
+
+    def get_std_time_s(self) -> float:
+        time_list_s = self.get_time_list_s()
+        return torch.tensor(time_list_s).std().item()
+
+    def reset(self) -> None:
+        self._start_events.clear()
+        self._stop_events.clear()

@@ -3,6 +3,7 @@ from dataclasses import asdict
 from functools import partial
 
 import torch
+from mamba_ssm.modules.moe import MoE
 
 try:
     import packaging.version

@@ -183,39 +183,6 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
-    elif model_variant == "mamba_moe_30b":
-        # Somewhat arbitrarily put-together moe model. Loosely based on DSv2-Lite
-        # https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/blob/main/config.json
-        model_config = {
-            "d_model": 4096,
-            "d_intermediate": 14336,
-            "n_layer": 32,
-            "vocab_size": 128256,
-            "ssm_cfg": {"layer": "Mamba2"},
-            "attn_layer_idx": [9, 18, 27],
-            "attn_cfg": {
-                "causal": True,
-                "d_conv": 0,
-                "head_dim": 128,
-                "num_heads": 32,
-                "num_heads_kv": 8,
-                "out_proj_bias": False,
-                "qkv_proj_bias": False,
-                "rotary_emb_dim": 64,
-            },
-            "moe_layer_idx": list(range(1, 32)),
-            "moe_cfg": {
-                "n_routed_experts": 64,
-                "n_activated_experts": 6,
-                "n_shared_experts": 2,
-                "hidden_features": 1024,
-            },
-            "rms_norm": True,
-            "residual_in_fp32": True,
-            "fused_add_norm": True,
-            "pad_vocab_size_multiple": 16,
-            "tie_embeddings": False,
-        }
     elif model_variant == "mamba_moe_lite":
         # Scaled down model for testing. ~2B params.
         model_config = {
@@ -331,7 +298,7 @@ def get_model_config(model_variant):
                 "qkv_proj_bias": False,
                 "rotary_emb_dim": 64,
             },
-            "moe_layer_idx": list(range(40)),
+            "moe_layer_idx": list(range(60)),
             "moe_cfg": {
                 "n_routed_experts": 160,
                 "n_activated_experts": 8,

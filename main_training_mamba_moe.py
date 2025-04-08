@@ -172,8 +172,6 @@ def main(**kwargs):
             elif cfg.ep_degree == world_size:
                 # No replication in this case.
                 ignored_params.add(block.mlp.experts.parameters())
-                # Seems like we also need to explicitly change to bloat16 in this case?
-                block.mlp.experts.to(torch.bfloat16)
             else:
                 for expert in block.mlp.experts.values():
                     # Don't reshard due to comms costs
@@ -198,6 +196,11 @@ def main(**kwargs):
             print("Moving model to CUDA...")
         # Move to cuda and initialize.
         model.to_empty(device=torch.cuda.current_device())
+        # NOTE: @goon - explicitly put the entire model in bfloat16. Not clear whether the ignored
+        # EP experts were using bfloat16 or float32 compute.
+        # TODO: @goon - figure this out and remove.
+        model.to(torch.bfloat16)
+
         # TODO: proper normalization; just normal init for now
         for p in model.parameters():
             nn.init.normal_(p)

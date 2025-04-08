@@ -65,6 +65,8 @@ def main(**kwargs):
     mamba_config = MambaConfig(**config_data)
     if cfg.force_equal_loads:
         mamba_config.moe_cfg["_force_equal_loads"] = True
+    if not rank:
+        print(f"{mamba_config.moe_cfg=}")
 
     # get data loader
     if rank == 0:

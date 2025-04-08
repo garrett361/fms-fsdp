@@ -76,7 +76,11 @@ def main(**kwargs):
 
     # FSDP
     if cfg.sharding_strategy == "hsdp":
-        raise NotImplementedError("Just full FSDP for now")
+        fsdp_mesh = init_device_mesh(
+            "cuda",
+            (world_size // torch.cuda.device_count(), torch.cuda.device_count()),
+            mesh_dim_names=("outer", "inner"),
+        )
     else:
         fsdp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("fsdp",))
 
@@ -84,7 +88,18 @@ def main(**kwargs):
     # for fsdp and CP. Trying the same thing here with EP, but not sure it matters. Don't think it
     # should, in principle. Also, we may just need separate meshes in the future for more complex
     # scenarios.
-    ep_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("ep",)) if cfg.ep else None
+    assert world_size % cfg.ep_degree == 0, (
+        f"{world_size=} must be divisible by {cfg.ep_degree=}"
+    )
+    ep_mesh = (
+        init_device_mesh(
+            "cuda",
+            (world_size // cfg.ep_degree, cfg.ep_degree),
+            mesh_dim_names=("outer", "inner"),
+        )
+        if cfg.ep_degree > 1
+        else None
+    )
 
     if rank == 0:
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
@@ -92,15 +107,17 @@ def main(**kwargs):
             total_params = sum(p.numel() for p in MambaLMHeadModel(mamba_config).parameters() if p.requires_grad)
         print(f"\n--> Logical model has {total_params / 1e6} Million params\n")
     if cfg.low_cpu_fsdp:
-        if rank ==0:
+        if rank == 0:
             print("Building model on meta device...")
         with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh)
+            model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["inner"])
     else:
-        model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh)
+        model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["inner"])
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
-        total_params_local = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total_params_local = sum(
+            p.numel() for p in model.parameters() if p.requires_grad
+        )
         print(f"\n--> Local model has {total_params_local / 1e6} Million params\n")
 
     # AC
@@ -120,11 +137,30 @@ def main(**kwargs):
     fully_shard(model.backbone.embedding, mesh=fsdp_mesh, mp_policy=mp_policy)
     # NOTE: @goon - model.backbone.layers is a module_dict on the MoE branch
     for idx, block in model.backbone.layers.items():
+        # Cases:
+        # 1. ep_degree = 1: full replication, fully shard with the fsdp_mesh
+        # 2. ep_degree = world_size: no expert replication at all. Ignore experts in fully_shard
+        # 3. world_size > ep_degree > world_size: world_size // ep_degree expert replicas. Need
+        #    to individually wrap experts using the ep_mesh because ModuleDict doesn't have a
+        #    forward method.
+
         # The ignored_params arg requires torch nightly (> 2.6.0)
         ignored_params = set()
-        if cfg.ep:
-            if isinstance(block.mlp, MoE):
+        if isinstance(block.mlp, MoE):
+            if cfg.ep_degree == 1:
+                pass
+            elif cfg.ep_degree == world_size:
+                # No replication in this case.
                 ignored_params.add(block.mlp.experts.parameters())
+            else:
+                for expert in block.mlp.experts.values():
+                    # Don't reshard due to comms costs
+                    fully_shard(
+                        expert,
+                        mesh=ep_mesh,
+                        mp_policy=mp_policy,
+                        reshard_after_forward=False,
+                    )
         is_not_last_block = int(idx) < len(model.backbone.layers) - 1
         fully_shard(
             block,
@@ -136,14 +172,14 @@ def main(**kwargs):
     fully_shard(model, mesh=fsdp_mesh, reshard_after_forward=False, mp_policy=mp_policy)
 
     if cfg.low_cpu_fsdp:
-        if rank ==0:
+        if rank == 0:
             print("Moving model to CUDA...")
         # Move to cuda and initialize.
         model.to_empty(device=torch.cuda.current_device())
         # TODO: proper normalization; just normal init for now
         for p in model.parameters():
             nn.init.normal_(p)
-        nn.init.normal_(model.backbone.embedding.weight, std=.02)
+        nn.init.normal_(model.backbone.embedding.weight, std=0.02)
 
 
     else:

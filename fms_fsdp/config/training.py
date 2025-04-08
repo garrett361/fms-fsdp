@@ -36,7 +36,7 @@ class train_config:
     low_cpu_fsdp: bool = False
 
     # Expert parallel
-    ep: bool = False
+    ep_degree: int = 1
 
     # training spec
     batch_size: int = 2

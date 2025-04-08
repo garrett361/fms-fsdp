@@ -79,3 +79,4 @@ class train_config:
     # Dev/debug options
     skip_ckpt: bool = False
     extra_timing: bool = False
+    force_equal_loads: bool = False

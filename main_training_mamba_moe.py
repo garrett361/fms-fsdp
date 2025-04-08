@@ -91,15 +91,25 @@ def main(**kwargs):
     assert world_size % cfg.ep_degree == 0, (
         f"{world_size=} must be divisible by {cfg.ep_degree=}"
     )
-    ep_mesh = (
-        init_device_mesh(
+
+    # Cases:
+    # 1. ep_degree = 1: full replication, no ep_mesh
+    # 2. ep_degree = world_size: ep_mesh is the world
+    # 3. world_size > ep_degree > world_size: 2D mesh, experts distributed along slice .
+    if cfg.ep_degree == 1:
+        ep_mesh = None
+    elif cfg.ep_degree == world_size:
+        ep_mesh = init_device_mesh(
+            "cuda",
+            (world_size,),
+            mesh_dim_names=("inner",),
+        )
+    else:
+        ep_mesh = init_device_mesh(
             "cuda",
             (world_size // cfg.ep_degree, cfg.ep_degree),
             mesh_dim_names=("outer", "inner"),
         )
-        if cfg.ep_degree > 1
-        else None
-    )
 
     if rank == 0:
         print(f"{ep_mesh}=")

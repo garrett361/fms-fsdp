@@ -80,6 +80,11 @@ def main(**kwargs):
     else:
         mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
 
+    if rank == 0:
+        # Count for the full model on the meta device to avoid inaccurate counts due to EP
+        with torch.device("meta"):
+            total_params = sum(p.numel() for p in MambaLMHeadModel(mamba_config).parameters() if p.requires_grad)
+        print(f"\n--> model has {total_params / 1e6} Million params\n")
     if cfg.low_cpu_fsdp:
         if rank ==0:
             print("Building model on meta device...")
@@ -87,9 +92,6 @@ def main(**kwargs):
             model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
     else:
         model = MambaLMHeadModel(mamba_config, ep_mesh=mesh if cfg.ep else None)
-    if rank == 0:
-        total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"\n--> model has {total_params / 1e6} Million params\n")
 
     # AC
     if cfg.fsdp_activation_checkpointing:

@@ -310,11 +310,14 @@ def get_profiler(cfg, rank):
 
 
 class CUDATimer:
-    def __init__(self) -> None:
+    def __init__(self, enabled: bool = True) -> None:
         self._start_events: list[torch.cuda.Event] = []
         self._stop_events: list[torch.cuda.Event] = []
+        self.enabled = enabled
 
     def __enter__(self) -> "CUDATimer":
+        if not self.enabled:
+            return self
         start = torch.cuda.Event(enable_timing=True)
         stop = torch.cuda.Event(enable_timing=True)
         start.record()
@@ -323,6 +326,8 @@ class CUDATimer:
         return self
 
     def __exit__(self, *args, **kwargs) -> None:
+        if not self.enabled:
+            return
         self._stop_events[-1].record()
 
     def __len__(self) -> int:

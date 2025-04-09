@@ -132,7 +132,7 @@ def train(
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
 
-            if cfg.force_equal_loads and cfg.verbose:
+            if cfg.sanity_prints:
                 for layer_idx, block in model.backbone.layers.items():
                     if isinstance(block.mlp, MoE):
                         print(f"[{rank=}]: {layer_idx=}, toks={block.mlp._tok_count}")

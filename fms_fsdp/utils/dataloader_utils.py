@@ -48,7 +48,7 @@ def get_dummy_loader(cfg, rank, world_size):
         def __iter__(self):
             while True:
                 out = torch.IntTensor(
-                    [x % self.v for x in range(self.i, self.i + self.l)]
+                    [((rank+1) *x) % self.v for x in range(self.i, self.i + self.l)]
                 )
                 yield out, out
                 self.i += self.l

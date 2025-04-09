@@ -102,12 +102,17 @@ def train(
             loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
         with bwd_timer:
             loss.backward()
+
+        # Clipping gets complicated with advanced sharding -- see torchtitan
         # .full_tensor() return the correct global norm
-        g_norms.append(
-            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
-            .full_tensor()
-            .item()
-        )
+        if cfg.skip_clip:
+            g_norms.append(0.0)
+        else:
+            g_norms.append(
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
+                .full_tensor()
+                .item()
+            )
 
         optimizer.step()
         scheduler.step()

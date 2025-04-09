@@ -104,10 +104,10 @@ def train(
             loss.backward()
 
         # Clipping gets complicated with advanced sharding -- see torchtitan
-        # .full_tensor() return the correct global norm
         if cfg.skip_clip:
             g_norms.append(0.0)
         else:
+            # .full_tensor() return the correct global norm
             g_norms.append(
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
                 .full_tensor()

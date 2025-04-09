@@ -81,4 +81,4 @@ class train_config:
     skip_clip: bool = False
     extra_timing: bool = False
     force_equal_loads: bool = False
-    verbose: bool = False
+    sanity_prints: bool = False

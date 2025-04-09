@@ -60,6 +60,9 @@ def main(**kwargs):
         Path.home(), ".triton", "cache", str(local_rank)
     )
 
+    # NOTE: @goon - Seems to help with NCCL stability to start with a barrier.
+    dist.barrier()
+
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
@@ -202,7 +205,7 @@ def main(**kwargs):
         model.to_empty(device=torch.cuda.current_device())
         # NOTE: @goon - explicitly put the entire model in bfloat16. Not clear whether the ignored
         # EP experts were using bfloat16 or float32 compute.
-        # TODO: @goon - figure this out and remove.
+        # TODO: @goon - figure out if this was actually an issue and remove.
         model.to(torch.bfloat16)
 
         # TODO: proper normalization; just normal init for now

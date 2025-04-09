@@ -216,8 +216,6 @@ def get_model_config(model_variant):
             "tie_embeddings": False,
         }
     # Translated from https://github.com/foundation-model-stack/fms-fsdp/compare/main...moe
-    # There they use `d_intermediate` in the expert MLPs, which are GraniteMoeMoE instances.  These
-    # classes have two `GraniteMoeParallelExperts` submodules with
     elif model_variant == "mamba_30b_moe":
         model_config = {
             "d_model": 3072,

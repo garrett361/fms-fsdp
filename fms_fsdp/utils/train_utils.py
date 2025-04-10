@@ -84,7 +84,8 @@ def train(
         tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=True)
 
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        step_idx, grad_acc_idx = divmod(batch_idx, cfg.grad_acc_steps)
+        step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
+        should_step = batch_idx % cfg.grad_acc_steps == 0
         if step_idx > cfg.num_steps:
             break
         input = input.to(local_rank)
@@ -107,7 +108,7 @@ def train(
 
         loss.backward()
         ddp_stats[0] += loss.detach().item()
-        if grad_acc_idx != 0:
+        if not should_step:
             continue
 
         ddp_stats[2] += 1

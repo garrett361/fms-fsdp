@@ -6,14 +6,6 @@ from fms_fsdp.utils.config_utils import get_model_config
 
 
 class TestBuildModels:
-    def test_mamba_moe_30b(self) -> None:
-        config_data = get_model_config("mamba_moe_30b")
-        mamba_config = MambaConfig(**config_data)
-        with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config)
-        params = sum(p.numel() for p in model.parameters())
-        assert params == 30_072_016_000  # ~ 30B
-
     def test_mamba_moe_lite(self) -> None:
         config_data = get_model_config("mamba_moe_lite")
         mamba_config = MambaConfig(**config_data)
@@ -45,3 +37,11 @@ class TestBuildModels:
             model = MambaLMHeadModel(mamba_config)
         params = sum(p.numel() for p in model.parameters())
         assert params == 236_844_910_400  # ~ 236B
+
+    def test_mamba_100b_moe_sparse(self) -> None:
+        config_data = get_model_config("mamba_100b_moe_sparse")
+        mamba_config = MambaConfig(**config_data)
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config)
+        params = sum(p.numel() for p in model.parameters())
+        assert params == 104_032_013_728  # ~ 104B

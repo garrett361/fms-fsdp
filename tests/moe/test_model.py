@@ -38,8 +38,8 @@ class TestBuildModels:
         params = sum(p.numel() for p in model.parameters())
         assert params == 236_844_910_400  # ~ 236B
 
-    def test_mamba_100b_moe_sparse(self) -> None:
-        config_data = get_model_config("mamba_100b_moe_sparse")
+    def test_mamba_105b_moe_sparse(self) -> None:
+        config_data = get_model_config("mamba_105b_moe_sparse")
         mamba_config = MambaConfig(**config_data)
         with torch.device("meta"):
             model = MambaLMHeadModel(mamba_config)

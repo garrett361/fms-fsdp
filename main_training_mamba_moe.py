@@ -61,7 +61,7 @@ def main(**kwargs):
     )
 
     # NOTE: @goon - Seems to help with NCCL stability to start with a barrier.
-    dist.barrier()
+    # dist.barrier()
 
     # get model
     config_data = get_model_config(cfg.model_variant)

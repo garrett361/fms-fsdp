@@ -33,6 +33,8 @@ def train(
     start_step,
     tokens_seen,
 ):
+    if cfg.sanity_prints and not rank:
+        print(os.environ)
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
             raise ValueError(f"tracker {cfg.tracker} not supported.")

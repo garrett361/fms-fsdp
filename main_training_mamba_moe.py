@@ -128,7 +128,7 @@ def main(**kwargs):
                 for p in MambaLMHeadModel(mamba_config).parameters()
                 if p.requires_grad
             )
-        print(f"\n--> Logical model has {total_params / 1e6} Million params\n")
+        print(f"\n--> Logical model has {total_params / 1e9} Billion params\n")
     if cfg.low_cpu_fsdp:
         if rank == 0:
             print("Building model on meta device...")
@@ -145,7 +145,7 @@ def main(**kwargs):
         total_params_local = sum(
             p.numel() for p in model.parameters() if p.requires_grad
         )
-        print(f"\n--> Local model has {total_params_local / 1e6} Million params\n")
+        print(f"\n--> Local model has {total_params_local / 1e9} Billion params\n")
 
     # AC
     if cfg.fsdp_activation_checkpointing:

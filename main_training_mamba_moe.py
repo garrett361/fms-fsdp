@@ -200,7 +200,7 @@ def main(**kwargs):
 
     if cfg.low_cpu_fsdp:
         if rank == 0:
-            print("Moving model to CUDA...")
+            print("Moving meta model to CUDA...")
         # Move to cuda and initialize.
         model.to_empty(device=torch.cuda.current_device())
 

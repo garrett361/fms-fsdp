@@ -203,10 +203,6 @@ def main(**kwargs):
             print("Moving model to CUDA...")
         # Move to cuda and initialize.
         model.to_empty(device=torch.cuda.current_device())
-        # NOTE: @goon - explicitly put the entire model in bfloat16. Not clear whether the ignored
-        # EP experts were using bfloat16 or float32 compute.
-        # TODO: @goon - figure out if this was actually an issue and remove.
-        # model.to(torch.bfloat16)
 
         # TODO: proper normalization; just normal init for now
         for p in model.parameters():

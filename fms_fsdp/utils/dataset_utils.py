@@ -988,6 +988,7 @@ class StreamingDocDataset(_StatefulDataset):
             "docs_seen",
             "percent_seen",
             "lcg_state",
+            "g_state",
         ]
 
         # Setup flags
@@ -995,6 +996,9 @@ class StreamingDocDataset(_StatefulDataset):
         self._len = 0
         self.dataset = ""
         self.lcg_state = 0
+        self.g_state = None
+
+        self.g = None
 
     def setup(self):
         """
@@ -1097,6 +1101,7 @@ class StreamingDocDataset(_StatefulDataset):
             random.shuffle(self.docset)
             # Setup doc shuffle - same guarantee
             self.lcg_state = seed
+            self.g = torch.Generator().manual_seed(self.rank)
 
     def _get_docid(self, i):
         """
@@ -1192,7 +1197,8 @@ class StreamingDocDataset(_StatefulDataset):
                 if len(doc) == 0:
                     continue
                 doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
-                if doclen >= self.min_length:
+                keep_chance = (doclen/self.min_length)**2
+                if torch.rand(1, generator=self.g).item() < keep_chance:
                     n_chunks = math.ceil(doclen / self.chunksize)
                     for j in range(n_chunks):
                         if i == 0 and j < residual_chunks:
@@ -1222,7 +1228,8 @@ class StreamingDocDataset(_StatefulDataset):
             if len(doc) == 0:
                 continue
             doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
-            if doclen >= self.min_length:
+            keep_chance = (doclen/self.min_length)**2
+            if torch.rand(1, generator=self.g).item() < keep_chance:
                 n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
@@ -1231,6 +1238,12 @@ class StreamingDocDataset(_StatefulDataset):
 
             # Check that epoch was non-empty
             assert self.has_yielded, f"Empty logical shard detected: {self.dataset, self.docset}"
+
+    def state_dict(self):
+        # Write generator state manually
+        self.g_state = self.g.get_state()
+        out = super().state_dict()
+        return out
 
     def load_state_dict(self, state_dicts, sharded_input=False):
         self.setup()
@@ -1242,6 +1255,9 @@ class StreamingDocDataset(_StatefulDataset):
         assert (
             d == self.dataset
         ), f"Dataset mismatch: checkpoint contains {self.dataset}, expected {d}"
+        # Manually set generator state if it exists
+        if self.g_state is not None:
+            self.g.set_state(self.g_state)
         return out
 
 

@@ -1,6 +1,40 @@
+import re
+from copy import deepcopy
+
 from fms.models.llama import LLaMAConfig
 
 from fms_fsdp.config import train_config
+
+MAMBA_30B_MOE_CFG = {
+    "d_model": 3072,
+    "d_intermediate": 1344,
+    "n_layer": 32,
+    "vocab_size": 128256,
+    "ssm_cfg": {"layer": "Mamba2"},
+    "attn_layer_idx": [9, 18, 27],
+    "attn_cfg": {
+        "causal": True,
+        "d_conv": 0,
+        "head_dim": 128,
+        "num_heads": 24,
+        "num_heads_kv": 8,
+        "out_proj_bias": False,
+        "qkv_proj_bias": False,
+        "rotary_emb_dim": 64,
+    },
+    "moe_layer_idx": list(range(32)),
+    "moe_cfg": {
+        "n_routed_experts": 64,
+        "n_activated_experts": 8,
+        "n_shared_experts": 0,
+        "d_intermediate": 1344,
+    },
+    "rms_norm": True,
+    "residual_in_fp32": True,
+    "fused_add_norm": True,
+    "pad_vocab_size_multiple": 16,
+    "tie_embeddings": False,
+}
 
 
 def update_config(config, **kwargs):
@@ -219,36 +253,7 @@ def get_model_config(model_variant):
         }
     # Translated from https://github.com/foundation-model-stack/fms-fsdp/compare/main...moe
     elif model_variant == "mamba_30b_moe":
-        model_config = {
-            "d_model": 3072,
-            "d_intermediate": 1344,
-            "n_layer": 32,
-            "vocab_size": 128256,
-            "ssm_cfg": {"layer": "Mamba2"},
-            "attn_layer_idx": [9, 18, 27],
-            "attn_cfg": {
-                "causal": True,
-                "d_conv": 0,
-                "head_dim": 128,
-                "num_heads": 24,
-                "num_heads_kv": 8,
-                "out_proj_bias": False,
-                "qkv_proj_bias": False,
-                "rotary_emb_dim": 64,
-            },
-            "moe_layer_idx": list(range(32)),
-            "moe_cfg": {
-                "n_routed_experts": 64,
-                "n_activated_experts": 8,
-                "n_shared_experts": 0,
-                "d_intermediate": 1344,
-            },
-            "rms_norm": True,
-            "residual_in_fp32": True,
-            "fused_add_norm": True,
-            "pad_vocab_size_multiple": 16,
-            "tie_embeddings": False,
-        }
+        model_config = MAMBA_30B_MOE_CFG
     elif model_variant == "mamba_120b_moe":
         model_config = {
             "d_model": 4096,
@@ -342,6 +347,16 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
+    elif mamba_moe_dev_config := re.search(
+        r"mamba_moe_dev_(\d+)_layer_(\d+)_exp", model_variant
+    ):
+        n_layer = int(mamba_moe_dev_config[1])
+        n_routed_experts = int(mamba_moe_dev_config[2])
+        cfg = deepcopy(MAMBA_30B_MOE_CFG)
+        cfg["n_layer"] = n_layer
+        cfg["moe_cfg"]["n_routed_experts"] = n_routed_experts
+        return cfg
+
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 

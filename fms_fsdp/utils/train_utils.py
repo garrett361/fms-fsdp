@@ -135,7 +135,9 @@ def train(
             if cfg.sanity_prints:
                 for layer_idx, block in model.backbone.layers.items():
                     if isinstance(block.mlp, MoE):
-                        print(f"[{rank=}]: {batch_idx=}, {layer_idx=}, toks={block.mlp._tok_count}")
+                        print(
+                            f"[{rank=}]: {batch_idx=}, {layer_idx=}, toks={block.mlp._tok_count}"
+                        )
 
             if cfg.extra_timing:
                 fwd_time_mean_s = fwd_timer.get_mean_time_s()
@@ -218,8 +220,8 @@ def train(
     return train_loss
 
 
-def setup():
-    dist.init_process_group("nccl", timeout=timedelta(seconds=60 * 60))
+def setup(**kwargs):
+    dist.init_process_group("nccl", timeout=timedelta(seconds=60 * 60), **kwargs)
 
 
 def setup_environ_flags():

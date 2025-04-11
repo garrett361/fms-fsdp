@@ -52,8 +52,8 @@ def main(**kwargs):
         print(f"--> running with these configs {cfg}")
 
     # some setups
-    setup()
     torch.cuda.set_device(local_rank)
+    setup(device_id=torch.device(f"cuda:{local_rank}"))
     torch.cuda.empty_cache()
     setup_environ_flags()
     os.environ["TRITON_CACHE_DIR"] = os.path.join(
@@ -61,7 +61,7 @@ def main(**kwargs):
     )
 
     # NOTE: @goon - Seems to help with NCCL stability to start with a barrier.
-    dist.barrier()
+    # dist.barrier()
 
     # get model
     config_data = get_model_config(cfg.model_variant)

@@ -83,7 +83,9 @@ def train(
 
         tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=True)
 
-    for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
+    for batch_idx, (input, label) in enumerate(
+        train_loader, start=start_step * cfg.grad_acc_steps + 1
+    ):
         step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
         should_step = batch_idx % cfg.grad_acc_steps == 0
         if step_idx > cfg.num_steps:

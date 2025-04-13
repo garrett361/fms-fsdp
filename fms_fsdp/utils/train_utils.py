@@ -147,7 +147,7 @@ def train(
                     device=torch.cuda.current_device()
                 )
 
-                print("step:", step_idx)
+                print("\nstep:", step_idx)
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)

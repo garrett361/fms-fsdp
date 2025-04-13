@@ -167,6 +167,13 @@ def train(
                 remaining_secs = remaining_steps * current_step_time
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
 
+                next_ckpt_step_idx = ((
+                    step_idx + cfg.checkpoint_interval - 1
+                ) // cfg.checkpoint_interval) * cfg.checkpoint_interval
+                steps_until_ckpt = next_ckpt_step_idx - step_idx
+                secs_until_ckpt = steps_until_ckpt * current_step_time
+                print(f"Approx. time to next ckpt: {timedelta(seconds=secs_until_ckpt)}")
+
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,

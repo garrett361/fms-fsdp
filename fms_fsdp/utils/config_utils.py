@@ -357,6 +357,10 @@ def get_model_config(model_variant):
         cfg["n_layer"] = n_layer
         cfg["moe_cfg"]["n_routed_experts"] = n_routed_experts
         cfg["moe_cfg"]["n_activated_experts"] = n_activated_experts
+
+        print(
+            f"Building dev model with: {n_layer=}, {n_routed_experts=}, {n_activated_experts=}"
+        )
         return cfg
 
     else:

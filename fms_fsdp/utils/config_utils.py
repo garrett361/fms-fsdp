@@ -348,13 +348,15 @@ def get_model_config(model_variant):
             "tie_embeddings": False,
         }
     elif mamba_moe_dev_config := re.search(
-        r"mamba_moe_dev_(\d+)_layer_(\d+)_exp", model_variant
+        r"mamba_moe_dev_(\d+)_layer_(\d+)_exp_(\d+)_act", model_variant
     ):
         n_layer = int(mamba_moe_dev_config[1])
         n_routed_experts = int(mamba_moe_dev_config[2])
+        n_activated_experts = int(mamba_moe_dev_config[2])
         cfg = deepcopy(MAMBA_30B_MOE_CFG)
         cfg["n_layer"] = n_layer
         cfg["moe_cfg"]["n_routed_experts"] = n_routed_experts
+        cfg["moe_cfg"]["n_activated_experts"] = n_activated_experts
         return cfg
 
     else:

@@ -53,6 +53,7 @@ def main(**kwargs):
     os.environ["TRITON_CACHE_DIR"] = os.path.join(
         Path.home(), ".triton", "cache", str(local_rank)
     )
+    dist.barrier()
 
     # get policy. NOTE: @goon - overriding {wrapping_policy, param_init_fn} below
     block = Block

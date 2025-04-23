@@ -80,5 +80,4 @@ class train_config:
     skip_ckpt: bool = False
     skip_clip: bool = False
     extra_timing: bool = False
-    force_equal_loads: bool = False
     sanity_prints: bool = False

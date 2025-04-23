@@ -7,7 +7,7 @@ from fms_fsdp.config import train_config
 
 MAMBA_30B_MOE_CFG = {
     "d_model": 3072,
-    "d_intermediate": 1344,
+    "d_intermediate": 14336,
     "n_layer": 32,
     "vocab_size": 128256,
     "ssm_cfg": {"layer": "Mamba2"},
@@ -257,7 +257,7 @@ def get_model_config(model_variant):
     elif model_variant == "mamba_120b_moe":
         model_config = {
             "d_model": 4096,
-            "d_intermediate": 896,
+            "d_intermediate": 14336,
             "n_layer": 40,
             "vocab_size": 128256,
             "ssm_cfg": {"layer": "Mamba2"},
@@ -288,7 +288,7 @@ def get_model_config(model_variant):
     elif model_variant == "mamba_236b_moe":
         model_config = {
             "d_model": 5120,
-            "d_intermediate": 1536,
+            "d_intermediate": 14336,
             "n_layer": 60,
             "vocab_size": 128256,
             "ssm_cfg": {"layer": "Mamba2"},
@@ -319,7 +319,7 @@ def get_model_config(model_variant):
     elif model_variant == "mamba_105b_moe_sparse":
         model_config = {
             "d_model": 3072,
-            "d_intermediate": 1344,
+            "d_intermediate": 14336,
             "n_layer": 32,
             "vocab_size": 128256,
             "ssm_cfg": {"layer": "Mamba2"},

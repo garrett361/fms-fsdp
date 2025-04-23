@@ -34,8 +34,9 @@ class train_config:
     mixed_precision: bool = True
     low_cpu_fsdp: bool = False
 
-    # Expert parallel
+    # MoE settings
     ep_degree: int = 1
+    moe_impl: str = "torch"
 
     # training spec
     batch_size: int = 2

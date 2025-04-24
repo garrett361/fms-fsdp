@@ -352,7 +352,7 @@ def get_model_config(model_variant):
     ):
         n_layer = int(mamba_moe_dev_config[1])
         n_routed_experts = int(mamba_moe_dev_config[2])
-        n_activated_experts = int(mamba_moe_dev_config[2])
+        n_activated_experts = int(mamba_moe_dev_config[3])
         cfg = deepcopy(MAMBA_30B_MOE_CFG)
         cfg["n_layer"] = n_layer
         cfg["moe_cfg"]["n_routed_experts"] = n_routed_experts

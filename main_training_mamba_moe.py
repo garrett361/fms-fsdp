@@ -179,14 +179,13 @@ def main(**kwargs):
                 # No replication in this case.
                 ignored_params.add(block.mlp.experts.parameters())
             else:
-                for expert in block.mlp.experts.values():
-                    # Don't reshard due to comms costs
-                    fully_shard(
-                        expert,
-                        mesh=ep_mesh["outer"],
-                        mp_policy=mp_policy,
-                        reshard_after_forward=False,
-                    )
+                # Don't reshard due to comms costs
+                fully_shard(
+                    block.mlp.experts,
+                    mesh=ep_mesh["outer"],
+                    mp_policy=mp_policy,
+                    reshard_after_forward=False,
+                )
         is_not_last_block = int(idx) < len(model.backbone.layers) - 1
         fully_shard(
             block,

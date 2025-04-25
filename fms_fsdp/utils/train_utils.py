@@ -3,7 +3,6 @@ from dataclasses import asdict
 from functools import partial
 
 import torch
-from mamba_ssm.modules.moe import MoE
 
 try:
     import packaging.version
@@ -136,11 +135,7 @@ def train(
             )
 
             if cfg.sanity_prints:
-                for layer_idx, block in model.backbone.layers.items():
-                    if isinstance(block.mlp, MoE):
-                        print(
-                            f"[{rank=}]: {batch_idx=}, {layer_idx=}, toks={block.mlp._tok_count}"
-                        )
+                print(f"[{rank=}]: {batch_idx=}, toks={model._get_tok_counts()}")
 
             if cfg.extra_timing:
                 fwd_time_mean_s = fwd_timer.get_mean_time_s()

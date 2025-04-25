@@ -209,7 +209,7 @@ def main(**kwargs):
 
     else:
         # Must also manually move the ignored experts to cuda, as fully_shard doesn't do so.
-        if cfg.ep:
+        if cfg.ep_degree > 1:
             for block in model.backbone.layers.values():
                 if isinstance(block.mlp, MoE):
                     block.mlp.experts.to(device=torch.cuda.current_device())

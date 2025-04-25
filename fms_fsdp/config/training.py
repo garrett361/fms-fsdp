@@ -80,6 +80,7 @@ class train_config:
     # Dev/debug options
     skip_ckpt: bool = False
     skip_clip: bool = False
+    skip_optim_step: bool = False
     extra_timing: bool = False
     sanity_prints: bool = False
     pg_timeout: Optional[int] = None

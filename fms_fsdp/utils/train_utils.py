@@ -116,8 +116,8 @@ def train(
                 .full_tensor()
                 .item()
             )
-
-        optimizer.step()
+        if not cfg.skip_optim_step:
+            optimizer.step()
         scheduler.step()
 
         ddp_stats[0] += loss.detach().item()

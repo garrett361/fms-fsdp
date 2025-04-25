@@ -222,8 +222,9 @@ def train(
     return train_loss
 
 
-def setup(**kwargs):
-    dist.init_process_group("nccl", timeout=timedelta(seconds=60 * 60), **kwargs)
+def setup(cfg=None):
+    pg_timeout = 60 * 60 if cfg is None or cfg.pg_timeout is None else cfg.pg_timeout
+    dist.init_process_group("nccl", timeout=timedelta(seconds=pg_timeout))
 
 
 def setup_environ_flags():

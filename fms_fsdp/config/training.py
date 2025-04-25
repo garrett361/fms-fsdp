@@ -82,3 +82,4 @@ class train_config:
     skip_clip: bool = False
     extra_timing: bool = False
     sanity_prints: bool = False
+    pg_timeout: Optional[int] = None

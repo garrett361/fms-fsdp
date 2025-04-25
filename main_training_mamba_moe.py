@@ -53,7 +53,7 @@ def main(**kwargs):
 
     # some setups
     torch.cuda.set_device(local_rank)
-    setup()
+    setup(cfg)
     torch.cuda.empty_cache()
     setup_environ_flags()
     os.environ["TRITON_CACHE_DIR"] = os.path.join(

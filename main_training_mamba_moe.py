@@ -207,12 +207,12 @@ def main(**kwargs):
             nn.init.normal_(p)
         nn.init.normal_(model.backbone.embedding.weight, std=0.02)
 
-    else:
-        # Must also manually move the ignored experts to cuda, as fully_shard doesn't do so.
-        if cfg.ep_degree > 1:
-            for block in model.backbone.layers.values():
-                if isinstance(block.mlp, MoE):
-                    block.mlp.experts.to(device=torch.cuda.current_device())
+    elif cfg.ep_degree == world_size:
+        # If the experts are not sharded and just ignored, then we must also manually move the
+        # ignored experts to cuda, as fully_shard doesn't do so.
+        for block in model.backbone.layers.values():
+            if isinstance(block.mlp, MoE):
+                block.mlp.experts.to(device=torch.cuda.current_device())
 
     if rank == 0:
         print(f"{model=}")

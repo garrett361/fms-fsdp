@@ -34,10 +34,6 @@ class train_config:
     mixed_precision: bool = True
     low_cpu_fsdp: bool = False
 
-    # MoE settings
-    ep_degree: int = 1
-    moe_impl: str = "torch"
-
     # training spec
     batch_size: int = 2
     num_steps: int = 1000000
@@ -76,6 +72,14 @@ class train_config:
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96
     stage2_seq_length: int = 256
+
+    # MoE settings
+    ep_degree: int = 1
+    moe_impl: str = "torch"
+
+    # Misc
+    foreach: Optional[bool] = None
+    fused: Optional[bool] = None
 
     # Dev/debug options
     skip_ckpt: bool = False

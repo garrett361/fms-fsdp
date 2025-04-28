@@ -166,9 +166,7 @@ def main(**kwargs):
         # Cases:
         # 1. ep_degree = 1: full replication, fully shard with the fsdp_mesh
         # 2. ep_degree = world_size: no expert replication at all. Ignore experts in fully_shard
-        # 3. world_size > ep_degree > world_size: world_size // ep_degree expert replicas. Need
-        #    to individually wrap experts using the ep_mesh because ModuleDict doesn't have a
-        #    forward method.
+        # 3. world_size > ep_degree > world_size: world_size // ep_degree expert replicas.
 
         # The ignored_params arg requires torch nightly (> 2.6.0)
         ignored_params = set()
@@ -186,6 +184,7 @@ def main(**kwargs):
                     mp_policy=mp_policy,
                     reshard_after_forward=False,
                 )
+                block.mlp.experts.set_reshard_after_backward(False)
         is_not_last_block = int(idx) < len(model.backbone.layers) - 1
         fully_shard(
             block,

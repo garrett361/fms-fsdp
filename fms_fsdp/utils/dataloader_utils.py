@@ -108,7 +108,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         cfg.eos_token,
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),
-        min_length=8192,
+        min_length=cfg.target_doclen,
         seed=cfg.seed,
         filter_exp=cfg.filter_exp,
     )

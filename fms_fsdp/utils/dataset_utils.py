@@ -952,6 +952,7 @@ class StreamingDocDataset(_StatefulDataset):
         min_length: int = 1,
         max_chunksize: int = 1024,
         verbose: bool = False,
+        filter_exp: int = 2,
     ):
         super().__init__(datapath, rank, worldsize)
         self.seed = seed
@@ -964,6 +965,7 @@ class StreamingDocDataset(_StatefulDataset):
         self.bos = bos_token
         self.drop = strip_tokens
         self.verbose = verbose
+        self.filter_exp = filter_exp
         self.docset: List[
             Any
         ] = []  # map of doc indices to (shardid, min docid, max docid)
@@ -1197,7 +1199,7 @@ class StreamingDocDataset(_StatefulDataset):
                 if len(doc) == 0:
                     continue
                 doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
-                keep_chance = (doclen/self.min_length)**2
+                keep_chance = (doclen/self.min_length)**self.filter_exp
                 if torch.rand(1, generator=self.g).item() < keep_chance:
                     n_chunks = math.ceil(doclen / self.chunksize)
                     for j in range(n_chunks):
@@ -1228,7 +1230,7 @@ class StreamingDocDataset(_StatefulDataset):
             if len(doc) == 0:
                 continue
             doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
-            keep_chance = (doclen/self.min_length)**2
+            keep_chance = (doclen/self.min_length)**self.filter_exp
             if torch.rand(1, generator=self.g).item() < keep_chance:
                 n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):

@@ -88,3 +88,4 @@ class train_config:
     extra_timing: bool = False
     sanity_prints: bool = False
     pg_timeout: Optional[int] = None
+    fsdp_act_ckpt_mixer_only: bool = False

@@ -149,9 +149,14 @@ def main(**kwargs):
     # AC
     if cfg.fsdp_activation_checkpointing:
         for layer_index, block in model.backbone.layers.items():
-            model.backbone.layers[layer_index] = checkpoint_wrapper(
-                block, preserve_rng_state=False
-            )
+            if cfg.fsdp_act_ckpt_mixer_only:
+                model.backbone.layers[layer_index].mixer = checkpoint_wrapper(
+                    model.backbone.layers[layer_index].mixer, preserve_rng_state=False
+                )
+            else:
+                model.backbone.layers[layer_index] = checkpoint_wrapper(
+                    block, preserve_rng_state=False
+                )
 
     # TODO: @goon - selective AC
 

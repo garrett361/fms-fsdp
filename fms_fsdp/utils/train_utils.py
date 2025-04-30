@@ -51,12 +51,12 @@ def train(
                         dir=tracker_dir,
                         resume="allow",
                         id=run_id,
+                        config=asdict(cfg)
                     )
                 except wandb.errors.UsageError:
                     raise ValueError(
                         "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                     )
-                wandb.config = asdict(cfg)
 
         if cfg.tracker == "aim":
             try:

@@ -33,10 +33,18 @@ def causal_lm(data_seq, prompt_len=1):
     return data_seq, t
 
 
-def get_dummy_loader(cfg, rank, world_size):
+def get_dummy_loader(cfg, rank, world_size, dp_degree):
     """
     A simple dummy dataloader yielding incrementing vocab indices in an infinite loop
     """
+
+    do_cp = False
+    if dp_degree != world_size:
+        do_cp = True
+        cp_worldsize = world_size // dp_degree
+        cp_rank = rank % cp_worldsize
+        world_size = dp_degree
+        rank = rank // cp_worldsize
 
     class SteadyCounter(torch.utils.data.IterableDataset):
         # Spit out incremental counts of constant length l, modulo vocab size v
@@ -44,6 +52,9 @@ def get_dummy_loader(cfg, rank, world_size):
             self.i = 0
             self.l = l
             self.v = v
+            self.datapath = None 
+            self.rank = rank
+            self.worldsize = world_size
 
         def __iter__(self):
             while True:
@@ -54,6 +65,12 @@ def get_dummy_loader(cfg, rank, world_size):
                 self.i += self.l
 
     data = SteadyCounter(cfg.seq_length, cfg.vocab_size)
+
+    # Apply CP chunking if using CP
+    if do_cp:
+        def chunk(x):
+            return x[(cp_rank*x.size(0))//cp_worldsize : ((cp_rank+1)*x.size(0))//cp_worldsize]
+        data = PreprocessDataset(data, lambda x: (chunk(x[0]), chunk(x[1])))
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 

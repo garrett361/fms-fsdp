@@ -195,6 +195,9 @@ def get_model_config(model_variant):
         model_config = deepcopy(BAMBA_9B_BASE_CFG)
         model_config["attn_cfg"]["rotary_emb_base"] = mul * ROTARY_EMB_BASE_DEFAULT
         print(f"Using {mul}x mamba_9.8b config ({4096 * mul} seqlen)")
+    elif model_variant == "mamba_9.8b_no_attn":
+        model_config = deepcopy(BAMBA_9B_BASE_CFG)
+        model_config["attn_layer_idx"] = []
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 

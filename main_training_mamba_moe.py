@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.moe import MoE, fully_shard_moe
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, fully_shard_moe
+from mamba_ssm.modules.moe import MoE
 from torch import distributed as dist
 from torch.distributed import init_device_mesh
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -163,7 +163,14 @@ def main(**kwargs):
         param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
     )
 
-    fully_shard_moe(model, fsdp_mesh, ep_mesh, mp_policy, world_size, cfg)
+    fully_shard_moe(
+        model=model,
+        ep_degree=cfg.ep_degree,
+        world_size=world_size,
+        ep_mesh=ep_mesh,
+        fsdp_mesh=fsdp_mesh,
+        mp_policy=mp_policy,
+    )
 
     if cfg.low_cpu_fsdp:
         if rank == 0:

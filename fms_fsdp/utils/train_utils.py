@@ -3,12 +3,7 @@ from dataclasses import asdict
 from functools import partial
 
 import torch
-import torch.nn as nn
-from mamba_ssm.modules.moe import MoE
 from torch import distributed as dist
-from torch.distributed._composable.fsdp import fully_shard
-from torch.distributed.device_mesh import DeviceMesh
-from torch.distributed.fsdp import MixedPrecisionPolicy
 
 try:
     import packaging.version
@@ -363,49 +358,3 @@ class CUDATimer:
     def reset(self) -> None:
         self._start_events.clear()
         self._stop_events.clear()
-
-
-def fully_shard_moe(
-    model: nn.Module,
-    fsdp_mesh: DeviceMesh,
-    ep_mesh: DeviceMesh,
-    mp_policy: MixedPrecisionPolicy,
-    world_size: int,
-    cfg,
-) -> None:
-    # Assumption: no tied params
-    fully_shard(model.lm_head, mesh=fsdp_mesh, mp_policy=mp_policy)
-    fully_shard(model.backbone.embedding, mesh=fsdp_mesh, mp_policy=mp_policy)
-    # NOTE: @goon - model.backbone.layers is a module_dict on the MoE branch
-    for idx, block in model.backbone.layers.items():
-        # Cases:
-        # 1. ep_degree = 1: full replication, fully shard with the fsdp_mesh
-        # 2. ep_degree = world_size: no expert replication at all. Ignore experts in fully_shard
-        # 3. world_size > ep_degree > world_size: world_size // ep_degree expert replicas.
-
-        # The ignored_params arg requires torch nightly (> 2.6.0)
-        ignored_params = set()
-        if isinstance(block.mlp, MoE):
-            if cfg.ep_degree == 1:
-                pass
-            elif cfg.ep_degree == world_size:
-                # No replication in this case.
-                ignored_params.add(block.mlp.experts.parameters())
-            else:
-                # Don't reshard due to comms costs
-                fully_shard(
-                    block.mlp.experts,
-                    mesh=ep_mesh["outer"],
-                    mp_policy=mp_policy,
-                    reshard_after_forward=False,
-                )
-                block.mlp.experts.set_reshard_after_backward(False)
-        is_not_last_block = int(idx) < len(model.backbone.layers) - 1
-        fully_shard(
-            block,
-            mesh=fsdp_mesh,
-            ignored_params=ignored_params,
-            mp_policy=mp_policy,
-            reshard_after_forward=is_not_last_block,
-        )
-    fully_shard(model, mesh=fsdp_mesh, reshard_after_forward=False, mp_policy=mp_policy)

@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.moe import MoE
+from mamba_ssm.modules.moe import MoE, fully_shard_moe
 from torch import distributed as dist
 from torch.distributed import init_device_mesh
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -22,7 +22,6 @@ from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
-    fully_shard_moe,
     get_profiler,
     setup,
     setup_environ_flags,

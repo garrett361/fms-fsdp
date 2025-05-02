@@ -132,6 +132,11 @@ def main(**kwargs):
             )
         print(f"\n--> Logical model has {total_params / 1e9} Billion params\n")
 
+    # Model building order:
+    # 1. Create model, maybe on meta device.
+    # 2. Activation checkpointing, if applicable
+    # 3. fully_shard
+    # 4. init weights, if meta device was used
     if cfg.low_cpu_fsdp:
         if rank == 0:
             print("Building model on meta device...")

@@ -4,16 +4,17 @@ from pathlib import Path
 
 import fire
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, fully_shard_moe
+from mamba_ssm.models.mixer_seq_simple import (
+    MambaLMHeadModel,
+    act_ckpt_moe,
+    fully_shard_moe,
+    init_meta_moe,
+)
 from mamba_ssm.modules.moe import MoE
 from torch import distributed as dist
 from torch.distributed import init_device_mesh
-from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-    checkpoint_wrapper,
-)
 from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -152,15 +153,7 @@ def main(**kwargs):
 
     # AC
     if cfg.fsdp_activation_checkpointing:
-        for layer_index, block in model.backbone.layers.items():
-            if cfg.fsdp_act_ckpt_mixer_only:
-                model.backbone.layers[layer_index].mixer = checkpoint_wrapper(
-                    model.backbone.layers[layer_index].mixer, preserve_rng_state=False
-                )
-            else:
-                model.backbone.layers[layer_index] = checkpoint_wrapper(
-                    block, preserve_rng_state=False
-                )
+        act_ckpt_moe(model)
 
     # TODO: @goon - selective AC
 
@@ -180,13 +173,7 @@ def main(**kwargs):
     if cfg.low_cpu_fsdp:
         if rank == 0:
             print("Moving meta model to CUDA...")
-        # Move to cuda and initialize.
-        model.to_empty(device=torch.cuda.current_device())
-
-        # TODO: proper normalization; just normal init for now
-        for p in model.parameters():
-            nn.init.normal_(p)
-        nn.init.normal_(model.backbone.embedding.weight, std=0.02)
+        init_meta_moe(model)
 
     elif cfg.ep_degree == world_size:
         # If the experts are not sharded and just ignored, then we must also manually move the

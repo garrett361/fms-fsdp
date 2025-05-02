@@ -60,7 +60,7 @@ def main(**kwargs):
     )
 
     # NOTE: @goon - Seems to help with NCCL stability to start with a barrier.
-    # dist.barrier()
+    dist.barrier()
 
     # get model
     config_data = get_model_config(cfg.model_variant)
@@ -93,7 +93,7 @@ def main(**kwargs):
     # for fsdp and CP. Trying the same thing here with EP, but not sure it matters. Don't think it
     # should, in principle. Also, we may just need separate meshes in the future for more complex
     # scenarios.
-    assert world_size >= cfg.ep_degree == 0, (
+    assert world_size >= cfg.ep_degree, (
         f"{world_size=} must be at least as large as {cfg.ep_degree=}"
     )
     assert world_size % cfg.ep_degree == 0, (

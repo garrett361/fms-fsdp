@@ -173,6 +173,9 @@ def main(**kwargs):
         ep_mesh=ep_mesh,
         fsdp_mesh=fsdp_mesh,
         mp_policy=mp_policy,
+        reshard_lm_head_after_fwd=cfg.reshard_lm_head_after_fwd,
+        explicit_fwd_prefetch=cfg.explicit_fwd_prefetch,
+        explicit_bwd_prefetch=cfg.explicit_bwd_prefetch,
     )
 
     if cfg.low_cpu_fsdp:

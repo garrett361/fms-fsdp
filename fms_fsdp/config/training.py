@@ -88,3 +88,6 @@ class train_config:
     extra_timing: bool = False
     sanity_prints: bool = False
     pg_timeout: Optional[int] = None
+    reshard_lm_head_after_fwd: bool = True
+    explicit_fwd_prefetch: bool = False
+    explicit_bwd_prefetch: bool = False

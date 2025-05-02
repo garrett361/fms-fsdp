@@ -93,6 +93,9 @@ def main(**kwargs):
     # for fsdp and CP. Trying the same thing here with EP, but not sure it matters. Don't think it
     # should, in principle. Also, we may just need separate meshes in the future for more complex
     # scenarios.
+    assert world_size >= cfg.ep_degree == 0, (
+        f"{world_size=} must be at least as large as {cfg.ep_degree=}"
+    )
     assert world_size % cfg.ep_degree == 0, (
         f"{world_size=} must be divisible by {cfg.ep_degree=}"
     )
@@ -127,6 +130,7 @@ def main(**kwargs):
                 if p.requires_grad
             )
         print(f"\n--> Logical model has {total_params / 1e9} Billion params\n")
+
     if cfg.low_cpu_fsdp:
         if rank == 0:
             print("Building model on meta device...")
@@ -138,6 +142,7 @@ def main(**kwargs):
         model = MambaLMHeadModel(
             mamba_config, ep_mesh=None if ep_mesh is None else ep_mesh["inner"]
         )
+
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
         total_params_local = sum(

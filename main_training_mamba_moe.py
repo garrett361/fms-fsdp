@@ -11,7 +11,6 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.moe import MoE
 from torch import distributed as dist
 from torch.distributed import init_device_mesh
-from torch.distributed._composable.fsdp import fully_shard
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
 )
@@ -23,6 +22,7 @@ from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
+    fully_shard_moe,
     get_profiler,
     setup,
     setup_environ_flags,
@@ -163,42 +163,8 @@ def main(**kwargs):
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
     )
-    # Assumption: no tied params
-    fully_shard(model.lm_head, mesh=fsdp_mesh, mp_policy=mp_policy)
-    fully_shard(model.backbone.embedding, mesh=fsdp_mesh, mp_policy=mp_policy)
-    # NOTE: @goon - model.backbone.layers is a module_dict on the MoE branch
-    for idx, block in model.backbone.layers.items():
-        # Cases:
-        # 1. ep_degree = 1: full replication, fully shard with the fsdp_mesh
-        # 2. ep_degree = world_size: no expert replication at all. Ignore experts in fully_shard
-        # 3. world_size > ep_degree > world_size: world_size // ep_degree expert replicas.
 
-        # The ignored_params arg requires torch nightly (> 2.6.0)
-        ignored_params = set()
-        if isinstance(block.mlp, MoE):
-            if cfg.ep_degree == 1:
-                pass
-            elif cfg.ep_degree == world_size:
-                # No replication in this case.
-                ignored_params.add(block.mlp.experts.parameters())
-            else:
-                # Don't reshard due to comms costs
-                fully_shard(
-                    block.mlp.experts,
-                    mesh=ep_mesh["outer"],
-                    mp_policy=mp_policy,
-                    reshard_after_forward=False,
-                )
-                block.mlp.experts.set_reshard_after_backward(False)
-        is_not_last_block = int(idx) < len(model.backbone.layers) - 1
-        fully_shard(
-            block,
-            mesh=fsdp_mesh,
-            ignored_params=ignored_params,
-            mp_policy=mp_policy,
-            reshard_after_forward=is_not_last_block,
-        )
-    fully_shard(model, mesh=fsdp_mesh, reshard_after_forward=False, mp_policy=mp_policy)
+    fully_shard_moe(model, fsdp_mesh, ep_mesh, mp_policy, world_size, cfg)
 
     if cfg.low_cpu_fsdp:
         if rank == 0:

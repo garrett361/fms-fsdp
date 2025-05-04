@@ -7,11 +7,9 @@ import torch
 import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.modules.block import Block
 from torch import distributed as dist
-from torch.distributed import init_device_mesh
-from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import checkpoint_wrapper
-from torch.distributed.fsdp import MixedPrecisionPolicy
-from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -53,6 +51,16 @@ def main(**kwargs):
         Path.home(), ".triton", "cache", str(local_rank)
     )
 
+    # get policy
+    block = Block
+    (
+        mixed_precision_policy,
+        wrapping_policy,
+        sharding_strategy_policy,
+        apply_selective_ac,
+        param_init_fn,
+    ) = get_policies(cfg, rank, block)
+
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
@@ -72,20 +80,23 @@ def main(**kwargs):
     if rank == 0:
         print("Datasets constructed!")
 
-    # AC
-    if cfg.fsdp_activation_checkpointing:
-        for layer_index, block in enumerate(model.backbone.layers):
-            model.backbone.layers[layer_index] = checkpoint_wrapper(block, preserve_rng_state=False)
-
     # FSDP
-    if cfg.sharding_strategy == "hsdp":
-        mesh = init_device_mesh("cuda", (world_size // 8, 8), mesh_dim_names=("dp_replicate", "dp_shard"))
-    else:
-        mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
-    mp_policy = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16)
-    for layer_index, block in enumerate(model.backbone.layers):
-        fully_shard(block, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=layer_index < len(model.backbone.layers) - 1)
-    fully_shard(model, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=False)
+    model = FSDP(
+        model,
+        auto_wrap_policy=wrapping_policy,
+        mixed_precision=mixed_precision_policy,
+        sharding_strategy=sharding_strategy_policy,
+        use_orig_params=cfg.use_torch_compile,
+        device_id=torch.cuda.current_device(),
+        limit_all_gathers=True,
+        param_init_fn=param_init_fn,
+    )
+
+    # fsdp activation checkpointing
+    if cfg.fsdp_activation_checkpointing:
+        if rank == 0:
+            print(f"--> applying FSDP activation checkpointing...")
+        apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # torch compile
     if cfg.use_torch_compile:
@@ -122,9 +133,8 @@ def main(**kwargs):
     # LR schedule
     # linear decay for annealing
     if cfg.training_stage == "annealing":
-        warmup_interval = 1000
-        schedule = lambda x: x / warmup_interval if x < warmup_interval else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
-    elif cfg.training_stage == "cosine":
+        schedule = lambda x: 1 - x / cfg.num_steps
+    else:
         # cosine decay
         warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
@@ -134,11 +144,6 @@ def main(**kwargs):
             * (1 - 0.1)
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
-    elif cfg.training_stage == "constant":
-        warmup_interval = 2000
-        schedule = lambda x: (min(x, warmup_interval) / warmup_interval)
-    else:
-        schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 

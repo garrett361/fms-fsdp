@@ -1,6 +1,40 @@
+import re
+from copy import deepcopy
+
 from fms.models.llama import LLaMAConfig
 
 from fms_fsdp.config import train_config
+
+MAMBA_30B_MOE_CFG = {
+    "d_model": 3072,
+    "d_intermediate": 14336,
+    "n_layer": 32,
+    "vocab_size": 128256,
+    "ssm_cfg": {"layer": "Mamba2"},
+    "attn_layer_idx": [9, 18, 27],
+    "attn_cfg": {
+        "causal": True,
+        "d_conv": 0,
+        "head_dim": 128,
+        "num_heads": 24,
+        "num_heads_kv": 8,
+        "out_proj_bias": False,
+        "qkv_proj_bias": False,
+        "rotary_emb_dim": 64,
+    },
+    "moe_layer_idx": list(range(32)),
+    "moe_cfg": {
+        "n_routed_experts": 64,
+        "n_activated_experts": 8,
+        "n_shared_experts": 0,
+        "d_intermediate": 1344,
+    },
+    "rms_norm": True,
+    "residual_in_fp32": True,
+    "fused_add_norm": True,
+    "pad_vocab_size_multiple": 16,
+    "tie_embeddings": False,
+}
 
 
 def update_config(config, **kwargs):
@@ -17,9 +51,11 @@ def update_config(config, **kwargs):
                     if hasattr(config, param_name):
                         setattr(config, param_name, v)
                     else:
-                        print(f"Warning: {config_name} does not accept parameter: {k}")
+                        raise ValueError(
+                            f"{config_name} does not accept parameter: {k}"
+                        )
             elif isinstance(config, train_config):
-                print(f"Warning: unknown parameter {k}")
+                raise ValueError(f"Unknown parameter {k}")
 
 
 def get_model_config(model_variant):
@@ -183,6 +219,150 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
+    elif model_variant == "mamba_moe_lite":
+        # Scaled down model for testing. ~2B params.
+        model_config = {
+            "d_model": 2048,
+            "d_intermediate": 5461,
+            "n_layer": 16,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [5, 9, 13],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 32,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+            },
+            "moe_layer_idx": list(range(1, 16)),
+            "moe_cfg": {
+                "n_routed_experts": 32,
+                "n_activated_experts": 4,
+                "n_shared_experts": 1,
+                "d_intermediate": 512,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    # Translated from https://github.com/foundation-model-stack/fms-fsdp/compare/main...moe
+    elif model_variant == "mamba_30b_moe":
+        model_config = MAMBA_30B_MOE_CFG
+    elif model_variant == "mamba_120b_moe":
+        model_config = {
+            "d_model": 4096,
+            "d_intermediate": 14336,
+            "n_layer": 40,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [9, 18, 27, 36],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 32,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+            },
+            "moe_layer_idx": list(range(40)),
+            "moe_cfg": {
+                "n_routed_experts": 256,
+                "n_activated_experts": 16,
+                "n_shared_experts": 0,
+                "d_intermediate": 896,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    elif model_variant == "mamba_236b_moe":
+        model_config = {
+            "d_model": 5120,
+            "d_intermediate": 14336,
+            "n_layer": 60,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [9, 18, 27, 36, 45, 54],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 40,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+            },
+            "moe_layer_idx": list(range(60)),
+            "moe_cfg": {
+                "n_routed_experts": 160,
+                "n_activated_experts": 8,
+                "n_shared_experts": 0,
+                "d_intermediate": 1536,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    elif model_variant == "mamba_105b_moe_sparse":
+        model_config = {
+            "d_model": 3072,
+            "d_intermediate": 14336,
+            "n_layer": 32,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [9, 18, 27],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 24,
+                "num_heads_kv": 8,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+            },
+            "moe_layer_idx": list(range(32)),
+            "moe_cfg": {
+                "n_routed_experts": 256,
+                "n_activated_experts": 8,
+                "n_shared_experts": 0,
+                "d_intermediate": 1344,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    elif mamba_moe_dev_config := re.search(
+        r"mamba_moe_dev_(\d+)_layer_(\d+)_exp_(\d+)_act", model_variant
+    ):
+        n_layer = int(mamba_moe_dev_config[1])
+        n_routed_experts = int(mamba_moe_dev_config[2])
+        n_activated_experts = int(mamba_moe_dev_config[3])
+        cfg = deepcopy(MAMBA_30B_MOE_CFG)
+        cfg["n_layer"] = n_layer
+        cfg["moe_cfg"]["n_routed_experts"] = n_routed_experts
+        cfg["moe_cfg"]["n_activated_experts"] = n_activated_experts
+
+        print(
+            f"Building dev model with: {n_layer=}, {n_routed_experts=}, {n_activated_experts=}"
+        )
+        return cfg
+
     else:
         raise ValueError(f"model variant {model_variant} not supported.")
 

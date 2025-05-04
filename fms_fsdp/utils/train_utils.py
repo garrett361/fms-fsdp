@@ -2,6 +2,8 @@ import os
 from dataclasses import asdict
 from functools import partial
 
+import torch
+from torch import distributed as dist
 
 try:
     import packaging.version
@@ -12,7 +14,6 @@ import time
 from datetime import timedelta
 
 import torch.cuda.nccl as nccl
-import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
@@ -31,6 +32,8 @@ def train(
     start_step,
     tokens_seen,
 ):
+    if cfg.sanity_prints and not rank:
+        print(os.environ)
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
             raise ValueError(f"tracker {cfg.tracker} not supported.")
@@ -44,7 +47,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to wandb but wandb is not installed.")
             if rank == 0:
-                print(f"--> wandb is enabled!")
+                print("--> wandb is enabled!")
                 try:
                     wandb.init(
                         project=project_name,
@@ -64,7 +67,7 @@ def train(
             except ImportError:
                 raise ImportError("tracker is set to aim but aim is not installed.")
             if rank == 0:
-                print(f"--> aim is enabled!")
+                print("--> aim is enabled!")
                 run = Run(
                     experiment=project_name,
                     repo=tracker_dir,
@@ -73,48 +76,85 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
-    ddp_stats = torch.zeros(3).to(local_rank)
+    ddp_stats = torch.zeros(2).to(local_rank)
+    g_norms = []
 
     start = time.time()
     loop_start = time.time()
     train_loss = -1
+    if cfg.extra_timing:
+        fwd_timer, bwd_timer = CUDATimer(), CUDATimer()
+    else:
+        from contextlib import nullcontext
+
+        fwd_timer = bwd_timer = nullcontext()
+
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        if batch_idx > cfg.num_steps:
-            break
-        input = input.to(local_rank)
-        label = label.to(local_rank)
+        with fwd_timer:
+            if batch_idx > cfg.num_steps:
+                break
+            input = input.to(local_rank)
+            label = label.to(local_rank)
 
-        optimizer.zero_grad()
-        output = model(input)
-        output = output.logits if hasattr(output, "logits") else output
-        ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+            optimizer.zero_grad()
+            output = model(input)
+            output = output.logits if hasattr(output, "logits") else output
+            ce_loss = torch.nn.CrossEntropyLoss()
+            loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+        with bwd_timer:
+            loss.backward()
 
-        loss.backward()
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
-        optimizer.step()
+        # Clipping gets complicated with advanced sharding -- see torchtitan
+        # TODO: @goon - implement
+        if cfg.skip_clip:
+            g_norms.append(-1.0)
+        else:
+            # .full_tensor() return the correct global norm
+            g_norms.append(
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
+                .full_tensor()
+                .item()
+            )
+        if not cfg.skip_optim_step:
+            optimizer.step()
         scheduler.step()
 
-        ddp_stats[0] += loss.item()
-        ddp_stats[2] += 1
+        ddp_stats[0] += loss.detach().item()
+        ddp_stats[1] += 1
 
         if profiler:
             profiler.step()
 
         if batch_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
-            train_loss = ddp_stats[0] / ddp_stats[2]
-            g_norm = ddp_stats[1] / ddp_stats[2]
+            train_loss = ddp_stats[0] / ddp_stats[1]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             new_tokens_seen = (
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
+
+            if cfg.sanity_prints:
+                print(f"[{rank=}]: {batch_idx=}, toks={model._get_tok_counts()}")
+
+            if cfg.extra_timing:
+                fwd_time_mean_s = fwd_timer.get_mean_time_s()
+                fwd_time_std_s = fwd_timer.get_std_time_s()
+                fwd_timer.reset()
+
+                bwd_time_mean_s = bwd_timer.get_mean_time_s()
+                bwd_time_std_s = bwd_timer.get_std_time_s()
+                bwd_timer.reset()
+                if rank == 0:
+                    print(f"{fwd_time_mean_s=}")
+                    print(f"{fwd_time_std_s=}")
+                    print(f"{bwd_time_mean_s=}")
+                    print(f"{bwd_time_std_s=}")
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
-                current_gnorm = g_norm.item()
+                current_gnorm = sum(g_norms) / len(g_norms)
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (batch_idx - start_step)
                 current_throughput = int(
@@ -135,8 +175,8 @@ def train(
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("gradient norm:", current_gnorm)
-                print("reserved memory:", reserved_mem)
-                print("allocated memory:", allocated_mem)
+                print("reserved memory (GiB):", f"{reserved_mem / 2**30:.2f}")
+                print("allocated memory (GiB):", f"{allocated_mem / 2**30:.2f}")
                 print("current step time:", current_step_time)
                 print("overall step time:", overall_step_time)
                 print("current token per gpu per sec:", current_throughput)
@@ -166,7 +206,7 @@ def train(
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if batch_idx % cfg.checkpoint_interval == 0:
+        if not cfg.skip_ckpt and batch_idx % cfg.checkpoint_interval == 0:
             checkpointer.save(
                 batch_idx,
                 model,
@@ -178,13 +218,14 @@ def train(
     return train_loss
 
 
-def setup():
-    dist.init_process_group("nccl", timeout=timedelta(seconds=60 * 60))
+def setup(cfg=None):
+    pg_timeout = 60 * 60 if cfg is None or cfg.pg_timeout is None else cfg.pg_timeout
+    dist.init_process_group("nccl", timeout=timedelta(seconds=pg_timeout))
 
 
 def setup_environ_flags():
     os.environ["TORCH_SHOW_CPP_STACKTRACES"] = str(1)
-    os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
+    os.environ["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = str(1)
 
 
 def get_mixed_precision_policy(cfg, rank):
@@ -201,11 +242,11 @@ def get_mixed_precision_policy(cfg, rank):
         if bf16_ready:
             mixed_precision_policy = bfSixteen
             if rank == 0:
-                print(f"bFloat16 enabled for mixed precision - using bfSixteen policy")
+                print("bFloat16 enabled for mixed precision - using bfSixteen policy")
         else:
             mixed_precision_policy = fpSixteen
             if rank == 0:
-                print(f"FP16 enabled")
+                print("FP16 enabled")
     else:
         mixed_precision_policy = None
 
@@ -267,3 +308,53 @@ def get_profiler(cfg, rank):
         with_stack=False,
         record_shapes=True,
     )
+
+
+class CUDATimer:
+    def __init__(self, enabled: bool = True) -> None:
+        self._start_events: list[torch.cuda.Event] = []
+        self._stop_events: list[torch.cuda.Event] = []
+        self.enabled = enabled
+
+    def __enter__(self) -> "CUDATimer":
+        if not self.enabled:
+            return self
+        start = torch.cuda.Event(enable_timing=True)
+        stop = torch.cuda.Event(enable_timing=True)
+        start.record()
+        self._start_events.append(start)
+        self._stop_events.append(stop)
+        return self
+
+    def __exit__(self, *args, **kwargs) -> None:
+        if not self.enabled:
+            return
+        self._stop_events[-1].record()
+
+    def __len__(self) -> int:
+        return len(self._start_events)
+
+    def get_time_list_s(self) -> list[float]:
+        if not self._start_events:
+            return [0.0]
+        torch.cuda.synchronize()
+        time_list_s = [
+            start.elapsed_time(stop) / 1e3
+            for start, stop in zip(self._start_events, self._stop_events)
+        ]
+        return time_list_s
+
+    def get_total_time_s(self) -> float:
+        return sum(self.get_time_list_s())
+
+    def get_mean_time_s(self) -> float:
+        time_list_s = self.get_time_list_s()
+        return sum(time_list_s) / len(time_list_s)
+
+    def get_std_time_s(self) -> float:
+        time_list_s = self.get_time_list_s()
+        return torch.tensor(time_list_s).std().item()
+
+    def reset(self) -> None:
+        self._start_events.clear()
+        self._stop_events.clear()

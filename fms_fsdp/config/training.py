@@ -72,3 +72,22 @@ class train_config:
     stage2_prompt_length: int = 64
     stage2_batch_size: int = 96
     stage2_seq_length: int = 256
+
+    # MoE settings
+    ep_degree: int = 1
+    moe_impl: str = "torch"
+
+    # Misc
+    foreach: Optional[bool] = None
+    fused: Optional[bool] = None
+
+    # Dev/debug options
+    skip_ckpt: bool = False
+    skip_clip: bool = False
+    skip_optim_step: bool = False
+    extra_timing: bool = False
+    sanity_prints: bool = False
+    pg_timeout: Optional[int] = None
+    reshard_lm_head_after_fwd: bool = True
+    explicit_fwd_prefetch: bool = False
+    explicit_bwd_prefetch: bool = False

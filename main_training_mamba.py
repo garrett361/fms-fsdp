@@ -5,13 +5,14 @@ from pathlib import Path
 import fire
 import torch
 import torch.optim as optim
-from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from torch import distributed as dist
 from torch.distributed import init_device_mesh
-from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import checkpoint_wrapper
-from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+    checkpoint_wrapper,
+)
+from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -19,7 +20,6 @@ from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
-    get_policies,
     get_profiler,
     setup,
     setup_environ_flags,
@@ -54,8 +54,7 @@ def main(**kwargs):
     )
 
     # get model
-    config_data = get_model_config(cfg.model_variant)
-    mamba_config = MambaConfig(**config_data)
+    mamba_config = get_model_config(cfg.model_variant)
     model = MambaLMHeadModel(mamba_config)
 
     if rank == 0:
@@ -75,22 +74,33 @@ def main(**kwargs):
     # AC
     if cfg.fsdp_activation_checkpointing:
         for layer_index, block in enumerate(model.backbone.layers):
-            model.backbone.layers[layer_index] = checkpoint_wrapper(block, preserve_rng_state=False)
+            model.backbone.layers[layer_index] = checkpoint_wrapper(
+                block, preserve_rng_state=False
+            )
 
     # FSDP
     if cfg.sharding_strategy == "hsdp":
-        mesh = init_device_mesh("cuda", (world_size // 8, 8), mesh_dim_names=("dp_replicate", "dp_shard"))
+        mesh = init_device_mesh(
+            "cuda", (world_size // 8, 8), mesh_dim_names=("dp_replicate", "dp_shard")
+        )
     else:
         mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("dp_shard",))
-    mp_policy = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16)
+    mp_policy = MixedPrecisionPolicy(
+        param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
+    )
     for layer_index, block in enumerate(model.backbone.layers):
-        fully_shard(block, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=layer_index < len(model.backbone.layers) - 1)
+        fully_shard(
+            block,
+            mesh=mesh,
+            mp_policy=mp_policy,
+            reshard_after_forward=layer_index < len(model.backbone.layers) - 1,
+        )
     fully_shard(model, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=False)
 
     # torch compile
     if cfg.use_torch_compile:
         if rank == 0:
-            print(f"--> enabling torch compile...")
+            print("--> enabling torch compile...")
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
@@ -123,7 +133,11 @@ def main(**kwargs):
     # linear decay for annealing
     if cfg.training_stage == "annealing":
         warmup_interval = 1000
-        schedule = lambda x: x / warmup_interval if x < warmup_interval else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+        schedule = (
+            lambda x: x / warmup_interval
+            if x < warmup_interval
+            else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+        )
     elif cfg.training_stage == "cosine":
         # cosine decay
         warmup_interval = min(2000, cfg.num_steps // 20)

@@ -5,7 +5,6 @@ from pathlib import Path
 import fire
 import torch
 import torch.optim as optim
-from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import (
     MambaLMHeadModel,
     act_ckpt_moe,
@@ -64,9 +63,8 @@ def main(**kwargs):
     dist.barrier()
 
     # get model
-    config_data = get_model_config(cfg.model_variant)
-    config_data["moe_cfg"]["moe_impl"] = cfg.moe_impl
-    mamba_config = MambaConfig(**config_data)
+    mamba_config = get_model_config(cfg.model_variant)
+    mamba_config.moe_cfg["moe_impl"] = cfg.moe_impl
     if not rank:
         print(f"{mamba_config.moe_cfg=}")
 

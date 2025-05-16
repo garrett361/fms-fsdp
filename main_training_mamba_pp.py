@@ -5,7 +5,6 @@ from pathlib import Path
 import fire
 import torch
 import torch.optim as optim
-from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
 from torch import distributed as dist
@@ -62,8 +61,7 @@ def main(**kwargs):
     ) = get_policies(cfg, rank, block)
 
     # get model
-    config_data = get_model_config(cfg.model_variant)
-    mamba_config = MambaConfig(**config_data)
+    mamba_config = get_model_config(cfg.model_variant)
     model = MambaLMHeadModel(mamba_config)
 
     if rank == 0:
@@ -95,13 +93,13 @@ def main(**kwargs):
     # fsdp activation checkpointing
     if cfg.fsdp_activation_checkpointing:
         if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
+            print("--> applying FSDP activation checkpointing...")
         apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     # torch compile
     if cfg.use_torch_compile:
         if rank == 0:
-            print(f"--> enabling torch compile...")
+            print("--> enabling torch compile...")
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)

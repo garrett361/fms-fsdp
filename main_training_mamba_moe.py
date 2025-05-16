@@ -68,6 +68,17 @@ def main(**kwargs):
     if not rank:
         print(f"{mamba_config.moe_cfg=}")
 
+    # Check and update cfg vocab size, if needed.
+    cfg_vocab = cfg.vocab_size
+    model_vocab = mamba_config.vocab_size
+    if cfg_vocab != model_vocab:
+        if not rank:
+            print(
+                f"Config vocab size ({cfg_vocab}) does not match model vocab size ({model_vocab})."
+                " Adjusting config vocab size to match model."
+            )
+        cfg.vocab_size = mamba_config.vocab_size
+
     # get data loader
     if rank == 0:
         print("Constructing datasets...")

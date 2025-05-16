@@ -9,6 +9,7 @@ from mamba_ssm.models.mixer_seq_simple import (
     MambaLMHeadModel,
     act_ckpt_moe,
     fully_shard_moe,
+    get_total_exp_and_active_params,
     init_meta_moe,
 )
 from mamba_ssm.modules.moe import MoE
@@ -134,12 +135,12 @@ def main(**kwargs):
         print(f"{fsdp_mesh=}")
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
         with torch.device("meta"):
-            total_params = sum(
-                p.numel()
-                for p in MambaLMHeadModel(mamba_config).parameters()
-                if p.requires_grad
+            total, exp, active = get_total_exp_and_active_params(
+                MambaLMHeadModel(mamba_config)
             )
-        print(f"\n--> Logical model has {total_params / 1e9} Billion params\n")
+        print(
+            f"\n--> Logical model has {total / 1e9}B params\n\t{exp / 1e9}B Routed Expert Params\n\t{active / 1e9}B Active Params Per Token"
+        )
 
     # Model building order:
     # 1. Create model, maybe on meta device.

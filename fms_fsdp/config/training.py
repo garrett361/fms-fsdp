@@ -76,6 +76,12 @@ class train_config:
     # MoE settings
     ep_degree: int = 1
     moe_impl: str = "torch"
+    # MoE sharding & related
+    reshard_lm_head_after_fwd: bool = True
+    explicit_fwd_prefetch: bool = False
+    explicit_bwd_prefetch: bool = False
+    # Option to avoid fsdp act-ckpt on the
+    act_ckpt_mixer_only: bool = True
 
     # Misc
     foreach: Optional[bool] = None
@@ -88,6 +94,3 @@ class train_config:
     extra_timing: bool = False
     sanity_prints: bool = False
     pg_timeout: Optional[int] = None
-    reshard_lm_head_after_fwd: bool = True
-    explicit_fwd_prefetch: bool = False
-    explicit_bwd_prefetch: bool = False

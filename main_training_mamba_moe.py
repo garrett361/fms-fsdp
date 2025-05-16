@@ -168,7 +168,7 @@ def main(**kwargs):
 
     # AC
     if cfg.fsdp_activation_checkpointing:
-        act_ckpt_moe(model)
+        act_ckpt_moe(model, cfg.act_ckpt_mixer_only)
 
     # TODO: @goon - selective AC
 

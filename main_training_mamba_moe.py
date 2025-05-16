@@ -139,7 +139,9 @@ def main(**kwargs):
                 MambaLMHeadModel(mamba_config)
             )
         print(
-            f"\n--> Logical model has {total / 1e9}B params\n\t{exp / 1e9}B Routed Expert Params\n\t{active / 1e9}B Active Params Per Token"
+            f"\n--> Logical model has {total / 1e9:.2f}B params\n"
+            f"\t{exp / 1e9:.2f}B Routed Expert Params\n"
+            f"\t{active / 1e9:.2f}B Active Params Per Token"
         )
 
     # Model building order:

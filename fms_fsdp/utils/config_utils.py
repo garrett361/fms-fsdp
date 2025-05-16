@@ -478,15 +478,31 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         n_layer = int(mamba_moe_dev_config[1])
         n_routed_experts = int(mamba_moe_dev_config[2])
         n_activated_experts = int(mamba_moe_dev_config[3])
-        cfg = deepcopy(MAMBA_30B_MOE_CFG)
-        cfg.n_layer = n_layer
-        cfg.moe_cfg["n_routed_experts"] = n_routed_experts
-        cfg.moe_cfg["n_activated_experts"] = n_activated_experts
+        model_config = deepcopy(MAMBA_30B_MOE_CFG)
+        model_config.n_layer = n_layer
+        model_config.moe_cfg["n_routed_experts"] = n_routed_experts
+        model_config.moe_cfg["n_activated_experts"] = n_activated_experts
 
         print(
             f"Building dev model with: {n_layer=}, {n_routed_experts=}, {n_activated_experts=}"
         )
-        return cfg
+    elif ds2_lite_cfg_dev := re.search(
+        r"deepseek-v2-lite-dev_(\d+)_layer", model_variant
+    ):
+        n_layer = int(ds2_lite_cfg_dev[1])
+        model_config = deepcopy(DS2_LITE_CFG)
+        model_config.n_layer = n_layer
+        print(f"Building dev model with: {n_layer=}")
+    elif ds2_cfg_dev := re.search(r"deepseek-v2-dev_(\d+)_layer", model_variant):
+        n_layer = int(ds2_cfg_dev[1])
+        model_config = deepcopy(DS2_CFG)
+        model_config.n_layer = n_layer
+        print(f"Building dev model with: {n_layer=}")
+    elif ds3_cfg_dev := re.search(r"deepseek-v3-dev_(\d+)_layer", model_variant):
+        n_layer = int(ds3_cfg_dev[1])
+        model_config = deepcopy(DS3_CFG)
+        model_config.n_layer = n_layer
+        print(f"Building dev model with: {n_layer=}")
 
     else:
         raise ValueError(f"model variant {model_variant} not supported.")

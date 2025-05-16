@@ -40,20 +40,6 @@ class TestBuildModels:
         params = sum(p.numel() for p in model.parameters())
         assert params == 104_032_013_728  # ~ 104B
 
-    def test_mamba_dev_cfg(self) -> None:
-        n_layers = 3
-        n_routed_experts = 7
-        n_activated_experts = 2
-        mamba_config = get_model_config(
-            f"mamba_moe_dev_{n_layers}_layer_{n_routed_experts}_exp_{n_activated_experts}_act"
-        )
-        with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config)
-        assert len(model.backbone.layers) == n_layers
-        first_moe = model.backbone.layers["0"].mlp
-        assert first_moe.n_routed_experts == n_routed_experts
-        assert first_moe.n_activated_experts == n_activated_experts
-
     def test_ds_v2_lite(self) -> None:
         mamba_config = get_model_config("deepseek-v2-lite")
         with torch.device("meta"):
@@ -74,3 +60,38 @@ class TestBuildModels:
             model = MambaLMHeadModel(mamba_config)
         params = sum(p.numel() for p in model.parameters())
         assert params == 688_268_357_120  # ~688 B (NOTE: @goon - should be 671B per HF)
+
+    def test_mamba_dev_cfg(self) -> None:
+        n_layers = 3
+        n_routed_experts = 7
+        n_activated_experts = 2
+        mamba_config = get_model_config(
+            f"mamba_moe_dev_{n_layers}_layer_{n_routed_experts}_exp_{n_activated_experts}_act"
+        )
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config)
+        assert len(model.backbone.layers) == n_layers
+        first_moe = model.backbone.layers["0"].mlp
+        assert first_moe.n_routed_experts == n_routed_experts
+        assert first_moe.n_activated_experts == n_activated_experts
+
+    def test_ds_v2_lite_dev_cfg(self) -> None:
+        n_layers = 3
+        mamba_config = get_model_config(f"deepseek-v2-lite-dev_{n_layers}_layer")
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config)
+        assert len(model.backbone.layers) == n_layers
+
+    def test_ds_v2_dev_cfg(self) -> None:
+        n_layers = 3
+        mamba_config = get_model_config(f"deepseek-v2-dev_{n_layers}_layer")
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config)
+        assert len(model.backbone.layers) == n_layers
+
+    def test_ds_v3_dev_cfg(self) -> None:
+        n_layers = 3
+        mamba_config = get_model_config(f"deepseek-v3-dev_{n_layers}_layer")
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config)
+        assert len(model.backbone.layers) == n_layers

@@ -140,9 +140,45 @@ DS3_CFG = MambaConfig(
         "d_intermediate": 2048,
         # TODO: @goon - double check group cfg is right
         "n_expert_groups": 8,
-        "n_limited_groups": 4,  # Might be 3?
+        "n_limited_groups": 4,
         "score_func": "sigmoid",
         "route_scale": 16.0,
+    },
+    rms_norm=True,
+    residual_in_fp32=True,
+    fused_add_norm=True,
+    pad_vocab_size_multiple=1,
+    tie_embeddings=False,
+)
+
+# https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E-Instruct/blob/main/config.json
+LLAMA4_MAVERICK_CFG = MambaConfig(
+    d_model=5120,
+    d_intermediate=16384,
+    n_layer=48,
+    vocab_size=202048,
+    ssm_cfg={"layer": "Mamba2"},
+    attn_layer_idx=list(range(48)),
+    attn_cfg={
+        "causal": True,
+        "d_conv": 0,
+        "head_dim": 128,
+        "num_heads": 48,
+        "num_heads_kv": 8,
+        "out_proj_bias": False,
+        "qkv_proj_bias": False,
+        "rotary_emb_dim": 64,
+    },
+    # Alternating Moe layers
+    moe_layer_idx=list(range(1, 48, 2)),
+    moe_cfg={
+        "n_routed_experts": 128,
+        "n_activated_experts": 1,
+        "n_shared_experts": 0,
+        "d_intermediate": 8192,
+        "n_expert_groups": 1,
+        "n_limited_groups": 1,
+        "score_func": "softmax",  # Maybe?
     },
     rms_norm=True,
     residual_in_fp32=True,
@@ -471,10 +507,10 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
     elif model_variant == "deepseek-v3":
         model_config = DS3_CFG
     elif model_variant == "llama4-maverick":
-        raise NotImplementedError("Need to find cfg")
+        model_config = LLAMA4_MAVERICK_CFG
     # NOTE: @goon -  Below are regex-based dev configs, for easy configuring of small models via
     # args. E.g. specify --model_variant=deepseek-v3-dev_8_layer to run a shortened version of
-        # deepseek-v3 with only 8 layers.
+    # deepseek-v3 with only 8 layers.
     elif mamba_moe_dev_config := re.search(
         r"mamba_moe_dev_(\d+)_layer_(\d+)_exp_(\d+)_act", model_variant
     ):
@@ -504,6 +540,13 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
     elif ds3_cfg_dev := re.search(r"deepseek-v3-dev_(\d+)_layer", model_variant):
         n_layer = int(ds3_cfg_dev[1])
         model_config = deepcopy(DS3_CFG)
+        model_config.n_layer = n_layer
+        print(f"Building dev model with: {n_layer=}")
+    elif maverick_cfg_dev := re.search(
+        r"llama4-maverick-dev_(\d+)_layer", model_variant
+    ):
+        n_layer = int(maverick_cfg_dev[1])
+        model_config = deepcopy(LLAMA4_MAVERICK_CFG)
         model_config.n_layer = n_layer
         print(f"Building dev model with: {n_layer=}")
 

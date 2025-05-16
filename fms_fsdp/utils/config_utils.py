@@ -472,6 +472,9 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         model_config = DS3_CFG
     elif model_variant == "llama4-maverick":
         raise NotImplementedError("Need to find cfg")
+    # NOTE: @goon -  Below are regex-based dev configs, for easy configuring of small models via
+    # args. E.g. specify --model_variant=deepseek-v3-dev_8_layer to run a shortened version of
+        # deepseek-v3 with only 8 layers.
     elif mamba_moe_dev_config := re.search(
         r"mamba_moe_dev_(\d+)_layer_(\d+)_exp_(\d+)_act", model_variant
     ):

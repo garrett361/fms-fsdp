@@ -117,7 +117,7 @@ def train(
             )
         if not cfg.skip_optim_step:
             optimizer.step()
-        scheduler.step()
+            scheduler.step()
 
         ddp_stats[0] += loss.detach().item()
         ddp_stats[1] += 1

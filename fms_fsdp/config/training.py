@@ -80,6 +80,7 @@ class train_config:
     reshard_lm_head_after_fwd: bool = True
     explicit_fwd_prefetch: bool = False
     explicit_bwd_prefetch: bool = False
+    no_reshard: bool = True
     # Option to avoid fsdp act-ckpt on the
     act_ckpt_mixer_only: bool = True
 

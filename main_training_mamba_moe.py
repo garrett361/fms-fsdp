@@ -5,14 +5,14 @@ from pathlib import Path
 import fire
 import torch
 import torch.optim as optim
-from mamba_ssm.models.mixer_seq_simple import (
-    MambaLMHeadModel,
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.modules.moe import MoE
+from mamba_ssm.moe_utils import (
     act_ckpt_moe,
     fully_shard_moe,
     get_total_exp_and_active_params,
     init_meta_moe,
 )
-from mamba_ssm.modules.moe import MoE
 from torch import distributed as dist
 from torch.distributed import init_device_mesh
 from torch.distributed.fsdp import MixedPrecisionPolicy

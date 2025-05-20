@@ -181,8 +181,6 @@ def main(**kwargs):
 
     fully_shard_moe(
         model=model,
-        ep_degree=cfg.ep_degree,
-        world_size=world_size,
         ep_mesh=ep_mesh,
         fsdp_mesh=fsdp_mesh,
         mp_policy=mp_policy,

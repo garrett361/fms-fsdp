@@ -499,15 +499,26 @@ class CheckpointerFSDP2(Checkpointer):
         rank = self.rank
         save_time = time.time()
         state_dict = self._get_dcp_state_dict(model, optimizer)
-        save_name = os.path.join(self.ckp_path, "step_" + str(step) + "_ckp")
-        dcp.save(state_dict, checkpoint_id=save_name)
-        if rank == 0:
-            metadata = kwargs
-            metadata["step"] = step
-            torch.save(metadata, os.path.join(save_name, "metadata.pth"))
-        self.report(
-            f"Checkpoint saved in {save_name}", model_save_time=time.time() - save_time
-        )
+        if optimizer is None:
+            pth_path = os.path.join(self.ckp_path[:-12], "pth", "step_" + str(step))
+            os.makedirs(pth_path, exist_ok=True)
+            dcp.save(state_dict, checkpoint_id=pth_path)
+            self.report(
+                f"Model saved in {pth_path}",
+                model_save_time=time.time() - save_time,
+            )
+
+        else:
+            save_name = os.path.join(self.ckp_path, "step_" + str(step) + "_ckp")
+            dcp.save(state_dict, checkpoint_id=save_name)
+            if rank == 0:
+                metadata = kwargs
+                metadata["step"] = step
+                torch.save(metadata, os.path.join(save_name, "metadata.pth"))
+            self.report(
+                f"Model + Optim saved in {save_name}",
+                model_and_optim_save_time=time.time() - save_time,
+            )
 
         return self._cleanup()
 

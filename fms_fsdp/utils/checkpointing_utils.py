@@ -1,9 +1,13 @@
+import functools
 import os
 import shutil
 import time
 from pathlib import Path
+from typing import Any, Optional
 
 import torch
+import torch.distributed.checkpoint as dcp
+import torch.nn as nn
 from torch.distributed._shard.checkpoint import (
     FileSystemReader,
     FileSystemWriter,
@@ -15,9 +19,16 @@ from torch.distributed.checkpoint.default_planner import (
     DefaultSavePlanner,
 )
 from torch.distributed.checkpoint.optimizer import load_sharded_optimizer_state_dict
-from torch.distributed.fsdp import FullStateDictConfig
+from torch.distributed.checkpoint.state_dict import (
+    StateDictOptions,
+    get_model_state_dict,
+    get_optimizer_state_dict,
+    set_model_state_dict,
+    set_optimizer_state_dict,
+)
+from torch.distributed.checkpoint.stateful import Stateful
+from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import StateDictType
 
 
 def get_latest(targdir, qualifier=lambda x: True, key=os.path.getctime):
@@ -345,3 +356,169 @@ class Checkpointer:
         self.report("Checkpoint written", model_save_time=time.time() - save_time)
 
         return self._cleanup()
+
+
+class ModelState(Stateful):
+    # From torchtitan
+    def __init__(self, model: nn.Module | list[nn.Module]) -> None:
+        self.model = [model] if isinstance(model, nn.Module) else model
+        self.cache_state_dict = {
+            k: v for sd in map(get_model_state_dict, self.model) for k, v in sd.items()
+        }
+
+    def state_dict(self) -> dict[str, Any]:
+        return self.cache_state_dict
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        func = functools.partial(
+            set_model_state_dict,
+            model_state_dict=state_dict,
+            options=StateDictOptions(strict=False),
+        )
+        list(map(func, self.model))
+        # `set_model_state_dict()` does change the keys of the input state_dict,
+        # we will need to reinitialize the cache_state_dict.
+        self.cache_state_dict = {
+            k: v for sd in map(get_model_state_dict, self.model) for k, v in sd.items()
+        }
+
+
+class OptimState(Stateful):
+    # Modified from torchtitan
+    def __init__(
+        self,
+        model: nn.Module | list[nn.Module],
+        optimizer: torch.optim.Optimizer | list[torch.optim.Optimizer],
+    ) -> None:
+        self.model = [model] if isinstance(model, nn.Module) else model
+        self.optimizer = (
+            [optimizer] if isinstance(optimizer, torch.optim.Optimizer) else optimizer
+        )
+
+    def state_dict(self) -> dict[str, Any]:
+        func = functools.partial(
+            get_optimizer_state_dict,
+            options=StateDictOptions(flatten_optimizer_state_dict=True),
+        )
+        return {
+            k: v for sd in map(func, self.model, self.optimizer) for k, v in sd.items()
+        }
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        func = functools.partial(
+            set_optimizer_state_dict,
+            optim_state_dict=state_dict,
+            options=StateDictOptions(flatten_optimizer_state_dict=True),
+        )
+        list(map(func, self.model, self.optimizer))
+
+
+def get_stateful_state_dict(
+    model: nn.Module, optimizer: Optional[torch.optim.Optimizer]
+) -> dict[str, Stateful]:
+    """ """
+    # For PP; see torchtitan docs https://github.com/pytorch/torchtitan/blob/4ee6a2c9c1966db232fab2189c6307e04ec8f894/torchtitan/components/checkpoint.py?plain=1#L165-L169
+    options = StateDictOptions(flatten_optimizer_state_dict=True)
+
+
+class CheckpointerFSDP2(Checkpointer):
+    """
+    Modifies the Checkpointer class to use DCP for FSDP2.
+    """
+
+    def _get_dcp_state_dict(self, model, optimizer) -> dict[str, Stateful]:
+        # TODO: @goon - decouple
+        from mamba_ssm.moe_utils import get_dcp_state_dict
+
+        return get_dcp_state_dict(model, optimizer)
+
+    def load(
+        self,
+        model,
+        optimizer,
+        dataloader,
+        path="",
+        reset_stepcount=False,
+        strict=True,
+        is_compiled=False,
+    ):
+        """
+        Handle checkpoint loading for model/optimizer/dataloader from given path, according to arguments.
+        Defaults to save path for locating an appropriate checkpoint. If a path is provided, will use
+        it only if no appropriate checkpoint is found in the save path (in which case it's a job restart).
+        Reset_stepcount manually resets optimizer and dataloader states, and stat tracking.
+        Strict determines whether to use strict loading or not FOR SINGLEFILE LOADING ONLY.
+        Returns model, optimizer, dataloader, current step, and current tokens seen.
+        """
+        assert dataloader is None  # the dataloader already handles its own state
+        is_resuming = False
+        if self._validate_ckp_path(self.ckp_path) is not None:
+            path = self.ckp_path
+            is_resuming = True
+        load_path = self._validate_ckp_path(path)
+        if load_path is None:
+            self.report(
+                f"No valid checkpoint detected at {path}, starting from scratch."
+            )
+            return model, optimizer, dataloader, 0, 0, False
+        else:
+            self.report(f"Prior checkpoint {load_path} detected.")
+            load_time = time.time()
+            state_dict = self._get_dcp_state_dict(model, optimizer)
+            dcp.load(state_dict, checkpoint_id=load_path)
+            self.report(state_load_time=time.time() - load_time)
+
+            step = 0
+            ntok = 0
+            # Load metadata
+            if is_resuming:
+                metadata = torch.load(os.path.join(load_path, "metadata.pth"))
+                step = metadata.get("step", 0)
+                ntok = metadata.get("tokens_seen", 0)
+                self.report("Metadata loaded", start_step=step, n_tokens_seen=ntok)
+            # Load dataset
+            if dataloader is not None:
+                data_load_time = time.time()
+                dataloader.dataset.load_from_path(path)
+                self.report(dataset_load_time=time.time() - data_load_time)
+            else:
+                self.report("Skipping dataset load, no dataloader provided.")
+            return model, optimizer, dataloader, step, ntok, is_resuming
+
+    def save(
+        self,
+        step,
+        model,
+        optimizer,
+        dataloader,
+        **kwargs,
+    ):
+        # Note: metadata kwargs cannot contain any of:
+        # (step, model, optimizer, dataloader)
+        assert dataloader is None  # the dataloader already handles its own state
+        rank = self.rank
+        save_time = time.time()
+        state_dict = self._get_dcp_state_dict(model, optimizer)
+        save_name = os.path.join(self.ckp_path, "step_" + str(step) + "_ckp")
+        dcp.save(state_dict, checkpoint_id=save_name)
+        if rank == 0:
+            metadata = kwargs
+            metadata["step"] = step
+            torch.save(metadata, os.path.join(save_name, "metadata.pth"))
+        self.report(
+            f"Checkpoint saved in {save_name}", model_save_time=time.time() - save_time
+        )
+
+        return self._cleanup()
+
+    def save_single_file(
+        self,
+        step,
+        model,
+        is_compiled=False,
+        **kwargs,
+    ):
+        # NOTE: @goon - not actually saving a single file at the moment.
+        save_time = time.time()
+        self.save(step=step, model=model, optimizer=None, dataloader=None)
+        self.report("Checkpoint written", model_save_time=time.time() - save_time)

@@ -19,7 +19,7 @@ from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
-from fms_fsdp.utils.checkpointing_utils import Checkpointer
+from fms_fsdp.utils.checkpointing_utils import CheckpointerFSDP2
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
@@ -114,7 +114,8 @@ def main(**kwargs):
     # Cases:
     # 1. ep_degree = 1: full replication, no ep_mesh
     # 2. ep_degree = world_size: ep_mesh is the world
-    # 3. world_size > ep_degree > world_size: 2D mesh, experts distributed along slice .
+    # 3. world_size > ep_degree > world_size: 2D mesh with (DP, EP) dims, experts distributed along
+    #    slice.
     if cfg.ep_degree == 1:
         ep_mesh = None
     elif cfg.ep_degree == world_size:
@@ -229,7 +230,7 @@ def main(**kwargs):
         tokens_seen = start_step = 0
         is_resuming = False
     else:
-        checkpointer = Checkpointer(
+        checkpointer = CheckpointerFSDP2(
             cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
         )
         model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(

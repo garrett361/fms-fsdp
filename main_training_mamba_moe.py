@@ -248,8 +248,9 @@ def main(**kwargs):
         t = torch.arange(
             rank * world_size, (rank + 1) * world_size, device="cuda"
         )
-        out = torch.empty_like(t)
-        dist.all_to_all_single(out, t)
+        # out = torch.empty_like(t)
+        # dist.all_to_all_single(out, t)
+        dist.all_reduce(t)
         dist.barrier()
         print(f"All-to-all done on {rank=}")
 

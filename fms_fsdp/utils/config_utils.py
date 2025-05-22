@@ -6,11 +6,13 @@ from mamba_ssm.models.config_mamba import MambaConfig
 
 from fms_fsdp.config import train_config
 
+LLAMA3_VOCAB_SIZE=128256
+
 MAMBA_30B_MOE_CFG = MambaConfig(
     d_model=3072,
     d_intermediate=14336,
     n_layer=32,
-    vocab_size=128256,
+    vocab_size=LLAMA3_VOCAB_SIZE,
     ssm_cfg={"layer": "Mamba2"},
     attn_layer_idx=[9, 18, 27],
     attn_cfg={
@@ -42,7 +44,9 @@ DS2_LITE_CFG = MambaConfig(
     d_model=2048,
     d_intermediate=10944,
     n_layer=27,
-    vocab_size=102400,
+    # vocab_size=102400,
+    # NOTE: @goon - use llama3 vocab size everywhere for dev speed
+    vocab_size=LLAMA3_VOCAB_SIZE,
     ssm_cfg={"layer": "Mamba2"},
     attn_layer_idx=list(range(27)),
     attn_cfg={
@@ -80,7 +84,9 @@ DS2_CFG = MambaConfig(
     d_model=5120,
     d_intermediate=12288,
     n_layer=60,
-    vocab_size=102400,
+    # vocab_size=102400,
+    # NOTE: @goon - use llama3 vocab size everywhere for dev speed
+    vocab_size=LLAMA3_VOCAB_SIZE,
     ssm_cfg={"layer": "Mamba2"},
     attn_layer_idx=list(range(60)),
     attn_cfg={
@@ -118,7 +124,9 @@ DS3_CFG = MambaConfig(
     d_model=7168,
     d_intermediate=18432,
     n_layer=61,
-    vocab_size=129280,
+    # vocab_size=129280,
+    # NOTE: @goon - use llama3 vocab size everywhere for dev speed
+    vocab_size=LLAMA3_VOCAB_SIZE,
     ssm_cfg={"layer": "Mamba2"},
     attn_layer_idx=list(range(61)),
     attn_cfg={
@@ -156,7 +164,9 @@ LLAMA4_MAVERICK_CFG = MambaConfig(
     d_model=5120,
     d_intermediate=16384,
     n_layer=48,
-    vocab_size=202048,
+    # vocab_size=202048,
+    # NOTE: @goon - use llama3 vocab size everywhere for dev speed
+    vocab_size=LLAMA3_VOCAB_SIZE,
     ssm_cfg={"layer": "Mamba2"},
     attn_layer_idx=list(range(48)),
     attn_cfg={
@@ -251,7 +261,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_8b":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=4096,
             nheads=32,
             kvheads=8,
@@ -262,7 +272,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_8b_4k":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=4096,
             nheads=32,
             kvheads=8,
@@ -273,7 +283,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_1.8b":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=2048,
             nheads=16,
             kvheads=8,
@@ -284,7 +294,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_1.8b_4k":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=2048,
             nheads=16,
             kvheads=8,
@@ -295,7 +305,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_3.2b":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=3072,
             nheads=24,
             kvheads=8,
@@ -306,7 +316,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_3.2b_4k":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=3072,
             nheads=24,
             kvheads=8,
@@ -317,7 +327,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_70b":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=8192,
             nheads=64,
             kvheads=8,
@@ -328,7 +338,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_70b_4k":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=8192,
             nheads=64,
             kvheads=8,
@@ -339,7 +349,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         )
     elif model_variant == "llama3_194m_4k":
         model_config = LLaMAConfig(
-            src_vocab_size=128256,
+            src_vocab_size=LLAMA3_VOCAB_SIZE,
             emb_dim=1024,
             nheads=8,
             nlayers=10,
@@ -351,7 +361,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
             d_model=4096,
             d_intermediate=14336,
             n_layer=32,
-            vocab_size=128256,
+            vocab_size=LLAMA3_VOCAB_SIZE,
             ssm_cfg={"layer": "Mamba2"},
             attn_layer_idx=[9, 18, 27],
             attn_cfg={
@@ -376,7 +386,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
             d_model=2048,
             d_intermediate=5461,
             n_layer=16,
-            vocab_size=128256,
+            vocab_size=LLAMA3_VOCAB_SIZE,
             ssm_cfg={"layer": "Mamba2"},
             attn_layer_idx=[5, 9, 13],
             attn_cfg={
@@ -410,7 +420,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
             d_model=4096,
             d_intermediate=14336,
             n_layer=40,
-            vocab_size=128256,
+            vocab_size=LLAMA3_VOCAB_SIZE,
             ssm_cfg={"layer": "Mamba2"},
             attn_layer_idx=[9, 18, 27, 36],
             attn_cfg={
@@ -441,7 +451,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
             d_model=5120,
             d_intermediate=14336,
             n_layer=60,
-            vocab_size=128256,
+            vocab_size=LLAMA3_VOCAB_SIZE,
             ssm_cfg={"layer": "Mamba2"},
             attn_layer_idx=[9, 18, 27, 36, 45, 54],
             attn_cfg={
@@ -472,7 +482,7 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
             d_model=3072,
             d_intermediate=14336,
             n_layer=32,
-            vocab_size=128256,
+            vocab_size=LLAMA3_VOCAB_SIZE,
             ssm_cfg={"layer": "Mamba2"},
             attn_layer_idx=[9, 18, 27],
             attn_cfg={

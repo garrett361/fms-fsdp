@@ -77,12 +77,14 @@ def train(
 
     model.train()
 
-    if cfg.moe_tok_count_hooks:
+    if cfg.moe_tok_count_hooks or cfg.loss_free_moe_balancing_lr:
         from mamba_ssm.moe_utils import attach_tok_count_hooks
 
         moe_tok_count_hook_dict = attach_tok_count_hooks(model)
+        moe_tok_stats_dict = {}
     else:
         moe_tok_count_hook_dict = None
+        moe_tok_stats_dict = None
 
     ddp_stats = torch.zeros(2).to(local_rank)
     g_norms = []
@@ -111,8 +113,24 @@ def train(
             loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
         with bwd_timer:
             loss.backward()
+        if cfg.loss_free_moe_balancing_lr:
+            # arXiv:2408.15664
+            assert cfg.loss_free_moe_balancing_lr > 0, (
+                f"{cfg.loss_free_moe_balancing_lr=}"
+            )
+            layers = model.backbone.layers
+            for layer_idx, hook in moe_tok_count_hook_dict.items():
+                gate = layers[layer_idx].mlp.gate
+                assert gate.bias is not None, f"{gate.bias=}"
+                # TODO: @goon - will need to specify group when using PP
+                dist.all_reduce(hook.count)
+                moe_tok_stats_dict[layer_idx] += hook.count
+                mean_count = hook.count.mean()
+                sign = torch.sign(hook.count - mean_count)
+                gate.bias -= cfg.loss_free_moe_balancing_lr * sign
+                hook.reset()
 
-        # Clipping gets complicated with advanced sharding -- see torchtitan
+        # Clipping gets a little more complicated with PP -- see torchtitan
         # TODO: @goon - implement
         if cfg.skip_clip:
             g_norms.append(-1.0)
@@ -159,10 +177,14 @@ def train(
                     print(f"{bwd_time_mean_s=}")
                     print(f"{bwd_time_std_s=}")
 
-            if cfg.moe_tok_count_hooks:
+            if cfg.moe_tok_count_hooks and not moe_tok_stats_dict:
                 for h in moe_tok_count_hook_dict.values():
                     # TODO: @goon - will need to specify group when using PP
                     dist.reduce(h.count, dst=0)
+                moe_tok_stats_dict = {
+                    layer_idx: h.count
+                    for layer_idx, h in moe_tok_count_hook_dict.items()
+                }
 
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
@@ -210,12 +232,15 @@ def train(
                         "gpu reserved memory": reserved_mem,
                         "gpu allocated memory": allocated_mem,
                     }
-                    if moe_tok_count_hook_dict is not None:
-                        for layer_idx, hook in moe_tok_count_hook_dict.items():
-                            for exp_idx, tok_count in enumerate(hook.count.tolist()):
+                    if moe_tok_stats_dict is not None:
+                        for layer_idx, counts in moe_tok_count_hook_dict.items():
+                            for exp_idx, tok_count in enumerate(counts.tolist()):
                                 vals_to_track[
                                     f"hooks/layer_{layer_idx}.exp_{exp_idx}"
                                 ] = tok_count
+                        moe_tok_stats_dict = {}
+                        for h in moe_tok_count_hook_dict.values():
+                            h.reset()
 
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log

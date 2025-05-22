@@ -231,7 +231,7 @@ def train(
                         "gpu allocated memory": allocated_mem,
                     }
                     if moe_tok_stats_dict is not None:
-                        for layer_idx, counts in moe_tok_count_hook_dict.items():
+                        for layer_idx, counts in moe_tok_stats_dict.items():
                             for exp_idx, tok_count in enumerate(counts.tolist()):
                                 vals_to_track[
                                     f"hooks/layer_{layer_idx}.exp_{exp_idx}"

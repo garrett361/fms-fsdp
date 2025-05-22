@@ -161,7 +161,7 @@ def train(
             )
 
             if cfg.sanity_prints:
-                print(f"[{rank=}]: {batch_idx=}, toks={model._get_tok_counts()}")
+                pass
 
             if cfg.extra_timing:
                 fwd_time_mean_s = fwd_timer.get_mean_time_s()

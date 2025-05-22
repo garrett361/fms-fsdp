@@ -1,9 +1,11 @@
-from collections import defaultdict
 import os
+from collections import defaultdict
 from dataclasses import asdict
 from functools import partial
+from typing import Any
 
 import torch
+import torch.nn as nn
 from torch import distributed as dist
 
 try:
@@ -114,19 +116,12 @@ def train(
             loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
         with bwd_timer:
             loss.backward()
+
         if cfg.loss_free_moe_balancing_lr:
             # arXiv:2408.15664
-            layers = model.backbone.layers
-            for layer_idx, hook in moe_tok_count_hook_dict.items():
-                gate = layers[layer_idx].mlp.gate
-                assert gate.bias is not None, f"{gate.bias=}"
-                # TODO: @goon - will need to specify group when using PP
-                dist.all_reduce(hook.count)
-                moe_tok_stats_dict[layer_idx] += hook.count
-                mean_count = hook.count.mean(dtype=torch.float32)
-                sign = torch.sign(hook.count - mean_count)
-                gate.bias -= cfg.loss_free_moe_balancing_lr * sign
-                hook.reset()
+            apply_loss_free_moe_balancing(
+                cfg, model, moe_tok_count_hook_dict, moe_tok_stats_dict
+            )
 
         # Clipping gets a little more complicated with PP -- see torchtitan
         # TODO: @goon - implement
@@ -406,3 +401,22 @@ class CUDATimer:
     def reset(self) -> None:
         self._start_events.clear()
         self._stop_events.clear()
+
+
+def apply_loss_free_moe_balancing(
+    cfg,
+    model: nn.Module,
+    moe_tok_count_hook_dict: dict[str, Any],
+    moe_tok_stats_dict: dict[str, int | torch.Tensor],
+) -> None:
+    layers = model.backbone.layers
+    for layer_idx, hook in moe_tok_count_hook_dict.items():
+        gate = layers[layer_idx].mlp.gate
+        assert gate.bias is not None, f"{gate.bias=}"
+        # TODO: @goon - will need to specify group when using PP
+        dist.all_reduce(hook.count)
+        moe_tok_stats_dict[layer_idx] += hook.count
+        mean_count = hook.count.mean(dtype=torch.float32)
+        sign = torch.sign(hook.count - mean_count)
+        gate.bias -= cfg.loss_free_moe_balancing_lr * sign
+        hook.reset()

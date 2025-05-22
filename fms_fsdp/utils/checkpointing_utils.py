@@ -467,6 +467,7 @@ class CheckpointerFSDP2(Checkpointer):
             state_dict = self._get_dcp_state_dict(model, optimizer)
             dcp.load(state_dict, checkpoint_id=load_path)
             self.report(state_load_time=time.time() - load_time)
+            print(f"Finished DCP state dict load on {self.rank=}")
 
             step = 0
             ntok = 0
@@ -496,7 +497,6 @@ class CheckpointerFSDP2(Checkpointer):
         # Note: metadata kwargs cannot contain any of:
         # (step, model, optimizer, dataloader)
         assert dataloader is None  # the dataloader already handles its own state
-        rank = self.rank
         save_time = time.time()
         state_dict = self._get_dcp_state_dict(model, optimizer)
         if optimizer is None:
@@ -511,7 +511,7 @@ class CheckpointerFSDP2(Checkpointer):
         else:
             save_name = os.path.join(self.ckp_path, "step_" + str(step) + "_ckp")
             dcp.save(state_dict, checkpoint_id=save_name)
-            if rank == 0:
+            if self.rank == 0:
                 metadata = kwargs
                 metadata["step"] = step
                 torch.save(metadata, os.path.join(save_name, "metadata.pth"))

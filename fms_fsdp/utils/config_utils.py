@@ -6,7 +6,7 @@ from mamba_ssm.models.config_mamba import MambaConfig
 
 from fms_fsdp.config import train_config
 
-LLAMA3_VOCAB_SIZE=128256
+LLAMA3_VOCAB_SIZE = 128256
 
 MAMBA_30B_MOE_CFG = MambaConfig(
     d_model=3072,
@@ -38,6 +38,8 @@ MAMBA_30B_MOE_CFG = MambaConfig(
     pad_vocab_size_multiple=16,
     tie_embeddings=False,
 )
+
+# NOTE: @goon -  these DS/Maverick/Mixtral cfgs are just approximations of the actual models.
 
 # https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/blob/main/config.json
 DS2_LITE_CFG = MambaConfig(

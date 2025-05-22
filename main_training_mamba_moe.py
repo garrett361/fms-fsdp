@@ -243,7 +243,18 @@ def main(**kwargs):
             strict=False,
         )
         dist.barrier()
-        print(f"Past load barrier on {rank=}")
+        print(f"Past load barrier on {rank=}. Attempting all-to-all")
+
+        t = torch.arange(
+            rank * world_size, (rank + 1) * world_size, device="cuda"
+        )
+        out = torch.empty_like(t)
+        dist.all_to_all_single(out, t)
+        dist.barrier()
+        print(f"All-to-all done on {rank=}")
+
+
+
         if not is_resuming:
             start_step = 0
             # Override loaded optim hyperparams with the current values

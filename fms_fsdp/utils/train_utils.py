@@ -1,3 +1,4 @@
+from collections import defaultdict
 import os
 from dataclasses import asdict
 from functools import partial
@@ -81,7 +82,7 @@ def train(
         from mamba_ssm.moe_utils import attach_tok_count_hooks
 
         moe_tok_count_hook_dict = attach_tok_count_hooks(model)
-        moe_tok_stats_dict = {}
+        moe_tok_stats_dict = defaultdict(int)
     else:
         moe_tok_count_hook_dict = None
         moe_tok_stats_dict = None
@@ -235,7 +236,7 @@ def train(
                                 vals_to_track[
                                     f"hooks/layer_{layer_idx}.exp_{exp_idx}"
                                 ] = tok_count
-                        moe_tok_stats_dict = {}
+                        moe_tok_stats_dict = defaultdict(int)
                         for h in moe_tok_count_hook_dict.values():
                             h.reset()
 

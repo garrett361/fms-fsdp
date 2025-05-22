@@ -70,7 +70,7 @@ def main(**kwargs):
     if cfg.loss_free_moe_balancing_lr:
         if cfg.loss_free_moe_balancing_lr < 0:
             raise ValueError(f"{cfg.loss_free_moe_balancing_lr=} must be non-negative.")
-        mamba_config.moe_cfg["bias"] = True
+        mamba_config.moe_cfg["gate_bias"] = True
     if not rank:
         print(f"{mamba_config.moe_cfg=}")
 

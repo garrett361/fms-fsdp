@@ -66,6 +66,11 @@ def main(**kwargs):
     # get model
     mamba_config = get_model_config(cfg.model_variant)
     mamba_config.moe_cfg["moe_impl"] = cfg.moe_impl
+    # HACK: @goon - force bias = True when using loss_free_moe_balancing_lr
+    if cfg.loss_free_moe_balancing_lr:
+        if cfg.loss_free_moe_balancing_lr < 0:
+            raise ValueError(f"{cfg.loss_free_moe_balancing_lr=} must be non-negative.")
+        mamba_config.moe_cfg["bias"] = True
     if not rank:
         print(f"{mamba_config.moe_cfg=}")
 
@@ -242,8 +247,6 @@ def main(**kwargs):
             else cfg.ckpt_load_path,
             strict=False,
         )
-
-
 
         if not is_resuming:
             start_step = 0

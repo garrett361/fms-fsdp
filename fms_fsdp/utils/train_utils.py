@@ -115,9 +115,6 @@ def train(
             loss.backward()
         if cfg.loss_free_moe_balancing_lr:
             # arXiv:2408.15664
-            assert cfg.loss_free_moe_balancing_lr > 0, (
-                f"{cfg.loss_free_moe_balancing_lr=}"
-            )
             layers = model.backbone.layers
             for layer_idx, hook in moe_tok_count_hook_dict.items():
                 gate = layers[layer_idx].mlp.gate

@@ -242,17 +242,6 @@ def main(**kwargs):
             else cfg.ckpt_load_path,
             strict=False,
         )
-        dist.barrier()
-        print(f"Past load barrier on {rank=}. Attempting all-to-all")
-
-        t = torch.arange(
-            rank * world_size, (rank + 1) * world_size, device="cuda"
-        )
-        # out = torch.empty_like(t)
-        # dist.all_to_all_single(out, t)
-        dist.all_reduce(t)
-        dist.barrier()
-        print(f"All-to-all done on {rank=}")
 
 
 

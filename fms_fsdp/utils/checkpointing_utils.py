@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import torch
+import torch.distributed as dist
 import torch.distributed.checkpoint as dcp
 import torch.nn as nn
 from torch.distributed._shard.checkpoint import (
@@ -468,6 +469,16 @@ class CheckpointerFSDP2(Checkpointer):
             dcp.load(state_dict, checkpoint_id=load_path)
             self.report(state_load_time=time.time() - load_time)
             print(f"Finished DCP state dict load on {self.rank=}")
+
+            # HACK: @goon - all-to-all calls in EP layers seem to fail with NCCL timeouts after
+            # loading, but performing a small all-to-all here apparently cures this problem?
+            # Corrupted NCCL state or something. TBD.
+            world_size = int(os.environ["WORLD_SIZE"])
+            t = torch.arange(
+                self.rank * world_size, (self.rank + 1) * world_size, device="cuda"
+            )
+            out = torch.empty_like(t)
+            dist.all_to_all_single(out, t)
 
             step = 0
             ntok = 0

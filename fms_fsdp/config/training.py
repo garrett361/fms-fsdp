@@ -83,6 +83,7 @@ class train_config:
     no_reshard: bool = True
     # Option to avoid fsdp act-ckpt on the
     act_ckpt_mixer_only: bool = True
+    moe_tok_count_hooks: bool = False
 
     # Misc
     foreach: Optional[bool] = None

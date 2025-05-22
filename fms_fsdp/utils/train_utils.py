@@ -76,6 +76,14 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
+
+    if cfg.moe_tok_count_hooks:
+        from mamba_ssm.moe_utils import attach_tok_count_hooks
+
+        moe_tok_count_hook_dict = attach_tok_count_hooks(model)
+    else:
+        moe_tok_count_hook_dict = None
+
     ddp_stats = torch.zeros(2).to(local_rank)
     g_norms = []
 
@@ -150,6 +158,12 @@ def train(
                     print(f"{fwd_time_std_s=}")
                     print(f"{bwd_time_mean_s=}")
                     print(f"{bwd_time_std_s=}")
+
+            if cfg.moe_tok_count_hooks:
+                for h in moe_tok_count_hook_dict.values():
+                    # TODO: @goon - will need to specify group when using PP
+                    dist.reduce(h.count, dst=0)
+
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
@@ -196,6 +210,13 @@ def train(
                         "gpu reserved memory": reserved_mem,
                         "gpu allocated memory": allocated_mem,
                     }
+                    if moe_tok_count_hook_dict is not None:
+                        for layer_idx, hook in moe_tok_count_hook_dict.items():
+                            for exp_idx, tok_count in enumerate(hook.count.tolist()):
+                                vals_to_track[
+                                    f"hooks/layer_{layer_idx}.exp_{exp_idx}"
+                                ] = tok_count
+
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":
@@ -204,6 +225,10 @@ def train(
 
             start = time.time()
             ddp_stats.zero_()
+
+            if cfg.moe_tok_count_hooks:
+                for h in moe_tok_count_hook_dict.values():
+                    h.reset()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if not cfg.skip_ckpt and batch_idx % cfg.checkpoint_interval == 0:

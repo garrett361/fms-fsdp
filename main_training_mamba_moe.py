@@ -242,6 +242,8 @@ def main(**kwargs):
             else cfg.ckpt_load_path,
             strict=False,
         )
+        dist.barrier()
+        print(f"Past load barrier on {rank=}")
         if not is_resuming:
             start_step = 0
             # Override loaded optim hyperparams with the current values

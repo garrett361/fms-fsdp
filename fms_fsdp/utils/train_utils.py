@@ -123,7 +123,7 @@ def train(
                 # TODO: @goon - will need to specify group when using PP
                 dist.all_reduce(hook.count)
                 moe_tok_stats_dict[layer_idx] += hook.count
-                mean_count = hook.count.mean()
+                mean_count = hook.count.mean(dtype=torch.float32)
                 sign = torch.sign(hook.count - mean_count)
                 gate.bias -= cfg.loss_free_moe_balancing_lr * sign
                 hook.reset()

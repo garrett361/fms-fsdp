@@ -11,7 +11,7 @@ from mamba_ssm.moe_utils import (
     act_ckpt_moe,
     fully_shard_moe,
     get_total_exp_and_active_params,
-    init_meta_moe,
+    init_moe,
 )
 from torch import distributed as dist
 from torch.distributed import init_device_mesh
@@ -199,7 +199,7 @@ def main(**kwargs):
     if cfg.low_cpu_fsdp:
         if rank == 0:
             print("Moving meta model to CUDA...")
-        init_meta_moe(model)
+        init_moe(model)
 
     elif cfg.ep_degree == world_size:
         # If the experts are not sharded and just ignored, then we must also manually move the

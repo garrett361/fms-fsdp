@@ -2,7 +2,7 @@ import os
 from collections import defaultdict
 from dataclasses import asdict
 from functools import partial
-from typing import Any
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -118,7 +118,6 @@ def train(
             loss.backward()
 
         if cfg.loss_free_moe_balancing_lr:
-            # arXiv:2408.15664
             apply_loss_free_moe_balancing(
                 cfg, model, moe_tok_count_hook_dict, moe_tok_stats_dict
             )
@@ -171,13 +170,9 @@ def train(
                     print(f"{bwd_time_std_s=}")
 
             if cfg.moe_tok_count_hooks and not moe_tok_stats_dict:
-                for h in moe_tok_count_hook_dict.values():
-                    # TODO: @goon - will need to specify group when using PP
-                    dist.reduce(h.count, dst=0)
-                moe_tok_stats_dict = {
-                    layer_idx: h.count
-                    for layer_idx, h in moe_tok_count_hook_dict.items()
-                }
+                moe_tok_stats_dict = get_moe_tok_stats_dict(
+                    moe_tok_count_hook_dict, dst=0
+                )
 
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
@@ -226,11 +221,10 @@ def train(
                         "gpu allocated memory": allocated_mem,
                     }
                     if moe_tok_stats_dict is not None:
-                        for layer_idx, counts in moe_tok_stats_dict.items():
-                            for exp_idx, tok_count in enumerate(counts.tolist()):
-                                vals_to_track[
-                                    f"hooks/layer_{layer_idx}.exp_{exp_idx}"
-                                ] = tok_count
+                        update_tracking_vals_with_moe_toks(
+                            moe_tok_stats_dict, vals_to_track
+                        )
+                        # Reset
                         moe_tok_stats_dict = defaultdict(int)
                         for h in moe_tok_count_hook_dict.values():
                             h.reset()
@@ -407,16 +401,55 @@ def apply_loss_free_moe_balancing(
     cfg,
     model: nn.Module,
     moe_tok_count_hook_dict: dict[str, Any],
-    moe_tok_stats_dict: dict[str, int | torch.Tensor],
+    moe_tok_stats_dict: Optional[dict[str, int | torch.Tensor]] = None,
 ) -> None:
-    layers = model.backbone.layers
-    for layer_idx, hook in moe_tok_count_hook_dict.items():
-        gate = layers[layer_idx].mlp.gate
-        assert gate.bias is not None, f"{gate.bias=}"
-        # TODO: @goon - will need to specify group when using PP
-        dist.all_reduce(hook.count)
-        moe_tok_stats_dict[layer_idx] += hook.count
-        mean_count = hook.count.mean(dtype=torch.float32)
-        sign = torch.sign(hook.count - mean_count)
-        gate.bias -= cfg.loss_free_moe_balancing_lr * sign
+    """
+    Apply loss-free moe balancing arXiv:2408.15664 and optionally update `moe_tok_stats_dict`.
+    """
+
+    # Concatenate and perform a single all-reduce for speed:
+    all_counts = torch.cat([h.count for h in moe_tok_count_hook_dict.values()])
+    # TODO: @goon - will need to specify group when using PP
+    dist.all_reduce(all_counts)
+
+    for fqn, reduced_count in zip(
+        moe_tok_count_hook_dict, all_counts.chunk(len(moe_tok_count_hook_dict))
+    ):
+        moe = model.get_submodule(fqn)
+        assert moe.gate.bias is not None, f"{moe.gate.bias=}"
+        if moe_tok_stats_dict is not None:
+            moe_tok_stats_dict[fqn] += reduced_count
+        mean_count = reduced_count.mean(dtype=torch.float32)
+        sign = torch.sign(reduced_count - mean_count)
+        moe.gate.bias -= cfg.loss_free_moe_balancing_lr * sign
+
+    for hook in moe_tok_count_hook_dict.values():
         hook.reset()
+
+
+def get_moe_tok_stats_dict(
+    moe_tok_count_hook_dict: dict[str, Any], dst: int = 0
+) -> dict[str, torch.Tensor]:
+    """
+    Create moe_tok_stats_dict. Only rank dst get accurate values.
+    """
+    # Concatenate and perform a single all-reduce for speed:
+    all_counts = torch.cat([h.count for h in moe_tok_count_hook_dict.values()])
+    # TODO: @goon - will need to specify group when using PP
+    dist.reduce(all_counts, dst=dst)
+    moe_tok_stats_dict = {
+        fqn: h.count
+        for fqn, h in zip(
+            moe_tok_count_hook_dict,
+            all_counts.chunk(len(moe_tok_count_hook_dict)),
+        )
+    }
+    return moe_tok_stats_dict
+
+
+def update_tracking_vals_with_moe_toks(
+    moe_tok_stats_dict: dict[str, torch.Tensor], vals_to_track: dict[str, float]
+) -> None:
+    for fqn, counts in moe_tok_stats_dict.items():
+        for exp_idx, tok_count in enumerate(counts.tolist()):
+            vals_to_track[f"hooks/tok_count/{fqn}/exp_{exp_idx}"] = tok_count

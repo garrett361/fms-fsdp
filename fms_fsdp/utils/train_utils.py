@@ -130,7 +130,8 @@ def train(
         else:
             # .full_tensor() return the correct global norm
             norm_t = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), cfg.grad_clip_thresh
+                [p.grad for p in model.parameters() if p.grad is not None],
+                cfg.grad_clip_thresh,
             )
             print(f"{norm_t=}")
             g_norms.append(

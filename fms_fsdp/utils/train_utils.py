@@ -129,6 +129,11 @@ def train(
             g_norms.append(-1.0)
         else:
             # .full_tensor() return the correct global norm
+            if not rank:
+                for n, p in model.named_parameters():
+                    print(f"{n=}")
+                    print(f"{p=}")
+                    print(f"{p.grad=}")
             norm_t = torch.nn.utils.clip_grad_norm_(
                 [p.grad for p in model.parameters() if p.grad is not None],
                 cfg.grad_clip_thresh,

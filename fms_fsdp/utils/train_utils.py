@@ -7,6 +7,7 @@ from typing import Any, Optional
 import torch
 import torch.nn as nn
 from torch import distributed as dist
+from torch.distributed.tensor import DTensor
 
 try:
     import packaging.version
@@ -128,10 +129,14 @@ def train(
             g_norms.append(-1.0)
         else:
             # .full_tensor() return the correct global norm
+            norm_t = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), cfg.grad_clip_thresh
+            )
+            print(f"{norm_t=}")
             g_norms.append(
-                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip_thresh)
-                .full_tensor()
-                .item()
+                norm_t.full_tensor().item()
+                if isinstance(norm_t, DTensor)
+                else norm_t.item()
             )
         if not cfg.skip_optim_step:
             optimizer.step()

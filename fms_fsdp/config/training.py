@@ -84,6 +84,7 @@ class train_config:
     # Option to avoid fsdp act-ckpt on the
     act_ckpt_mixer_only: bool = True
     moe_tok_count_hooks: bool = False
+    block_mag_hooks: bool = False
     # loss_free moe balancing
     loss_free_moe_balancing_lr: float = 0.0
 

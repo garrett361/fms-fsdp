@@ -7,7 +7,6 @@ from typing import Any, Optional
 import torch
 import torch.nn as nn
 from torch import distributed as dist
-from torch.distributed.tensor import DTensor
 
 try:
     import packaging.version
@@ -90,6 +89,12 @@ def train(
         moe_tok_count_hook_dict = None
         moe_tok_stats_dict = None
 
+    if cfg.block_mag_hooks:
+        from mamba_ssm.moe_utils import attach_block_magnitude_hooks
+
+        block_mag_hook_dict = attach_block_magnitude_hooks(model)
+        block_mag_stats_dict = defaultdict(int)
+
     ddp_stats = torch.zeros(2).to(local_rank)
     g_norms = []
 
@@ -128,22 +133,11 @@ def train(
         if cfg.skip_clip:
             g_norms.append(-1.0)
         else:
-            # .full_tensor() return the correct global norm
-            if not rank:
-                for n, p in model.named_parameters():
-                    print(f"{n=}")
-                    print(f"{p=}")
-                    print(f"{p.grad=}")
             norm_t = torch.nn.utils.clip_grad_norm_(
-                [p.grad for p in model.parameters() if p.grad is not None],
+                model.parameters(),
                 cfg.grad_clip_thresh,
             )
-            print(f"{norm_t=}")
-            g_norms.append(
-                norm_t.full_tensor().item()
-                if isinstance(norm_t, DTensor)
-                else norm_t.item()
-            )
+            g_norms.append(norm_t.full_tensor().item())
         if not cfg.skip_optim_step:
             optimizer.step()
             scheduler.step()
@@ -463,4 +457,4 @@ def update_tracking_vals_with_moe_toks(
 ) -> None:
     for fqn, counts in moe_tok_stats_dict.items():
         for exp_idx, tok_count in enumerate(counts.tolist()):
-            vals_to_track[f"hooks/tok_count/{fqn}/exp_{exp_idx}"] = tok_count
+            vals_to_track[f"hooks/tok_count/{fqn}/exp.{exp_idx}"] = tok_count

@@ -193,7 +193,6 @@ def main(**kwargs):
         reshard_lm_head_after_fwd=cfg.reshard_lm_head_after_fwd,
         explicit_fwd_prefetch=cfg.explicit_fwd_prefetch,
         explicit_bwd_prefetch=cfg.explicit_bwd_prefetch,
-        no_reshard=cfg.no_reshard,
     )
 
     if cfg.low_cpu_fsdp:

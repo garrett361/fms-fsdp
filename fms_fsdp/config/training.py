@@ -80,13 +80,12 @@ class train_config:
     reshard_lm_head_after_fwd: bool = True
     explicit_fwd_prefetch: bool = False
     explicit_bwd_prefetch: bool = False
-    no_reshard: bool = True
     # Option to avoid fsdp act-ckpt on the
     act_ckpt_mixer_only: bool = True
-    moe_tok_count_hooks: bool = False
+    tok_count_hooks: bool = False
     block_mag_hooks: bool = False
     # loss_free moe balancing
-    loss_free_moe_balancing_lr: float = 0.0
+    loss_free_balancing_lr: float = 0.0
 
     # Misc
     foreach: Optional[bool] = None

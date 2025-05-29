@@ -15,6 +15,13 @@ import time
 from datetime import timedelta
 
 import torch.cuda.nccl as nccl
+from mamba_ssm.modules.block import Block
+from mamba_ssm.moe_utils import (
+    apply_loss_free_moe_balancing,
+    attach_magnitude_hooks,
+    attach_tok_count_hooks,
+    clip_grad_norm_,
+)
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
@@ -79,8 +86,6 @@ def train(
     model.train()
 
     if cfg.tok_count_hooks or cfg.loss_free_balancing_lr:
-        from mamba_ssm.moe_utils import attach_tok_count_hooks
-
         tok_count_hook_dict = attach_tok_count_hooks(model)
         tok_stats_dict = defaultdict(int)
     else:
@@ -88,9 +93,6 @@ def train(
         tok_stats_dict = None
 
     if cfg.block_mag_hooks:
-        from mamba_ssm.modules.block import Block
-        from mamba_ssm.moe_utils import attach_magnitude_hooks
-
         block_mag_hook_dict = attach_magnitude_hooks(model, Block)
     else:
         block_mag_hook_dict = None
@@ -124,19 +126,15 @@ def train(
             loss.backward()
 
         if cfg.loss_free_balancing_lr:
-            from mamba_ssm.moe_utils import apply_loss_free_moe_balancing
-
             # NOTE: @goon - apply_loss_free_moe_balancing all-reduces the tok counts internally
             apply_loss_free_moe_balancing(cfg, model, tok_count_hook_dict)
             update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
             tok_count_hook_dict.reset()
 
-        # Clipping gets a little more complicated with PP -- see torchtitan
-        # TODO: @goon - implement
         if cfg.skip_clip:
             g_norms.append(-1.0)
         else:
-            norm_t = torch.nn.utils.clip_grad_norm_(
+            norm_t = clip_grad_norm_(
                 model.parameters(),
                 cfg.grad_clip_thresh,
             )

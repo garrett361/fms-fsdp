@@ -2,10 +2,8 @@ import os
 from collections import defaultdict
 from dataclasses import asdict
 from functools import partial
-from typing import Any, Optional
 
 import torch
-import torch.nn as nn
 from torch import distributed as dist
 
 try:
@@ -80,20 +78,22 @@ def train(
 
     model.train()
 
-    if cfg.moe_tok_count_hooks or cfg.loss_free_moe_balancing_lr:
+    if cfg.tok_count_hooks or cfg.loss_free_balancing_lr:
         from mamba_ssm.moe_utils import attach_tok_count_hooks
 
-        moe_tok_count_hook_dict = attach_tok_count_hooks(model)
-        moe_tok_stats_dict = defaultdict(int)
+        tok_count_hook_dict = attach_tok_count_hooks(model)
+        tok_stats_dict = defaultdict(int)
     else:
-        moe_tok_count_hook_dict = None
-        moe_tok_stats_dict = None
+        tok_count_hook_dict = None
+        tok_stats_dict = None
 
     if cfg.block_mag_hooks:
-        from mamba_ssm.moe_utils import attach_block_magnitude_hooks
+        from mamba_ssm.modules.block import Block
+        from mamba_ssm.moe_utils import attach_magnitude_hooks
 
-        block_mag_hook_dict = attach_block_magnitude_hooks(model)
-        block_mag_stats_dict = defaultdict(int)
+        block_mag_hook_dict = attach_magnitude_hooks(model, Block)
+    else:
+        block_mag_hook_dict = None
 
     ddp_stats = torch.zeros(2).to(local_rank)
     g_norms = []
@@ -123,10 +123,13 @@ def train(
         with bwd_timer:
             loss.backward()
 
-        if cfg.loss_free_moe_balancing_lr:
-            apply_loss_free_moe_balancing(
-                cfg, model, moe_tok_count_hook_dict, moe_tok_stats_dict
-            )
+        if cfg.loss_free_balancing_lr:
+            from mamba_ssm.moe_utils import apply_loss_free_moe_balancing
+
+            # NOTE: @goon - apply_loss_free_moe_balancing all-reduces the tok counts internally
+            apply_loss_free_moe_balancing(cfg, model, tok_count_hook_dict)
+            update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
+            tok_count_hook_dict.reset()
 
         # Clipping gets a little more complicated with PP -- see torchtitan
         # TODO: @goon - implement
@@ -174,11 +177,6 @@ def train(
                     print(f"{bwd_time_mean_s=}")
                     print(f"{bwd_time_std_s=}")
 
-            if cfg.moe_tok_count_hooks and not moe_tok_stats_dict:
-                moe_tok_stats_dict = get_moe_tok_stats_dict(
-                    moe_tok_count_hook_dict, dst=0
-                )
-
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
@@ -225,14 +223,18 @@ def train(
                         "gpu reserved memory": reserved_mem,
                         "gpu allocated memory": allocated_mem,
                     }
-                    if moe_tok_stats_dict is not None:
-                        update_tracking_vals_with_moe_toks(
-                            moe_tok_stats_dict, vals_to_track
-                        )
+                    if tok_stats_dict is not None:
+                        # Could be empty, in which case we need to reduce and update
+                        if not tok_stats_dict:
+                            tok_count_hook_dict.reduce(dst=0)
+                            update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
+                        for key, val in tok_stats_dict.items():
+                            vals_to_track[f"hooks/tok_count/{key}"] = val
                         # Reset
-                        moe_tok_stats_dict = defaultdict(int)
-                        for h in moe_tok_count_hook_dict.values():
-                            h.reset()
+                        tok_stats_dict = defaultdict(int)
+                    if block_mag_hook_dict is not None:
+                        for key, val in tok_stats_dict.items():
+                            vals_to_track[f"hooks/magnitude/{key}"] = val.item()
 
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
@@ -243,9 +245,8 @@ def train(
             start = time.time()
             ddp_stats.zero_()
 
-            if cfg.moe_tok_count_hooks:
-                for h in moe_tok_count_hook_dict.values():
-                    h.reset()
+            if tok_count_hook_dict:
+                tok_count_hook_dict.reset()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if not cfg.skip_ckpt and batch_idx % cfg.checkpoint_interval == 0:
@@ -402,59 +403,7 @@ class CUDATimer:
         self._stop_events.clear()
 
 
-def apply_loss_free_moe_balancing(
-    cfg,
-    model: nn.Module,
-    moe_tok_count_hook_dict: dict[str, Any],
-    moe_tok_stats_dict: Optional[dict[str, int | torch.Tensor]] = None,
-) -> None:
-    """
-    Apply loss-free moe balancing arXiv:2408.15664 and optionally update `moe_tok_stats_dict`.
-    """
-
-    # Concatenate and perform a single all-reduce for speed:
-    all_counts = torch.cat([h.count for h in moe_tok_count_hook_dict.values()])
-    # TODO: @goon - will need to specify group when using PP
-    dist.all_reduce(all_counts)
-
-    for fqn, reduced_count in zip(
-        moe_tok_count_hook_dict, all_counts.chunk(len(moe_tok_count_hook_dict))
-    ):
-        moe = model.get_submodule(fqn)
-        assert moe.gate.bias is not None, f"{moe.gate.bias=}"
-        if moe_tok_stats_dict is not None:
-            moe_tok_stats_dict[fqn] += reduced_count
-        mean_count = reduced_count.mean(dtype=torch.float32)
-        sign = torch.sign(reduced_count - mean_count)
-        moe.gate.bias -= cfg.loss_free_moe_balancing_lr * sign
-
-    for hook in moe_tok_count_hook_dict.values():
-        hook.reset()
-
-
-def get_moe_tok_stats_dict(
-    moe_tok_count_hook_dict: dict[str, Any], dst: int = 0
-) -> dict[str, torch.Tensor]:
-    """
-    Create moe_tok_stats_dict. Only rank dst get accurate values.
-    """
-    # Concatenate and perform a single all-reduce for speed:
-    all_counts = torch.cat([h.count for h in moe_tok_count_hook_dict.values()])
-    # TODO: @goon - will need to specify group when using PP
-    dist.reduce(all_counts, dst=dst)
-    moe_tok_stats_dict = {
-        fqn: h.count
-        for fqn, h in zip(
-            moe_tok_count_hook_dict,
-            all_counts.chunk(len(moe_tok_count_hook_dict)),
-        )
-    }
-    return moe_tok_stats_dict
-
-
-def update_tracking_vals_with_moe_toks(
-    moe_tok_stats_dict: dict[str, torch.Tensor], vals_to_track: dict[str, float]
-) -> None:
-    for fqn, counts in moe_tok_stats_dict.items():
+def update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict) -> None:
+    for fqn, counts in tok_count_hook_dict.items():
         for exp_idx, tok_count in enumerate(counts.tolist()):
-            vals_to_track[f"hooks/tok_count/{fqn}/exp.{exp_idx}"] = tok_count
+            tok_stats_dict[f"{fqn}.exp.{exp_idx}"] += tok_count

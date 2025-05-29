@@ -232,7 +232,7 @@ def train(
                         tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:
                         for key, val in tok_stats_dict.items():
-                            vals_to_track[f"hooks/magnitude/{key}"] = val.item()
+                            vals_to_track[f"hooks/magnitude/{key}"] = val.value.item()
 
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
@@ -403,5 +403,5 @@ class CUDATimer:
 
 def update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict) -> None:
     for fqn, counts in tok_count_hook_dict.items():
-        for exp_idx, tok_count in enumerate(counts.tolist()):
+        for exp_idx, tok_count in enumerate(counts.value.tolist()):
             tok_stats_dict[f"{fqn}.exp.{exp_idx}"] += tok_count

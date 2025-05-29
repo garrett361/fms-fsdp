@@ -127,7 +127,9 @@ def train(
 
         if cfg.loss_free_balancing_lr:
             # NOTE: @goon - apply_loss_free_moe_balancing all-reduces the tok counts internally
-            apply_loss_free_moe_balancing(cfg.loss_free_balancing_lr, model, tok_count_hook_dict)
+            apply_loss_free_moe_balancing(
+                cfg.loss_free_balancing_lr, model, tok_count_hook_dict
+            )
             update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
             tok_count_hook_dict.reset()
 
@@ -174,6 +176,12 @@ def train(
                     print(f"{fwd_time_std_s=}")
                     print(f"{bwd_time_mean_s=}")
                     print(f"{bwd_time_std_s=}")
+
+            # Update tok_stats_dict if not already done
+            if tok_stats_dict is not None and not tok_stats_dict:
+                # Could be empty, in which case we need to reduce and update
+                tok_count_hook_dict.reduce(dst=0)
+                update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
 
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
@@ -222,10 +230,6 @@ def train(
                         "gpu allocated memory": allocated_mem,
                     }
                     if tok_stats_dict is not None:
-                        # Could be empty, in which case we need to reduce and update
-                        if not tok_stats_dict:
-                            tok_count_hook_dict.reduce(dst=0)
-                            update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
                         for key, val in tok_stats_dict.items():
                             vals_to_track[f"hooks/tok_count/{key}"] = val
                         # Reset

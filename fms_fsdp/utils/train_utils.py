@@ -127,7 +127,7 @@ def train(
 
         if cfg.loss_free_balancing_lr:
             # NOTE: @goon - apply_loss_free_moe_balancing all-reduces the tok counts internally
-            apply_loss_free_moe_balancing(cfg, model, tok_count_hook_dict)
+            apply_loss_free_moe_balancing(cfg.loss_free_balancing_lr, model, tok_count_hook_dict)
             update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
             tok_count_hook_dict.reset()
 

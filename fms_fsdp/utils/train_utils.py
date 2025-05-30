@@ -201,6 +201,7 @@ def train_moe(
     start_step,
     tokens_seen,
 ):
+    world_size = int(os.environ["WORLD_SIZE"])
     if cfg.sanity_prints and not rank:
         print(os.environ)
     if cfg.tracker:
@@ -291,7 +292,9 @@ def train_moe(
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
             )
-            update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict, cfg.ep_degree)
+            update_tok_stats_dict(
+                tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
+            )
             tok_count_hook_dict.reset()
 
         if cfg.skip_clip:
@@ -318,7 +321,6 @@ def train_moe(
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[1]
             elapsed_time = time.time() - loop_start
-            world_size = int(os.environ["WORLD_SIZE"])
             new_tokens_seen = (
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
@@ -345,7 +347,7 @@ def train_moe(
                 # Could be empty, in which case we need to reduce and update
                 tok_count_hook_dict.reduce(dst=0)
                 update_tok_stats_dict(
-                    tok_count_hook_dict, tok_stats_dict, cfg.ep_degree
+                    tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
                 )
 
             if block_mag_hook_dict is not None:
@@ -609,9 +611,16 @@ class CUDATimer:
         self._stop_events.clear()
 
 
-def update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict, ep_degree: int) -> None:
+def update_tok_stats_dict(
+    tok_count_hook_dict, tok_stats_dict, ep_degree: int, world_size: int
+) -> None:
     for fqn, counts in tok_count_hook_dict.items():
+        n_routed_experts = counts.value.numel()
+        exp_per_rank = n_routed_experts // ep_degree
+        dp_factor = world_size // ep_degree
         for exp_idx, tok_count in enumerate(counts.value.tolist()):
             tok_stats_dict[f"{fqn}.exp.{exp_idx}"] += tok_count
-            node_idx = exp_idx // ep_degree
+            # Really computing the avg per node when there's a non-trivial dp_factor.
+            # TODO: @goon -  per-node
+            node_idx = (exp_idx // exp_per_rank) // dp_factor
             tok_stats_dict[f"node.{node_idx}"] += tok_count

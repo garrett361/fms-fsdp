@@ -346,6 +346,9 @@ def train_moe(
                 tok_count_hook_dict.reduce(dst=0)
                 update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
 
+            if block_mag_hook_dict is not None:
+                block_mag_hook_dict.reduce(dst=0, op=dist.ReduceOp.AVG)
+
             # Report per-rank cuda mem stats, since they can differ drastically by GPU.
             reserved_mem = torch.cuda.max_memory_reserved(
                 device=torch.cuda.current_device()

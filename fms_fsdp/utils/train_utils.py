@@ -235,8 +235,8 @@ def train(
                         # Reset
                         tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:
-                        for key, val in tok_stats_dict.items():
-                            vals_to_track[f"hooks/magnitude/{key}"] = val.value.item()
+                        for key, val in block_mag_hook_dict.items():
+                            vals_to_track[f"hooks/act_mag/{key}"] = val.value.item()
 
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
@@ -249,6 +249,8 @@ def train(
 
             if tok_count_hook_dict:
                 tok_count_hook_dict.reset()
+            if block_mag_hook_dict:
+                block_mag_hook_dict.reset()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if not cfg.skip_ckpt and batch_idx % cfg.checkpoint_interval == 0:

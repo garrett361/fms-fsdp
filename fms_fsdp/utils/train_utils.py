@@ -346,7 +346,29 @@ def train_moe(
                 tok_count_hook_dict.reduce(dst=0)
                 update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
 
+            # Report per-rank cuda mem stats, since they can differ drastically by GPU.
+            reserved_mem = torch.cuda.max_memory_reserved(
+                device=torch.cuda.current_device()
+            )
+            allocated_mem = torch.cuda.max_memory_allocated(
+                device=torch.cuda.current_device()
+            )
+            mem_tensor = torch.tensor(
+                [reserved_mem, allocated_mem],
+                device=torch.cuda.current_device(),
+                dtype=torch.float32,
+            )
+            gather_results = (
+                [torch.empty_like(mem_tensor) for _ in range(world_size)]
+                if not rank
+                else None
+            )
+            dist.gather(mem_tensor, gather_results, dst=0)
+
             if rank == 0:
+                gather_results = torch.stack(gather_results, dim=0)
+                reserved_mem_results = gather_results[:, 0].tolist()
+                allocated_mem_results = gather_results[:, 1].tolist()
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
@@ -359,20 +381,20 @@ def train_moe(
                 overall_throughput = int(
                     cfg.batch_size * cfg.seq_length / overall_step_time
                 )
-                reserved_mem = torch.cuda.max_memory_reserved(
-                    device=torch.cuda.current_device()
-                )
-                allocated_mem = torch.cuda.max_memory_allocated(
-                    device=torch.cuda.current_device()
-                )
 
                 print("step:", batch_idx)
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("gradient norm:", current_gnorm)
-                print("reserved memory (GiB):", f"{reserved_mem / 2**30:.2f}")
-                print("allocated memory (GiB):", f"{allocated_mem / 2**30:.2f}")
+                print(
+                    "max reserved memory (GiB):",
+                    f"{max(reserved_mem_results) / 2**30:.2f}",
+                )
+                print(
+                    "max allocated memory (GiB):",
+                    f"{max(allocated_mem_results) / 2**30:.2f}",
+                )
                 print("current step time:", current_step_time)
                 print("overall step time:", overall_step_time)
                 print("current token per gpu per sec:", current_throughput)
@@ -389,9 +411,16 @@ def train_moe(
                         "token seen": total_tokens_seen,
                         "current throughput (token per gpu per sec)": current_throughput,
                         "overall throughput (token per gpu per sec)": overall_throughput,
-                        "gpu reserved memory": reserved_mem,
-                        "gpu allocated memory": allocated_mem,
                     }
+                    for rank_idx, res_mem in enumerate(reserved_mem_results):
+                        vals_to_track[f"gpu reserved memory (rank {rank_idx})"] = (
+                            res_mem
+                        )
+                    for rank_idx, alloc_mem in enumerate(allocated_mem_results):
+                        vals_to_track[f"gpu allocated memory (rank {rank_idx})"] = (
+                            alloc_mem
+                        )
+
                     if tok_stats_dict is not None:
                         for key, val in tok_stats_dict.items():
                             vals_to_track[f"hooks/tok_count/{key}"] = val

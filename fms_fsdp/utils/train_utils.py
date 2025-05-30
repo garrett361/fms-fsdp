@@ -422,8 +422,11 @@ def train_moe(
                         )
 
                     if tok_stats_dict is not None:
+                        max_tok_count = 0
                         for key, val in tok_stats_dict.items():
                             vals_to_track[f"hooks/tok_count/{key}"] = val
+                            max_tok_count = max(max_tok_count, val)
+                        print("max_tok_count:", max_tok_count)
                         # Reset
                         tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:

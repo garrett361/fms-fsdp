@@ -94,7 +94,7 @@ def train(
         tok_stats_dict = None
 
     if cfg.block_mag_hooks:
-        block_mag_hook_dict = attach_magnitude_hooks(model, Block)
+        block_mag_hook_dict = attach_magnitude_hooks(model, [Block, model.lm_head])
     else:
         block_mag_hook_dict = None
 

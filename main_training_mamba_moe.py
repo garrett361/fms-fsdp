@@ -10,11 +10,11 @@ from mamba_ssm.modules.moe import MoE
 from mamba_ssm.moe_utils import (
     act_ckpt_moe,
     fully_shard_moe,
+    get_meshes,
     get_total_exp_and_active_params,
     init_moe,
 )
 from torch import distributed as dist
-from torch.distributed import init_device_mesh
 from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -95,20 +95,6 @@ def main(**kwargs):
     if rank == 0:
         print("Datasets constructed!")
 
-    # FSDP
-    if cfg.sharding_strategy == "hsdp":
-        fsdp_mesh = init_device_mesh(
-            "cuda",
-            (world_size // torch.cuda.device_count(), torch.cuda.device_count()),
-            mesh_dim_names=("outer", "inner"),
-        )
-    else:
-        fsdp_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("fsdp",))
-
-    # NOTE: @goon - In context parallel, training was much more stable when using separate meshes
-    # for fsdp and CP. Trying the same thing here with EP, but not sure it matters. Don't think it
-    # should, in principle. Also, we may just need separate meshes in the future for more complex
-    # scenarios.
     assert world_size >= cfg.ep_degree, (
         f"{world_size=} must be at least as large as {cfg.ep_degree=}"
     )
@@ -116,29 +102,10 @@ def main(**kwargs):
         f"{world_size=} must be divisible by {cfg.ep_degree=}"
     )
 
-    # Cases:
-    # 1. ep_degree = 1: full replication, no ep_mesh
-    # 2. ep_degree = world_size: ep_mesh is the world
-    # 3. world_size > ep_degree > world_size: 2D mesh with (DP, EP) dims, experts distributed along
-    #    slice.
-    if cfg.ep_degree == 1:
-        ep_mesh = None
-    elif cfg.ep_degree == world_size:
-        ep_mesh = init_device_mesh(
-            "cuda",
-            (world_size,),
-            mesh_dim_names=("inner",),
-        )
-    else:
-        ep_mesh = init_device_mesh(
-            "cuda",
-            (world_size // cfg.ep_degree, cfg.ep_degree),
-            mesh_dim_names=("outer", "inner"),
-        )
+    meshes = get_meshes(world_size=world_size, ep=cfg.ep_degree)
 
     if rank == 0:
-        print(f"{ep_mesh=}")
-        print(f"{fsdp_mesh=}")
+        print(f"{meshes=}")
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
         with torch.device("meta"):
             total, exp, active = get_total_exp_and_active_params(
@@ -160,13 +127,9 @@ def main(**kwargs):
         if rank == 0:
             print("Building model on meta device...")
         with torch.device("meta"):
-            model = MambaLMHeadModel(
-                mamba_config, ep_mesh=None if ep_mesh is None else ep_mesh["inner"]
-            )
+            model = MambaLMHeadModel(mamba_config, ep_mesh=meshes.ep)
     else:
-        model = MambaLMHeadModel(
-            mamba_config, ep_mesh=None if ep_mesh is None else ep_mesh["inner"]
-        )
+        model = MambaLMHeadModel(mamba_config, ep_mesh=meshes.ep)
 
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
@@ -187,8 +150,8 @@ def main(**kwargs):
 
     fully_shard_moe(
         model=model,
-        ep_mesh=ep_mesh,
-        fsdp_mesh=fsdp_mesh,
+        ep_mesh=meshes.ep,
+        fsdp_mesh=meshes.dp,
         mp_policy=mp_policy,
         reshard_lm_head_after_fwd=cfg.reshard_lm_head_after_fwd,
         explicit_fwd_prefetch=cfg.explicit_fwd_prefetch,

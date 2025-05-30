@@ -5,6 +5,7 @@ from functools import partial
 
 import torch
 from torch import distributed as dist
+from torch.distributed.tensor import DTensor
 
 try:
     import packaging.version
@@ -140,7 +141,9 @@ def train(
                 model.parameters(),
                 cfg.grad_clip_thresh,
             )
-            g_norms.append(norm_t.full_tensor().item())
+            if isinstance(norm_t, DTensor):
+                norm_t = norm_t.full_tensor()
+            g_norms.append(norm_t.item())
         if not cfg.skip_optim_step:
             optimizer.step()
             scheduler.step()

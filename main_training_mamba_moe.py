@@ -26,7 +26,7 @@ from fms_fsdp.utils.train_utils import (
     get_profiler,
     setup,
     setup_environ_flags,
-    train,
+    train_moe,
 )
 
 """
@@ -249,7 +249,7 @@ def main(**kwargs):
     # Train
     if rank == 0:
         print(f"Training for {cfg.num_steps} steps")
-    train(
+    train_moe(
         cfg,
         model,
         local_rank,

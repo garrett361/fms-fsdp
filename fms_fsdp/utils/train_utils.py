@@ -291,7 +291,7 @@ def train_moe(
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
             )
-            update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
+            update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict, cfg.ep_degree)
             tok_count_hook_dict.reset()
 
         if cfg.skip_clip:
@@ -344,7 +344,9 @@ def train_moe(
             if tok_stats_dict is not None and not tok_stats_dict:
                 # Could be empty, in which case we need to reduce and update
                 tok_count_hook_dict.reduce(dst=0)
-                update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict)
+                update_tok_stats_dict(
+                    tok_count_hook_dict, tok_stats_dict, cfg.ep_degree
+                )
 
             if block_mag_hook_dict is not None:
                 block_mag_hook_dict.reduce(dst=0, op=dist.ReduceOp.AVG)
@@ -425,6 +427,8 @@ def train_moe(
                         )
 
                     if tok_stats_dict is not None:
+                        # TODO: @goon - total
+
                         max_tok_count = 0
                         for key, val in tok_stats_dict.items():
                             vals_to_track[f"hooks/tok_count/{key}"] = val
@@ -605,7 +609,9 @@ class CUDATimer:
         self._stop_events.clear()
 
 
-def update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict) -> None:
+def update_tok_stats_dict(tok_count_hook_dict, tok_stats_dict, ep_degree: int) -> None:
     for fqn, counts in tok_count_hook_dict.items():
         for exp_idx, tok_count in enumerate(counts.value.tolist()):
             tok_stats_dict[f"{fqn}.exp.{exp_idx}"] += tok_count
+            node_idx = exp_idx // ep_degree
+            tok_stats_dict[f"node.{node_idx}"] += tok_count

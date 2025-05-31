@@ -102,7 +102,6 @@ def train(
         if cfg.z_loss is not None:
             loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
 
-
         loss.backward()
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
@@ -438,10 +437,10 @@ def train_moe(
                             min_tok_fqn = None
                             for key, val in tok_stats_dict.items():
                                 vals_to_track[f"hooks/tok_count/{key}"] = val
-                                if val > max_tok_count:
+                                if "node" not in key and val > max_tok_count:
                                     max_tok_count = val
                                     max_tok_fqn = key
-                                if val < min_tok_count:
+                                if "node" not in key and val < min_tok_count:
                                     min_tok_count = val
                                     min_tok_fqn = key
 

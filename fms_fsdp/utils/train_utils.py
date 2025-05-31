@@ -325,9 +325,6 @@ def train_moe(
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
 
-            if cfg.sanity_prints:
-                pass
-
             if cfg.extra_timing:
                 fwd_time_mean_s = fwd_timer.get_mean_time_s()
                 fwd_time_std_s = fwd_timer.get_std_time_s()
@@ -431,22 +428,22 @@ def train_moe(
                     if tok_stats_dict is not None:
                         # TODO: @goon - total
 
-                        # TODO: @goon - Add verbose guard
-                        max_tok_count = 0
-                        max_tok_fqn = None
-                        min_tok_count = float("inf")
-                        min_tok_fqn = None
-                        for key, val in tok_stats_dict.items():
-                            vals_to_track[f"hooks/tok_count/{key}"] = val
-                            if val > max_tok_count:
-                                max_tok_count = val
-                                max_tok_fqn = key
-                            if val < min_tok_count:
-                                min_tok_count = val
-                                min_tok_fqn = key
+                        if cfg.sanity_prints:
+                            max_tok_count = 0
+                            max_tok_fqn = None
+                            min_tok_count = float("inf")
+                            min_tok_fqn = None
+                            for key, val in tok_stats_dict.items():
+                                vals_to_track[f"hooks/tok_count/{key}"] = val
+                                if val > max_tok_count:
+                                    max_tok_count = val
+                                    max_tok_fqn = key
+                                if val < min_tok_count:
+                                    min_tok_count = val
+                                    min_tok_fqn = key
 
-                        print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
-                        print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
+                            print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
+                            print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
                         # Reset
                         tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:

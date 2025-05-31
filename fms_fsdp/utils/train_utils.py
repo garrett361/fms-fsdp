@@ -431,11 +431,22 @@ def train_moe(
                     if tok_stats_dict is not None:
                         # TODO: @goon - total
 
+                        # TODO: @goon - Add verbose guard
                         max_tok_count = 0
+                        max_tok_fqn = None
+                        min_tok_count = float("inf")
+                        min_tok_fqn = None
                         for key, val in tok_stats_dict.items():
                             vals_to_track[f"hooks/tok_count/{key}"] = val
-                            max_tok_count = max(max_tok_count, val)
-                        print("max_tok_count:", max_tok_count)
+                            if val > max_tok_count:
+                                max_tok_count = val
+                                max_tok_fqn = key
+                            if val < min_tok_count:
+                                min_tok_count = val
+                                min_tok_fqn = key
+
+                        print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
+                        print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
                         # Reset
                         tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:

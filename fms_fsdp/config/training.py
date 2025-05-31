@@ -41,6 +41,8 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
     seed: int = 2023
+    z_loss: Optional[float] = None
+
 
     # continued training spec
     resuming_dataset: bool = False
@@ -85,7 +87,7 @@ class train_config:
     tok_count_hooks: bool = False
     block_mag_hooks: bool = False
     # loss_free moe balancing
-    loss_free_balancing_lr: float = 0.0
+    loss_free_balancing_lr: Optional[float] = None
 
     # Misc
     foreach: Optional[bool] = None

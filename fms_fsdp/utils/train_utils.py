@@ -437,10 +437,10 @@ def train_moe(
                             min_tok_fqn = None
                             for key, val in tok_stats_dict.items():
                                 vals_to_track[f"hooks/tok_count/{key}"] = val
-                                if "node" not in key and val > max_tok_count:
+                                if "ep_rank" not in key and val > max_tok_count:
                                     max_tok_count = val
                                     max_tok_fqn = key
-                                if "node" not in key and val < min_tok_count:
+                                if "ep_rank" not in key and val < min_tok_count:
                                     min_tok_count = val
                                     min_tok_fqn = key
 
@@ -630,7 +630,7 @@ def update_tok_stats_dict(
         dp_factor = world_size // ep_degree
         for exp_idx, tok_count in enumerate(counts.value.tolist()):
             tok_stats_dict[f"{fqn}.exp.{exp_idx}"] += tok_count
-            # Really computing the avg per node when there's a non-trivial dp_factor.
-            # TODO: @goon -  per-node
-            node_idx = (exp_idx // exp_per_rank) // dp_factor
-            tok_stats_dict[f"node.{node_idx}"] += tok_count
+            # Really computing the avg per gpu when there's a non-trivial dp_factor.
+            # TODO: @goon -  per-gpu?
+            ep_rank = exp_idx // exp_per_rank
+            tok_stats_dict[f"ep_rank.{ep_rank}"] += tok_count // dp_factor

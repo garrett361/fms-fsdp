@@ -447,7 +447,7 @@ def train_moe(
                         if cfg.sanity_prints:
                             print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
                             print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
-                            print(f"{tok_stats_dict=}")
+                            # print(f"{tok_stats_dict=}")
                         # Reset
                         tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:

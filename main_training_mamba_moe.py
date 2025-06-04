@@ -10,11 +10,11 @@ from mamba_ssm.modules.moe import MoE
 from mamba_ssm.moe_utils import (
     act_ckpt_moe,
     fully_shard_moe,
-    get_meshes,
     get_total_exp_and_active_params,
     init_moe,
 )
 from torch import distributed as dist
+from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -22,7 +22,7 @@ from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import CheckpointerFSDP2
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
-from fms_fsdp.utils.train_utils import (
+from fms_fsdp.utils.train_utils_moe import (
     get_profiler,
     setup,
     setup_environ_flags,
@@ -102,10 +102,31 @@ def main(**kwargs):
         f"{world_size=} must be divisible by {cfg.ep_degree=}"
     )
 
-    meshes = get_meshes(world_size=world_size, ep=cfg.ep_degree)
+    if cfg.sharding_strategy == "hsdp":
+        fsdp_mesh = init_device_mesh(
+            "cuda",
+            (world_size // torch.cuda.device_count(), torch.cuda.device_count()),
+            mesh_dim_names=(
+                "fsdp_outer",
+                "fsdp_inner",
+            ),
+        )
+    else:
+        fsdp_mesh = init_device_mesh(
+            "cuda", (world_size,), mesh_dim_names=("fsdp_inner",)
+        )
+    if cfg.ep_degree == world_size:
+        ep_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("ep_inner",))
+    else:
+        ep_mesh = init_device_mesh(
+            "cuda",
+            (world_size // cfg.ep_degree, cfg.ep_degree),
+            mesh_dim_names=("ep_outer", "ep_inner"),
+        )
 
     if rank == 0:
-        print(f"{meshes=}")
+        print(f"{fsdp_mesh=}")
+        print(f"{ep_mesh=}")
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
         with torch.device("meta"):
             total, exp, active = get_total_exp_and_active_params(
@@ -127,9 +148,9 @@ def main(**kwargs):
         if rank == 0:
             print("Building model on meta device...")
         with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config, ep_mesh=meshes.ep)
+            model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["ep_inner"])
     else:
-        model = MambaLMHeadModel(mamba_config, ep_mesh=meshes.ep)
+        model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["ep_inner"])
 
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
@@ -150,8 +171,8 @@ def main(**kwargs):
 
     fully_shard_moe(
         model=model,
-        ep_mesh=meshes.ep,
-        fsdp_mesh=meshes.dp,
+        fsdp_mesh=fsdp_mesh,
+        ep_fsdp_mesh=None if ep_mesh.ndim == 1 else ep_mesh["ep_outer"],
         mp_policy=mp_policy,
         reshard_lm_head_after_fwd=cfg.reshard_lm_head_after_fwd,
         explicit_fwd_prefetch=cfg.explicit_fwd_prefetch,

@@ -168,11 +168,13 @@ def main(**kwargs):
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
     )
-
+    ep_fsdp_mesh = None if ep_mesh.ndim == 1 else ep_mesh["ep_outer"]
+    if not rank:
+        print(f"{ep_fsdp_mesh=}")
     fully_shard_moe(
         model=model,
         fsdp_mesh=fsdp_mesh,
-        ep_fsdp_mesh=None if ep_mesh.ndim == 1 else ep_mesh["ep_outer"],
+        ep_fsdp_mesh=ep_fsdp_mesh,
         mp_policy=mp_policy,
         reshard_lm_head_after_fwd=cfg.reshard_lm_head_after_fwd,
         explicit_fwd_prefetch=cfg.explicit_fwd_prefetch,

@@ -128,7 +128,7 @@ def train_moe(
             loss.backward()
 
         if cfg.loss_free_balancing_lr:
-            # NOTE: @goon - apply_loss_free_moe_balancing all-reduces the tok counts internally
+            tok_count_hook_dict.all_reduce()
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
             )
@@ -181,6 +181,7 @@ def train_moe(
 
             # Update tok_stats_dict if not already done
             if tok_stats_dict is not None and not tok_stats_dict:
+                assert not tok_count_hook_dict.is_reduced
                 tok_count_hook_dict.reduce(dst=0)
                 update_tok_stats_dict(
                     tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
@@ -296,6 +297,10 @@ def train_moe(
                     elif cfg.tracker == "aim":
                         tracker_fn = run.track
                     tracker_fn(vals_to_track, step=batch_idx)
+
+            if tok_stats_dict:
+                # Reset for all ranks
+                tok_stats_dict = defaultdict(int)
 
             start = time.time()
             ddp_stats.zero_()

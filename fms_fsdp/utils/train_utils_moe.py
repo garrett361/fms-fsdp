@@ -286,8 +286,6 @@ def train_moe(
                             print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
                             print(f"{tok_stats_dict=}")
                             print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
-                        # Reset
-                        tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:
                         for key, val in block_mag_hook_dict.items():
                             vals_to_track[f"hooks/act_mag/{key}"] = val.value.item()
@@ -298,15 +296,12 @@ def train_moe(
                         tracker_fn = run.track
                     tracker_fn(vals_to_track, step=batch_idx)
 
-            if tok_stats_dict:
-                # Reset for all ranks
-                tok_stats_dict = defaultdict(int)
-
             start = time.time()
             ddp_stats.zero_()
 
             if tok_count_hook_dict:
                 tok_count_hook_dict.reset()
+                tok_stats_dict = defaultdict(int)
             if block_mag_hook_dict:
                 block_mag_hook_dict.reset()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())

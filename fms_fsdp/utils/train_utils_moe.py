@@ -268,7 +268,6 @@ def train_moe(
                         )
 
                     if tok_stats_dict is not None:
-                        print(f"{tok_stats_dict=}")
                         max_tok_count = 0
                         max_tok_fqn = None
                         min_tok_count = float("inf")
@@ -284,6 +283,7 @@ def train_moe(
 
                         if cfg.sanity_prints:
                             print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
+                            print(f"{tok_stats_dict=}")
                             print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
                         # Reset
                         tok_stats_dict = defaultdict(int)

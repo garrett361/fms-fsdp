@@ -181,11 +181,14 @@ def train_moe(
 
             # Update tok_stats_dict if not already done
             if tok_stats_dict is not None and not tok_stats_dict:
+                # TODO: @goon - DELETE
+
+                pass
                 # Could be empty, in which case we need to reduce and update
-                tok_count_hook_dict.reduce(dst=0)
-                update_tok_stats_dict(
-                    tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
-                )
+                # tok_count_hook_dict.reduce(dst=0)
+                # update_tok_stats_dict(
+                #     tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
+                # )
 
             if block_mag_hook_dict is not None:
                 block_mag_hook_dict.reduce(dst=0, op=dist.ReduceOp.AVG)
@@ -285,7 +288,6 @@ def train_moe(
                         if cfg.sanity_prints:
                             print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
                             print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
-                            # print(f"{tok_stats_dict=}")
                         # Reset
                         tok_stats_dict = defaultdict(int)
                     if block_mag_hook_dict is not None:

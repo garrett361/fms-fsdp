@@ -202,17 +202,9 @@ def train_moe(
                 device=torch.cuda.current_device(),
                 dtype=torch.float32,
             )
-            gather_results = (
-                [torch.empty_like(mem_tensor) for _ in range(world_size)]
-                if not rank
-                else None
-            )
-            dist.gather(mem_tensor, gather_results, dst=0)
+            dist.reduce(mem_tensor, dst=0, op=dist.ReduceOp.MAX)
 
             if rank == 0:
-                gather_results = torch.stack(gather_results, dim=0)
-                reserved_mem_results = gather_results[:, 0].tolist()
-                allocated_mem_results = gather_results[:, 1].tolist()
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
@@ -233,11 +225,11 @@ def train_moe(
                 print("gradient norm:", current_gnorm)
                 print(
                     "max reserved memory (GiB):",
-                    f"{max(reserved_mem_results) / 2**30:.2f}",
+                    f"{mem_tensor[0].item() / 2**30:.2f}",
                 )
                 print(
                     "max allocated memory (GiB):",
-                    f"{max(allocated_mem_results) / 2**30:.2f}",
+                    f"{mem_tensor[1].item() / 2**30:.2f}",
                 )
                 print("current step time:", current_step_time)
                 print("overall step time:", overall_step_time)
@@ -247,9 +239,6 @@ def train_moe(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
-                if cfg.sanity_prints:
-                    print(f"{reserved_mem_results=}")
-                    print(f"{allocated_mem_results=}")
                 if cfg.tracker:
                     vals_to_track = {
                         "learning rate": current_lr,
@@ -259,15 +248,6 @@ def train_moe(
                         "current throughput (token per gpu per sec)": current_throughput,
                         "overall throughput (token per gpu per sec)": overall_throughput,
                     }
-                    for rank_idx, res_mem in enumerate(reserved_mem_results):
-                        vals_to_track[f"gpu reserved memory (rank {rank_idx})"] = (
-                            res_mem
-                        )
-                    for rank_idx, alloc_mem in enumerate(allocated_mem_results):
-                        vals_to_track[f"gpu allocated memory (rank {rank_idx})"] = (
-                            alloc_mem
-                        )
-
                     if tok_stats_dict is not None:
                         max_tok_count = 0
                         max_tok_fqn = None

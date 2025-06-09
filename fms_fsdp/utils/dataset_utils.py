@@ -19,26 +19,26 @@ from fms_fsdp.utils.checkpointing_utils import get_latest
 """
 The following distributed dataloaders are designed around 3 main principles:
 
-1. Efficient, asynchronous operation. Workers on different devices do not communicate. 
-2. Modularity. Data loading pipeline is composed of wrapped iterators, the base iterator 
-    loading from disk and additional layers adding levels of post-processing (shuffling, 
+1. Efficient, asynchronous operation. Workers on different devices do not communicate.
+2. Modularity. Data loading pipeline is composed of wrapped iterators, the base iterator
+    loading from disk and additional layers adding levels of post-processing (shuffling,
     packing, padding, etc.).
-3. Seamless resumption from checkpoint. Each stage of the pipeline maintains an internal 
-    state that can be written/read on disk via implemented recursive `state_dict()` and 
+3. Seamless resumption from checkpoint. Each stage of the pipeline maintains an internal
+    state that can be written/read on disk via implemented recursive `state_dict()` and
     `load_state_dict()` calls.
-4. Rescalability. Users can save and load checkpoints to/from different numbers of workers 
-    without losing the global state. This is accomplished by splitting state fields for each 
-    layer into `state_params`, which are typically scalar-valued and can be discarded when 
-    rescaling (i.e. counters, RNG states), and `reshard_params`, which are lists that can be 
+4. Rescalability. Users can save and load checkpoints to/from different numbers of workers
+    without losing the global state. This is accomplished by splitting state fields for each
+    layer into `state_params`, which are typically scalar-valued and can be discarded when
+    rescaling (i.e. counters, RNG states), and `reshard_params`, which are lists that can be
     re-distributed over workers (i.e. buffers).
 
-Our loaders obey the following type hierarchy: 
-torch.data.IterableDataset -> _StatefulDataset -> _WrapperDataset. 
-`_StatefulDataset` implements state and checkpointing logic. A `_WrapperDataset` holds a 
-single `_StatefulDataset` and iterates via calling its wrapped dataset any number of times, 
-then applying some sort of post-processing and yielding the result. Users build data processing 
-pipelines by wrapping a base `_StatefulDataset` in any number of `_WrapperDataset` layers, 
-which is then passed to the torch DataLoader. 
+Our loaders obey the following type hierarchy:
+torch.data.IterableDataset -> _StatefulDataset -> _WrapperDataset.
+`_StatefulDataset` implements state and checkpointing logic. A `_WrapperDataset` holds a
+single `_StatefulDataset` and iterates via calling its wrapped dataset any number of times,
+then applying some sort of post-processing and yielding the result. Users build data processing
+pipelines by wrapping a base `_StatefulDataset` in any number of `_WrapperDataset` layers,
+which is then passed to the torch DataLoader.
 """
 
 
@@ -1434,3 +1434,152 @@ class SamplingDataset(_WrapperDataset):
                 True,
             )
         return sharded_dicts
+
+### From open-instruct
+
+# Chat templates
+# flake8: noqa
+# note we added `{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}`
+# because we want the template to not output eos_token if `add_generation_prompt=True`
+CHAT_TEMPLATES = {
+    "simple_concat_with_space": (
+        "{% for message in messages %}"
+        "{{ ' ' if not loop.first else '' }}"
+        "{{ message['content'] }}"
+        "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
+        "{% endfor %}"
+    ),
+    "simple_concat_with_new_line": (
+        "{% for message in messages %}"
+        "{{ '\n' if not loop.first else '' }}"
+        "{{ message['content'] }}"
+        "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
+        "{% endfor %}"
+    ),
+    "simple_chat": (
+        "{% for message in messages %}"
+        "{{ '\n\n' if not loop.first else '' }}"
+        "{{ message['role'].capitalize() + ': ' + message['content'] }}"
+        "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
+        "{% endfor %}"
+    ),
+    "assistant_message_only": (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'assistant' %}"
+        "{{ message['content'] }}"
+        "{% endif %}"
+        "{% endfor %}"
+    ),
+    "zephyr": (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'user' %}"
+        "{{ '<|user|>\n' + message['content'] + eos_token + '\n' }}"
+        "{% elif message['role'] == 'system' %}"
+        "{{ '<|system|>\n' + message['content'] + eos_token + '\n' }}"
+        "{% elif message['role'] == 'assistant' %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token + '\n' }}"
+        "{% endif %}"
+        "{% if loop.last and add_generation_prompt %}"
+        "{{ '<|assistant|>\n' }}"
+        "{% endif %}"
+        "{% endfor %}"
+    ),
+    "tulu": (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'system' %}"
+        "{{ '<|system|>\n' + message['content'] + '\n' }}"
+        "{% elif message['role'] == 'user' %}"
+        "{{ '<|user|>\n' + message['content'] + '\n' }}"
+        "{% elif message['role'] == 'assistant' %}"
+        "{% if not loop.last %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token + '\n' }}"
+        "{% else %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token }}"
+        "{% endif %}"
+        "{% endif %}"
+        "{% if loop.last and add_generation_prompt %}"
+        "{{ '<|assistant|>\n' }}"
+        "{% endif %}"
+        "{% endfor %}"
+    ),
+}
+# flake8: noqa
+
+
+
+def encode_sft_example(example, tokenizer, max_seq_length):
+    """
+    This function encodes a single example into a format that can be used for sft training.
+    Here, we assume each example has a 'messages' field. Each message in it is a dict with 'role' and 'content' fields.
+    We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
+    """
+    messages = example["messages"]
+    if len(messages) == 0:
+        raise ValueError("messages field is empty.")
+    input_ids = tokenizer.apply_chat_template(
+        conversation=messages,
+        tokenize=True,
+        return_tensors="pt",
+        padding=False,
+        truncation=True,
+        max_length=max_seq_length,
+        add_generation_prompt=False,
+    )
+    labels = input_ids.clone()
+    # mask the non-assistant part for avoiding loss
+    for message_idx, message in enumerate(messages):
+        if message["role"] != "assistant":
+            # we calculate the start index of this non-assistant message
+            if message_idx == 0:
+                message_start_idx = 0
+            else:
+                message_start_idx = tokenizer.apply_chat_template(
+                    conversation=messages[
+                        :message_idx
+                    ],  # here marks the end of the previous messages
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=False,
+                ).shape[1]
+            # next, we calculate the end index of this non-assistant message
+            if (
+                message_idx < len(messages) - 1
+                and messages[message_idx + 1]["role"] == "assistant"
+            ):
+                # for intermediate messages that follow with an assistant message, we need to
+                # set `add_generation_prompt=True` to avoid the assistant generation prefix being included in the loss
+                # (e.g., `<|assistant|>`)
+                message_end_idx = tokenizer.apply_chat_template(
+                    conversation=messages[: message_idx + 1],
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=True,
+                ).shape[1]
+            else:
+                # for the last message or the message that doesn't follow with an assistant message,
+                # we don't need to add the assistant generation prefix
+                message_end_idx = tokenizer.apply_chat_template(
+                    conversation=messages[: message_idx + 1],
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=False,
+                ).shape[1]
+            # set the label to -100 for the non-assistant part
+            labels[:, message_start_idx:message_end_idx] = -100
+            if max_seq_length and message_end_idx >= max_seq_length:
+                break
+    attention_mask = torch.ones_like(input_ids)
+    return {
+        "input_ids": input_ids.flatten(),
+        "labels": labels.flatten(),
+        # "attention_mask": attention_mask.flatten(),
+    }

@@ -81,3 +81,6 @@ class train_config:
     cp_mamba_impl: str = "allgather"  # "allgather" or "serial"
     cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
     cp_degree: Optional[int] = None
+
+    # SFT
+    chat_template: str= "tulu"

@@ -1,4 +1,7 @@
+from dataclasses import dataclass
+
 import torch
+from transformers import DefaultDataCollator
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -12,7 +15,6 @@ from fms_fsdp.utils.dataset_utils import (
     ScalableShardDataset,
     StreamingDocDataset,
 )
-
 
 _handler_map = {
     "arrow": ArrowHandler,
@@ -91,9 +93,9 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
     ]
     droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
-    assert (
-        cfg.file_type in _handler_map
-    ), f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
+    assert cfg.file_type in _handler_map, (
+        f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
+    )
     if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
         filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
     else:
@@ -143,8 +145,13 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
 
     # Apply CP chunking if using CP
     if do_cp:
+
         def chunk(x):
-            return x[(cp_rank*x.size(0))//cp_worldsize : ((cp_rank+1)*x.size(0))//cp_worldsize]
+            return x[
+                (cp_rank * x.size(0)) // cp_worldsize : ((cp_rank + 1) * x.size(0))
+                // cp_worldsize
+            ]
+
         data = PreprocessDataset(data, lambda x: (chunk(x[0]), chunk(x[1])))
 
     # Enable auto-saving
@@ -176,3 +183,54 @@ def parse_data_args(datas, weights, cols):
     weights = [float(x) for x in splitstrip(weights)]
     cols = splitstrip(cols)
     return datas, weights, cols
+
+
+@dataclass
+class CPDataCollator(DefaultDataCollator):
+    """
+    Data collator used for padding free approach. Does the following:
+
+    - concatate the entire mini batch into single long sequence [1, total_tokens]
+    - uses `separator_id` to separate sequences within the concatenated `labels`, default value is -100
+    - no padding will be added, returns `input_ids`, `labels` and `position_ids`
+    """
+
+    def __init__(
+        self,
+        *args,
+        cp_degree: int,
+        cp_rank: int,
+        separator_id=-100,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.cp_degree = cp_degree
+        self.cp_rank = cp_rank
+        self.separator_id = separator_id
+
+    def __call__(self, features, return_tensors=None, separator_id=None):
+        if return_tensors is None:
+            return_tensors = self.return_tensors
+        if separator_id is None:
+            separator_id = self.separator_id
+        ret = {"input_ids": [], "labels": []}
+        separator = torch.tensor(
+            separator_id,
+            dtype=features[0]["input_ids"].dtype,
+            device=features[0]["input_ids"].device,
+        )
+        assert len(features) == 1, "only batch size 1 supported for now"
+        for item in features:
+            input_ids = item["input_ids"]
+            labels = item["labels"]
+            # Mask out very first token
+            labels[0] = separator
+            # Chunk up and divide among ranks
+            input_ids = torch.chunk(input_ids, chunks=self.cp_degree)[self.cp_rank]
+            ret["input_ids"].append(input_ids)
+            labels = torch.chunk(labels, chunks=self.cp_degree)[self.cp_rank]
+            ret["labels"].append(labels)
+
+        ret["input_ids"] = torch.stack(ret["input_ids"], dim=0)
+        ret["labels"] = torch.stack(ret["labels"], dim=0)
+        return ret

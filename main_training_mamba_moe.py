@@ -15,6 +15,7 @@ from mamba_ssm.moe_utils import (
 )
 from torch import distributed as dist
 from torch.distributed.device_mesh import init_device_mesh
+from torch.distributed.elastic.multiprocessing.errors import record
 from torch.distributed.fsdp import MixedPrecisionPolicy
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -34,6 +35,7 @@ MoE + EP training. Requires torch nightly > 2.6. For use with the branch here: h
 """
 
 
+@record
 def main(**kwargs):
     # get configs
     cfg = config.train_config()

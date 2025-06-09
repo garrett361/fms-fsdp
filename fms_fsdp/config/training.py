@@ -83,4 +83,4 @@ class train_config:
     cp_degree: Optional[int] = None
 
     # SFT
-    chat_template: str= "tulu"
+    chat_template_name: str = "tulu"

@@ -1,7 +1,4 @@
-from dataclasses import dataclass
-
 import torch
-from transformers import DefaultDataCollator
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -14,6 +11,7 @@ from fms_fsdp.utils.dataset_utils import (
     SamplingDataset,
     ScalableShardDataset,
     StreamingDocDataset,
+    encode_sft_example,
 )
 
 _handler_map = {
@@ -185,44 +183,82 @@ def parse_data_args(datas, weights, cols):
     return datas, weights, cols
 
 
-@dataclass
-class CPDataCollator(DefaultDataCollator):
+class ChatTokenizerCollator:
     """
-    Data collator used for padding free approach. Does the following:
-
-    - concatate the entire mini batch into single long sequence [1, total_tokens]
-    - uses `separator_id` to separate sequences within the concatenated `labels`, default value is -100
-    - no padding will be added, returns `input_ids`, `labels` and `position_ids`
+    Takes in raw text and encodes with the chat template.
     """
 
+    def __init__(self, tokenizer, max_seq_length: int):
+        self.tokenizer = tokenizer
+        self.max_seq_length = max_seq_length
+
+    def __call__(self, example):
+        assert isinstance(example, list), f"{type(example)=}"
+        assert len(example) == 1, (
+            f"only batch size 1 currently suppored, {len(example)=}"
+        )
+        out = encode_sft_example(
+            example[0], tokenizer=self.tokenizer, max_seq_length=self.max_seq_length
+        )
+        if out["n_labels_toks"] == 0:
+            # Using None to signify not enough non-trivial tokens
+            return None
+        return out
+
+
+class CPDataCollator:
     def __init__(
         self,
-        *args,
         cp_degree: int,
         cp_rank: int,
         separator_id=-100,
-        **kwargs,
     ):
-        super().__init__(*args, **kwargs)
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
         self.separator_id = separator_id
 
-    def __call__(self, features, return_tensors=None, separator_id=None):
-        if return_tensors is None:
-            return_tensors = self.return_tensors
-        if separator_id is None:
-            separator_id = self.separator_id
+    def __call__(self, features):
+        """
+        Return None if there are non non-trivial preds
+        """
+        assert isinstance(features, list), f"{features=}"
+        assert len(features) == 1, f"only batch size 1 supported, {features=}"
+        if features[0] is None:
+            # Handling the None cases from ChatTokenizerCollator
+            return None
         ret = {"input_ids": [], "labels": []}
         separator = torch.tensor(
-            separator_id,
+            self.separator_id,
             dtype=features[0]["input_ids"].dtype,
             device=features[0]["input_ids"].device,
         )
-        assert len(features) == 1, "only batch size 1 supported for now"
         for item in features:
             input_ids = item["input_ids"]
             labels = item["labels"]
+
+            # Need to pad out seq_len to a multiple of cp_degree
+            numel = input_ids.numel()
+            # NOTE: @goon - if using zig-zag, the per-rank tok counts also need to be even, hence
+            # the factors of two
+            padded_numel = (
+                2
+                * self.cp_degree
+                * ((numel + 2 * self.cp_degree - 1) // (2 * self.cp_degree))
+            )
+            n_pad_toks = padded_numel - numel
+            if n_pad_toks > 0:
+                input_ids_padding = torch.zeros(
+                    n_pad_toks, device=input_ids.device, dtype=input_ids.dtype
+                )
+                labels_padding = torch.full(
+                    (n_pad_toks,),
+                    self.separator_id,
+                    device=labels.device,
+                    dtype=labels.dtype,
+                )
+                input_ids = torch.cat([input_ids, input_ids_padding])
+                labels = torch.cat([labels, labels_padding])
+
             # Mask out very first token
             labels[0] = separator
             # Chunk up and divide among ranks
@@ -231,6 +267,46 @@ class CPDataCollator(DefaultDataCollator):
             labels = torch.chunk(labels, chunks=self.cp_degree)[self.cp_rank]
             ret["labels"].append(labels)
 
+        # Stack and add a batch dimension
         ret["input_ids"] = torch.stack(ret["input_ids"], dim=0)
         ret["labels"] = torch.stack(ret["labels"], dim=0)
         return ret
+
+
+class ChatTokenizerCollatorCPCollator:
+    def __init__(
+        self,
+        tokenizer,
+        max_seq_length: int,
+        cp_degree: int,
+        cp_rank: int,
+        separator_id=-100,
+    ):
+        self.cp_degree = cp_degree
+        self.cp_rank = cp_rank
+        self.separator_id = separator_id
+        self.tokenizer = tokenizer
+        self.max_seq_length = max_seq_length
+
+        self.chat_collator = ChatTokenizerCollator(tokenizer, max_seq_length)
+        self.cp_collator = CPDataCollator(cp_degree, cp_rank, separator_id)
+
+    def __call__(self, example):
+        return self.cp_collator([self.chat_collator(example)])
+
+
+def get_infinite_iter(dataloader):
+    """
+    Infinite iterator, skipping over the None cases above.
+    """
+    found_item = False
+    while True:
+        for item in iter(dataloader):
+            if item is not None:
+                yield item
+                found_item = True
+
+        if not found_item:
+            raise RuntimeError(
+                "dataloader only had trivial None data, probably need to increase max_seq_length"
+            )

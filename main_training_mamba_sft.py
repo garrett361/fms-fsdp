@@ -1,8 +1,6 @@
 import math
 import os
-import random
 from contextlib import contextmanager
-from functools import partial
 from pathlib import Path
 
 import fire
@@ -24,9 +22,12 @@ from transformers import AutoTokenizer
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
-from fms_fsdp.utils.dataloader_utils import CPDataCollator, get_dummy_loader
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
-from fms_fsdp.utils.train_utils import (
+from fms_fsdp.utils.dataloader_utils import (
+    ChatTokenizerCollatorCPCollator,
+    get_infinite_iter,
+)
+from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES
+from fms_fsdp.utils.train_utils_sft import (
     get_policies,
     get_profiler,
     setup,
@@ -112,7 +113,7 @@ def main(**kwargs):
         cp_degree = cfg.cp_degree or torch.cuda.device_count()
         if cp_degree == world_size:
             cp_mesh = get_1D_world_mesh(world_size)
-            dp_rank = 1
+            dp_rank = 0
             cp_rank = cp_mesh.get_local_rank()
         else:
             two_d_mesh = get_2D_world_mesh(world_size, cp_degree)
@@ -166,36 +167,16 @@ def main(**kwargs):
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     tokenizer.chat_template = CHAT_TEMPLATES[cfg.chat_template_name]
 
-    train_dataset = load_dataset("parquet", data_dir=cfg.data_path)["train"]
+    train_dataset = load_dataset(
+        "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
+    )["train"]
 
-    with local_rank_zero_first(rank):
-        train_dataset = train_dataset.map(
-            partial(
-                encode_sft_example, tokenizer=tokenizer, max_seq_length=cfg.seq_length
-            ),
-            batched=False,
-            num_proc=cfg.num_workers,
-            remove_columns=[
-                name
-                for name in train_dataset.column_names
-                if name not in ["input_ids", "labels"]
-            ],
-            desc="Tokenizing and reformatting instruction data",
-        )
-        train_dataset.set_format(type="pt")
-        train_dataset = train_dataset.filter(
-            lambda example: (example["labels"] != -100).any()
-        )
-    # Log a few random samples from the training set:
-    if not rank:
-        for index in random.sample(range(len(train_dataset)), 3):
-            print(f"Sample {index} of the training set: {train_dataset[index]}.")
-
-    # TODO: @goon - use DP degree to create dataloader
-
+    # NOTE: @goon - open-instruct pre-maps the training example around this point, but this takes a
+    # while (~3 hrs for longcontext_121824_cleaned_v1), so we use ChatTokenizerCollatorCPCollator
+    # to tokenize on the fly.
     if not cfg.use_dummy_dataset:
         assert cfg.batch_size == 1, "only batch size 1 supported for now"
-        batch_sampler = DistributedSampler(
+        sampler = DistributedSampler(
             train_dataset,
             num_replicas=dp_degree,
             rank=dp_rank,
@@ -203,16 +184,18 @@ def main(**kwargs):
             seed=cfg.seed,
             drop_last=False,
         )
-        collate_fn = CPDataCollator(cp_degree=cp_degree, cp_rank=cp_rank)
-        train_dataloader = DataLoader(
+        collate_fn = ChatTokenizerCollatorCPCollator(
+            tokenizer, cfg.seq_length, cp_degree, cp_rank
+        )
+        train_loader = DataLoader(
             train_dataset,
-            batch_sampler=batch_sampler,
+            sampler=sampler,
             collate_fn=collate_fn,
             batch_size=cfg.batch_size,
         )
-
+        train_loader = get_infinite_iter(train_loader)
+    else:
         raise ValueError("This script assumes no dummy loader is used")
-        train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
         print("Datasets constructed!")
 
@@ -272,7 +255,11 @@ def main(**kwargs):
         for g in optimizer.param_groups:
             g["initial_lr"] = cfg.learning_rate
 
-    # TODO: @goon - use start_step to skip batches
+    # Skip previous batches
+    if start_step > 0:
+        # TODO: @goon - check off by one
+        for _ in range(start_step):
+            next(train_loader)
 
     # LR schedule
     # linear decay for annealing

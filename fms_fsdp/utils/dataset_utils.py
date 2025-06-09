@@ -75,9 +75,9 @@ class _StatefulDataset(data.IterableDataset):
         worldsize: int,
     ):
         assert rank >= 0, f"Rank {rank} must be a positive integer"
-        assert (
-            worldsize > rank
-        ), f"Worldsize {worldsize} must be greater than rank {rank}"
+        assert worldsize > rank, (
+            f"Worldsize {worldsize} must be greater than rank {rank}"
+        )
         assert datapath is None or (
             os.path.isdir(datapath) and len(os.listdir(datapath)) > 0
         ), f"Data path {datapath} must be a non-empty folder or None"
@@ -145,9 +145,9 @@ class _StatefulDataset(data.IterableDataset):
         # How long are the list shards?
         shard_len = len(sharded_list[0])
         for i, shard in enumerate(sharded_list):
-            assert (
-                len(shard) == shard_len
-            ), f"Shard {i} with length {len(shard)} does not match expected {shard_len}"
+            assert len(shard) == shard_len, (
+                f"Shard {i} with length {len(shard)} does not match expected {shard_len}"
+            )
         # How many list items did _shard_inclusive() drop to the left of the flattened sharded_list?
         item_offset = shard_len * shard_offset
         # How many list items are there in total?
@@ -202,9 +202,9 @@ class _StatefulDataset(data.IterableDataset):
         assert not os.path.isfile(path), "Checkpoint should be a folder of shard states"
         fileshards = [x for x in os.listdir(path) if "loader" in x]
         fileshards = sorted(fileshards, key=lambda x: int(x.split("_")[2][:-4]))
-        assert (
-            len(fileshards) > 0
-        ), "Checkpoint directory must contain checkpoint files with 'loader' in the name"
+        assert len(fileshards) > 0, (
+            "Checkpoint directory must contain checkpoint files with 'loader' in the name"
+        )
         self.load_worldsize = len(fileshards)
         # Grab only the shard files holding data we currently own
         my_fileshards = _shard_inclusive(fileshards, self.rank, self.worldsize)
@@ -362,7 +362,9 @@ class ArrowHandler(_ShardFileHandler):
             if name in frame.column_names:
                 doc = frame[name]
                 break
-        assert doc is not None, f"None of column names {self.col_name} found in file headers {frame.column_names}"
+        assert doc is not None, (
+            f"None of column names {self.col_name} found in file headers {frame.column_names}"
+        )
         if len(doc) > 0 and doc[0].as_py() in drop_tokens:
             doc = doc.slice(1, len(doc) - 1)
         # Recheck len for edge case where doc=[eos]
@@ -396,7 +398,9 @@ class ParquetHandler(_ShardFileHandler):
             if name in names:
                 match = name
                 break
-        assert match is not None, f"None of column names {self.col_name} found in file headers {names}"
+        assert match is not None, (
+            f"None of column names {self.col_name} found in file headers {names}"
+        )
         return pq.read_pandas(path, columns=[match], partitioning=None)[match]
 
     def length(self, path: str):
@@ -416,7 +420,9 @@ class ParquetHandler(_ShardFileHandler):
 
 
 class AutoHandler(_ShardFileHandler):
-    def __init__(self, tokenizer_path: str, col_name: List[str] = ["text", "contents", "tokens"]):
+    def __init__(
+        self, tokenizer_path: str, col_name: List[str] = ["text", "contents", "tokens"]
+    ):
         self.PHandler = ParquetHandler(tokenizer_path, col_name)
         self.AHandler = ArrowHandler(col_name)
         self.current = _ShardFileHandler()
@@ -649,9 +655,9 @@ class PreloadBufferDataset(_WrapperDataset):
 
     def __init__(self, dataset: _StatefulDataset, window_size: int):
         super().__init__(dataset)
-        assert (
-            window_size > 1
-        ), f"Window size {window_size} must be greater than 1 for shuffling to occur"
+        assert window_size > 1, (
+            f"Window size {window_size} must be greater than 1 for shuffling to occur"
+        )
         self.window_size = window_size
         self.g_state = None
         self.generator = torch.Generator().manual_seed(self.rank)
@@ -750,9 +756,9 @@ class BufferDataset(_WrapperDataset):
         self.pad = pad_token
         self.pack_hard = pack_hard
         if not pack_hard:
-            assert (
-                pad_token is not None
-            ), "Error: if using pads, you must supply a pad_token"
+            assert pad_token is not None, (
+                "Error: if using pads, you must supply a pad_token"
+            )
 
         self.state_params = ["buffer"]
 
@@ -1023,9 +1029,9 @@ class StreamingDocDataset(_StatefulDataset):
         return the corresponding data/shard/local index
         """
         cur = 0
-        assert (
-            i <= self._len
-        ), f"You have requested an illegal doc index {i}, docset length is {self._len}"
+        assert i <= self._len, (
+            f"You have requested an illegal doc index {i}, docset length is {self._len}"
+        )
         for shardid, min_d, max_d in self.docset:
             docrange = max_d - min_d + 1
             cur += docrange
@@ -1149,18 +1155,20 @@ class StreamingDocDataset(_StatefulDataset):
                     yield self._construct_chunk(j, doc, n_chunks)
 
             # Check that epoch was non-empty
-            assert self.has_yielded, f"Empty logical shard detected: {self.dataset, self.docset}"
+            assert self.has_yielded, (
+                f"Empty logical shard detected: {self.dataset, self.docset}"
+            )
 
     def load_state_dict(self, state_dicts, sharded_input=False):
         self.setup()
-        assert (
-            self.load_worldsize == self.worldsize
-        ), f"StreamingDocDataset does not support rescaling (ckp size: {self.load_worldsize}, world size: {self.worldsize}). Please use a ScalableShardDataset."
+        assert self.load_worldsize == self.worldsize, (
+            f"StreamingDocDataset does not support rescaling (ckp size: {self.load_worldsize}, world size: {self.worldsize}). Please use a ScalableShardDataset."
+        )
         d = self.dataset
         out = super().load_state_dict(state_dicts, sharded_input)
-        assert (
-            d == self.dataset
-        ), f"Dataset mismatch: checkpoint contains {self.dataset}, expected {d}"
+        assert d == self.dataset, (
+            f"Dataset mismatch: checkpoint contains {self.dataset}, expected {d}"
+        )
         return out
 
 
@@ -1191,12 +1199,12 @@ class ScalableShardDataset(_WrapperDataset):
         verbose=False,
     ):
         super().__init__(dataset)
-        assert (
-            n_logical_shards % self.worldsize == 0
-        ), f"World size {self.worldsize} must divide n_logical_shards {n_logical_shards} evenly"
-        assert (
-            n_logical_shards > 0
-        ), f"n_logical_shards {n_logical_shards} must be a positive integer"
+        assert n_logical_shards % self.worldsize == 0, (
+            f"World size {self.worldsize} must divide n_logical_shards {n_logical_shards} evenly"
+        )
+        assert n_logical_shards > 0, (
+            f"n_logical_shards {n_logical_shards} must be a positive integer"
+        )
 
         self.total_shards = n_logical_shards
         self.delimiter = delimiter_token
@@ -1225,9 +1233,9 @@ class ScalableShardDataset(_WrapperDataset):
             logicals = list(range(n_logical_shards))
             self.logicals_owned = _shard_partition(logicals, self.rank, self.worldsize)
             self.n_logicals = n_logical_shards // self.worldsize
-            assert (
-                len(self.logicals_owned) == self.n_logicals
-            ), "(world size * num workers) does not divide logical shards evenly"
+            assert len(self.logicals_owned) == self.n_logicals, (
+                "(world size * num workers) does not divide logical shards evenly"
+            )
 
             # Build logical shards
             for i in range(self.n_logicals):
@@ -1240,7 +1248,7 @@ class ScalableShardDataset(_WrapperDataset):
                 self.data[-1].verbose = self.rank == 0
                 if self.verbose:
                     logging.info(
-                        f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
+                        f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i + 1} of {self.n_logicals}"
                     )
             [d.setup() for d in self.data]
             self.n_docs_remaining = [d._len for d in self.data]
@@ -1256,9 +1264,9 @@ class ScalableShardDataset(_WrapperDataset):
             if self.current_reader is not None:
                 ind = self.current_reader
             else:
-                assert (
-                    sum(self.n_docs_remaining) > 0
-                ), f"No documents detected in {self.datapath}"
+                assert sum(self.n_docs_remaining) > 0, (
+                    f"No documents detected in {self.datapath}"
+                )
                 ind = torch.multinomial(
                     torch.tensor(self.n_docs_remaining, dtype=torch.float),
                     1,
@@ -1352,9 +1360,9 @@ class SamplingDataset(_WrapperDataset):
         assert len(self.datasets) > 0, "You must specify at least one dataset"
 
         if weights is not None:
-            assert len(weights) == len(
-                self.datasets
-            ), f"Number of oversample weights {len(weights)} must match number of datasets {len(self.datasets)}"
+            assert len(weights) == len(self.datasets), (
+                f"Number of oversample weights {len(weights)} must match number of datasets {len(self.datasets)}"
+            )
             for w in weights:
                 assert w > 0, f"Sampling rate {w} must be positive"
         self.weights = [1] * len(self.datasets) if weights is None else weights
@@ -1378,7 +1386,7 @@ class SamplingDataset(_WrapperDataset):
                 self.data[-1].local_worldsize = self.local_worldsize
                 if self.verbose:
                     logging.info(
-                        f"Worker {self.rank} assembled subdataset iterator for {d}, {i+1} of {len(self.datasets)}"
+                        f"Worker {self.rank} assembled subdataset iterator for {d}, {i + 1} of {len(self.datasets)}"
                     )
             [d.setup() for d in self.data]
 
@@ -1434,6 +1442,7 @@ class SamplingDataset(_WrapperDataset):
                 True,
             )
         return sharded_dicts
+
 
 ### From open-instruct
 
@@ -1504,7 +1513,6 @@ CHAT_TEMPLATES = {
     ),
 }
 # flake8: noqa
-
 
 
 def encode_sft_example(example, tokenizer, max_seq_length):
@@ -1581,5 +1589,6 @@ def encode_sft_example(example, tokenizer, max_seq_length):
     return {
         "input_ids": input_ids.flatten(),
         "labels": labels.flatten(),
+        "n_labels_toks": (labels != -100).sum().item(),
         # "attention_mask": attention_mask.flatten(),
     }

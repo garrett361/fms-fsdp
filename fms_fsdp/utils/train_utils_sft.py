@@ -31,6 +31,7 @@ def train(
     tokens_seen,
     cp_degree: int = 1,
 ):
+    world_size = int(os.environ["WORLD_SIZE"])
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
             raise ValueError(f"tracker {cfg.tracker} not supported.")
@@ -73,7 +74,6 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
-
     ddp_stats = torch.zeros(3).to(local_rank)
 
     start = time.time()
@@ -84,9 +84,12 @@ def train(
 
         tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=True)
 
-    for batch_idx, (input, label) in enumerate(
+    assert cfg.grad_acc_steps == 1, "other vals not yet tested/supported for cp sft"
+    for batch_idx, batch in enumerate(
         train_loader, start=start_step * cfg.grad_acc_steps + 1
     ):
+        input, label = batch["input_ids"], batch["labels"]
+
         step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
         should_step = batch_idx % cfg.grad_acc_steps == 0
         if step_idx > cfg.num_steps:
@@ -101,16 +104,34 @@ def train(
         optimizer.zero_grad()
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
-        ce_loss = torch.nn.CrossEntropyLoss()
-        loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+        # NOTE: @goon - default so sum loss!
+        ce_loss = torch.nn.CrossEntropyLoss(reduction="sum")
+
+        # NOTE: @goon - need to shift the labels manually
+
+        output_truncated = output[:, :-1]
+        label_shifted = label[:, 1:]
+        loss = ce_loss(
+            output_truncated.view(-1, output_truncated.size(-1)),
+            label_shifted.view(-1).long(),
+        )
         if cfg.z_loss is not None:
-            loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
+            # NOTE: @goon - if the loss is nan, we don't get any z-loss here, so the z-loss may only
+            # get applied to the final ranks. Not great.
+            loss = loss + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()
 
         if cfg.grad_acc_steps != 1:
             loss = loss / cfg.grad_acc_steps
 
         loss.backward()
-        ddp_stats[0] += loss.detach().item()
+        if torch.isnan(loss):
+            # NOTE: @goon - a nan loss will occur if the rank has non-trivial inputs, but trivial
+            # labels. Grads are all zeros (not None's) in this case.
+            ddp_stats[0] += 0.0
+        else:
+            # Multiply by world size to undo the later averaging, so that we truly get the sum loss
+            # reported across the world.
+            ddp_stats[0] += world_size * loss.detach().item()
         if not should_step:
             continue
 
@@ -127,7 +148,6 @@ def train(
             train_loss = ddp_stats[0] / ddp_stats[2]
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
-            world_size = int(os.environ["WORLD_SIZE"])
             tok_per_gpu = (
                 cfg.batch_size * cfg.seq_length * cfg.grad_acc_steps // cp_degree
             )
@@ -168,12 +188,14 @@ def train(
                 remaining_secs = remaining_steps * current_step_time
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
 
-                next_ckpt_step_idx = ((
-                    step_idx + cfg.checkpoint_interval - 1
-                ) // cfg.checkpoint_interval) * cfg.checkpoint_interval
+                next_ckpt_step_idx = (
+                    (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval
+                ) * cfg.checkpoint_interval
                 steps_until_ckpt = next_ckpt_step_idx - step_idx
                 secs_until_ckpt = steps_until_ckpt * current_step_time
-                print(f"Approx. time to next ckpt: {timedelta(seconds=secs_until_ckpt)}")
+                print(
+                    f"Approx. time to next ckpt: {timedelta(seconds=secs_until_ckpt)}"
+                )
 
                 if cfg.tracker:
                     vals_to_track = {

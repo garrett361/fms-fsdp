@@ -123,11 +123,6 @@ def train(
         # TODO: @goon - DELETE
         if rank == world_size - 1:
             assert (label_shifted != -100).sum()
-        print(f"{rank=}: {input=}, {output_truncated=}, {label_shifted=}")
-        print(f"{rank=}: {(label_shifted!=-100).sum()=}")
-        print(
-            f"{rank=}: {input.shape=}, {output_truncated.shape=}, {label_shifted.shape=}"
-        )
         print(f"{rank=}: {loss=}")
         if cfg.z_loss is not None:
             # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are -100

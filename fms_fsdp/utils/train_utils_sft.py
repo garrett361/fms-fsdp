@@ -123,16 +123,17 @@ def train(
         )
 
         if cfg.z_loss is not None:
-            # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are
-            # -100, in which case this rank is *only* optimizing z-loss. With a mean loss, it will
-            # be a nan.  Think about how to handle this.
-            z_loss_tensor = torch.logsumexp(output_truncated, dim=-1).pow(2)
-            if cfg.sft_loss_type == "sum":
-                loss = loss + cfg.z_loss * z_loss_tensor.sum()
-            elif cfg.sft_loss_type == "mean":
-                loss = loss + cfg.z_loss * z_loss_tensor.mean()
-            else:
-                raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
+            # NOTE: @goon - only applying z-loss to the tokens correspoding to non-trivial
+            # predictions
+            pred_idxs = label_shifted != -100
+            if pred_idxs.any():
+                z_loss_tensor = torch.logsumexp(output_truncated[pred_idxs], dim=-1).pow(2)
+                if cfg.sft_loss_type == "sum":
+                    loss = loss + cfg.z_loss * z_loss_tensor.sum()
+                elif cfg.sft_loss_type == "mean":
+                    loss = loss + cfg.z_loss * z_loss_tensor.mean()
+                else:
+                    raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
 
         # NOTE: @goon - FSDP1 will average the grads, whereas we would really want to sum them for a
         # sum loss. This doesn't hugely matter for AdamW, and we won't worry about it for now.

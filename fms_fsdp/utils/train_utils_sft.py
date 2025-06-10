@@ -80,8 +80,9 @@ def train(
     # 0: loss
     # 1: grad
     # 2: steps
-    # 3: n_toks
-    ddp_stats = torch.zeros(4).to(local_rank)
+    # 3: n_toks: total sequence length
+    # 4: n_pred_toks: number of actual tokens which are predicted
+    ddp_stats = torch.zeros(5).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -144,6 +145,7 @@ def train(
         if not should_step:
             continue
 
+        ddp_stats[4] += (labels != -100).sum().item()
         ddp_stats[3] += inputs.numel()
         ddp_stats[2] += 1
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
@@ -160,6 +162,7 @@ def train(
             g_norm = ddp_stats[1] / n_steps
             elapsed_time = time.time() - loop_start
             n_tok_sum = ddp_stats[3].item()
+            n_pre_tok_sum = ddp_stats[4].item()
 
             tok_per_gpu = n_tok_sum / world_size / n_steps
             new_tokens_seen += n_tok_sum.item()

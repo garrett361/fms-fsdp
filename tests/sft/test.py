@@ -8,6 +8,7 @@ from fms_fsdp.utils.dataloader_utils import (
     get_infinite_iter,
 )
 from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES
+import pytest
 
 DATA = {
     0: {
@@ -39,14 +40,12 @@ DATA = {
 
 TOKENIZER = AutoTokenizer.from_pretrained("ibm-fms/Bamba-9B")
 TOKENIZER.chat_template = CHAT_TEMPLATES["tulu"]
-MAX_SEQ_LEN = 2**30
+BIG_MAX_SEQ_LEN = 2**30
 
 
 class Test:
-    max_seq_length = 2**30
-
     def test_chat_collator(self) -> None:
-        collate_fn = ChatTokenizerCollator(TOKENIZER, MAX_SEQ_LEN)
+        collate_fn = ChatTokenizerCollator(TOKENIZER, BIG_MAX_SEQ_LEN)
         train_dataloader = DataLoader(
             DATA,
             collate_fn=collate_fn,
@@ -65,7 +64,7 @@ class Test:
 
     def test_chat_and_cp_collator(self) -> None:
         collate_fn = ChatTokenizerCollatorCPCollator(
-            TOKENIZER, MAX_SEQ_LEN, cp_degree=1, cp_rank=0
+            TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=1, cp_rank=0
         )
         train_dataloader = DataLoader(
             DATA,
@@ -85,7 +84,7 @@ class Test:
     def test_distributed_chat_and_cp_collator(self) -> None:
         # Build the non-distributed data to check correctness
         collate_fn = ChatTokenizerCollatorCPCollator(
-            TOKENIZER, MAX_SEQ_LEN, cp_degree=1, cp_rank=0
+            TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=1, cp_rank=0
         )
         non_dist_train_dataloader = DataLoader(
             DATA,
@@ -110,7 +109,7 @@ class Test:
                     drop_last=False,
                 )
                 collate_fn = ChatTokenizerCollatorCPCollator(
-                    TOKENIZER, MAX_SEQ_LEN, cp_degree=cp_degree, cp_rank=cp_rank
+                    TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=cp_degree, cp_rank=cp_rank
                 )
                 loader = DataLoader(
                     DATA,
@@ -138,3 +137,19 @@ class Test:
                 )
                 assert torch.all(expected == seen_concat_no_padding)
                 assert torch.all(padding == (0 if field == "input_ids" else -100))
+
+    def test_chat_and_cp_collator_skipping(self) -> None:
+        """
+        Test that when the labels would all be -100 padding, these examples are skipped.
+        """
+        collate_fn = ChatTokenizerCollatorCPCollator(
+            TOKENIZER, 4, cp_degree=1, cp_rank=0
+        )
+        train_dataloader = DataLoader(
+            DATA,
+            collate_fn=collate_fn,
+            batch_size=1,
+        )
+        data_iter = get_infinite_iter(train_dataloader)
+        with pytest.raises(RuntimeError, match="trivial None data"):
+            next(data_iter)

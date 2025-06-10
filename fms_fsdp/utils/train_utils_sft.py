@@ -121,13 +121,18 @@ def train(
             label_shifted.view(-1).long(),
         )
         # TODO: @goon - DELETE
+        if rank == world_size - 1:
+            assert (label_shifted != -100).sum()
         print(f"{rank=}: {input=}, {output_truncated=}, {label_shifted=}")
         print(f"{rank=}: {(label_shifted!=-100).sum()=}")
-        print(f"{rank=}: {input.shape=}, {output_truncated.shape=}, {label_shifted.shape=}")
+        print(
+            f"{rank=}: {input.shape=}, {output_truncated.shape=}, {label_shifted.shape=}"
+        )
         print(f"{rank=}: {loss=}")
         if cfg.z_loss is not None:
-            # NOTE: @goon - if the loss is nan, we don't get any z-loss here, so the z-loss may only
-            # get applied to the final ranks. Not great.
+            # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are -100
+            # NOTE: @goon - if the loss is zero (e.g. when labels are all -100), then this rank is
+            # *only* optimizing z-loss. Not great.
             loss = (
                 loss
                 + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()
@@ -138,12 +143,8 @@ def train(
         # This also makes run with the same global_bs = world_size * batch_size * grad_acc  not
         # precisely equal, but it should be a relatively minor effect.
         loss.backward()
-        if torch.isnan(loss):
-            # NOTE: @goon - a nan loss will occur if the rank has non-trivial inputs, but trivial
-            # labels. Grads are all zeros (not None's) in this case.
-            ddp_stats[0] += 0.0
-        else:
-            ddp_stats[0] += loss.detach().item()
+
+        ddp_stats[0] += loss.detach().item()
         if not should_step:
             continue
 

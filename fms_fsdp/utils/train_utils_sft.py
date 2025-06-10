@@ -33,6 +33,7 @@ def train(
 ):
     world_size = int(os.environ["WORLD_SIZE"])
     new_tokens_seen = 0
+    # NOTE: @goon - default to sum loss!
     ce_loss = torch.nn.CrossEntropyLoss(reduction="sum")
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -111,11 +112,12 @@ def train(
         optimizer.zero_grad()
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
-        # NOTE: @goon - default so sum loss!
 
-        # NOTE: @goon - need to shift the labels manually
+        # NOTE: @goon - need to shift the labels manually post-forward
         output_truncated = output[:, :-1]
         label_shifted = label[:, 1:]
+        # TODO: @goon - DELETE test
+        label_shifted = torch.ones_like(label_shifted)
         loss = ce_loss(
             output_truncated.view(-1, output_truncated.size(-1)),
             label_shifted.view(-1).long(),
@@ -130,7 +132,7 @@ def train(
             # NOTE: @goon - if the loss is zero (e.g. when labels are all -100), then this rank is
             # *only* optimizing z-loss. Not great.
             # TODO: @goon - only conditionally apply z-loss to toks corresponding to non-trivial
-            # preds? Not sure what the right thing to do is.
+            # preds? Not sure what the right thing to do is. Probably all-reduce?
             loss = (
                 loss
                 + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()

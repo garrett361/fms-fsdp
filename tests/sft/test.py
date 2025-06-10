@@ -44,6 +44,8 @@ BIG_MAX_SEQ_LEN = 2**30
 
 
 class Test:
+    seed: int = 42
+
     def test_chat_collator(self) -> None:
         collate_fn = ChatTokenizerCollator(TOKENIZER, BIG_MAX_SEQ_LEN)
         train_dataloader = DataLoader(
@@ -87,31 +89,38 @@ class Test:
         collate_fn = ChatTokenizerCollatorCPCollator(
             TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=1, cp_rank=0
         )
+        # Just using the sampler here to match the shuffling.
+        sampler = DistributedSampler(
+            DATA,
+            num_replicas=1,
+            rank=0,
+            shuffle=True,
+            seed=self.seed,
+            drop_last=False,
+        )
         non_dist_train_dataloader = DataLoader(
             DATA,
+            sampler=sampler,
             collate_fn=collate_fn,
             batch_size=1,
         )
         non_dist_data = list(non_dist_train_dataloader)
-
         # And then the data seen by distributed CP ranks
         cp_degree = len(DATA)
-        dist_data = []
+        dist_data = {
+            dp_rank: {cp_rank: None for cp_rank in range(cp_degree)}
+            for dp_rank in range(dp_degree)
+        }
         for dp_rank in range(dp_degree):
             dp_data = []
             for cp_rank in range(cp_degree):
-                sampler = (
-                    DistributedSampler(
-                        DATA,
-                        num_replicas=dp_degree,
-                        rank=dp_rank,
-                        # No shuffle, so that the order matches
-                        shuffle=False,
-                        seed=42,
-                        drop_last=False,
-                    )
-                    if dp_degree > 1
-                    else None
+                sampler = DistributedSampler(
+                    DATA,
+                    num_replicas=dp_degree,
+                    rank=dp_rank,
+                    shuffle=True,
+                    seed=self.seed,
+                    drop_last=False,
                 )
                 collate_fn = ChatTokenizerCollatorCPCollator(
                     TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=cp_degree, cp_rank=cp_rank
@@ -122,26 +131,34 @@ class Test:
                     collate_fn=collate_fn,
                     batch_size=1,
                 )
-                dp_data.extend(list(loader))
-            dist_data.append(dp_data)
+                dist_data[dp_rank][cp_rank] = list(loader)
 
         # Verify correctness
+        batches_per_rank = len(DATA) // dp_degree
         for dp_rank in range(dp_degree):
-            for field in ("input_ids", "labels"):
-                expected = non_dist_data[dp_rank][field]
-                # Every distributed rank should see an even number of tokens, for zig-zag cp
-                # sharding to work
-                assert all(s[field].numel() % 2 == 0 for s in dist_data[dp_rank])
-                seen_concat = torch.cat([s[field] for s in dist_data[dp_rank]], dim=-1)
-                # The dist data may have had padding added to the final rank's data for even
-                # divisibility across CP ranks.
-                n_total_toks = expected.shape[-1]
-                seen_concat_no_padding, padding = (
-                    seen_concat[:, :n_total_toks],
-                    seen_concat[:, n_total_toks:],
-                )
-                assert torch.all(expected == seen_concat_no_padding)
-                assert torch.all(padding == (0 if field == "input_ids" else -100))
+            for dp_mini_batch_idx in range(batches_per_rank):
+                global_batch_idx = dp_rank * batches_per_rank + dp_mini_batch_idx
+                for field in ("input_ids", "labels"):
+                    expected = non_dist_data[global_batch_idx][field]
+
+                    # Concat data across CP ranks
+                    cp_rank_data_list = [
+                        d[dp_mini_batch_idx][field] for d in dist_data[dp_rank].values()
+                    ]
+                    # Every distributed rank should see an even number of tokens, for zig-zag cp
+                    # sharding to work
+                    assert all(t.numel() % 2 == 0 for t in cp_rank_data_list)
+                    seen_concat = torch.cat(cp_rank_data_list, dim=-1)
+
+                    # The dist data may have had padding added to the final rank's data for even
+                    # divisibility across CP ranks.
+                    n_total_toks = expected.shape[-1]
+                    seen_concat_no_padding, padding = (
+                        seen_concat[:, :n_total_toks],
+                        seen_concat[:, n_total_toks:],
+                    )
+                    assert torch.all(expected == seen_concat_no_padding)
+                    assert torch.all(padding == (0 if field == "input_ids" else -100))
 
     def test_chat_and_cp_collator_skipping(self) -> None:
         """

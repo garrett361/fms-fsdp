@@ -194,6 +194,8 @@ def main(**kwargs):
             batch_size=cfg.batch_size,
         )
         train_loader = get_infinite_iter(train_loader)
+
+        print(f"{rank=}, {dp_rank=}, {cp_rank=}")
     else:
         raise ValueError("This script assumes no dummy loader is used")
     if rank == 0:

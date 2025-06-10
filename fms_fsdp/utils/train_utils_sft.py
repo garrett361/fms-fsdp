@@ -79,7 +79,7 @@ def train(
     # ddp_stats:
     # 0: loss
     # 1: grad
-    # 2: steps
+    # 2: num fwd/bwd passes
     # 3: n_toks: total sequence length
     # 4: n_pred_toks: number of actual tokens which are predicted
     ddp_stats = torch.zeros(5).to(local_rank)
@@ -92,7 +92,6 @@ def train(
 
         tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=True)
 
-    assert cfg.grad_acc_steps == 1, "other vals not yet tested/supported for cp sft"
     for batch_idx, batch in enumerate(
         train_loader, start=start_step * cfg.grad_acc_steps + 1
     ):
@@ -130,11 +129,10 @@ def train(
                 + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()
             )
 
-        if cfg.grad_acc_steps != 1:
-            loss = loss / cfg.grad_acc_steps
-
         # NOTE: @goon - FSDP1 will average the grads, where we would really want to sum them for a
         # sum loss. This doesn't hugely matter for AdamW, and we won't worry about it for now.
+        # This also makes run with the same global_bs = world_size * batch_size * grad_acc  not
+        # precisely equal, but it should be a relatively minor effect.
         loss.backward()
         if torch.isnan(loss):
             # NOTE: @goon - a nan loss will occur if the rank has non-trivial inputs, but trivial
@@ -157,14 +155,14 @@ def train(
 
         if step_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
-            n_steps = ddp_stats[2].item()
-            train_loss = ddp_stats[0] / n_steps
-            g_norm = ddp_stats[1] / n_steps
+            n_fwd_bwd_passes = ddp_stats[2].item()
+            train_loss = ddp_stats[0] / n_fwd_bwd_passes
+            g_norm = ddp_stats[1] / n_fwd_bwd_passes
             elapsed_time = time.time() - loop_start
             n_tok_sum = ddp_stats[3].item()
-            n_pre_tok_sum = ddp_stats[4].item()
+            n_pred_tok_sum = ddp_stats[4].item()
 
-            tok_per_gpu = n_tok_sum / world_size / n_steps
+            tok_per_gpu = n_tok_sum / world_size
             new_tokens_seen += n_tok_sum.item()
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen

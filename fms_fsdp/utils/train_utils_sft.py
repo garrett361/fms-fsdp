@@ -113,7 +113,9 @@ def train(
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
 
-        # NOTE: @goon - need to shift the labels manually post-forward
+        # NOTE: @goon - need to shift the labels manually post-forward. Must be done post-forward
+        # because the inputs are padded to be specifically divisible by the cp_degree and similar
+        # factors.
         output_truncated = output[:, :-1]
         label_shifted = label[:, 1:]
         loss = ce_loss(

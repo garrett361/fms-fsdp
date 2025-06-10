@@ -116,14 +116,10 @@ def train(
         # NOTE: @goon - need to shift the labels manually post-forward
         output_truncated = output[:, :-1]
         label_shifted = label[:, 1:]
-        # TODO: @goon - DELETE test
-        label_shifted = torch.ones_like(label_shifted)
         loss = ce_loss(
             output_truncated.view(-1, output_truncated.size(-1)),
             label_shifted.view(-1).long(),
         )
-        # TODO: @goon - DELETE
-        print(f"{rank=}: {loss=}")
 
         if cfg.z_loss is not None:
             # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are -100
@@ -141,9 +137,6 @@ def train(
         # This also makes run with the same global_bs = world_size * batch_size * grad_acc  not
         # precisely equal, but it should be a relatively minor effect.
         loss.backward()
-
-        params_and_grads = {n: (p, p.grad) for n, p in model.named_parameters()}
-        print(f"{rank=}, {params_and_grads=}")
 
         ddp_stats[0] += loss.detach().item()
         if not should_step:

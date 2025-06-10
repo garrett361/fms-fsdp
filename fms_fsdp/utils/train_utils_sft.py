@@ -179,7 +179,7 @@ def train(
             if cfg.sft_loss_type == "sum":
                 n_fwd_bwd_passed_per_rank = n_fwd_bwd_passes / world_size
                 train_loss = ddp_stats[0] / n_fwd_bwd_passed_per_rank
-                train_loss_per_pred_tok = ddp_stats[0] / n_pred_tok_sum
+                train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes
             else:

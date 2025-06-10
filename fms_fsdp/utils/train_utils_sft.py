@@ -189,6 +189,7 @@ def train(
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
+                print("new tokens seen:", new_tokens_seen)
                 print("gradient norm:", current_gnorm)
                 print("reserved memory:", reserved_mem)
                 print("allocated memory:", allocated_mem)

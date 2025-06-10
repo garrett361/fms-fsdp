@@ -166,7 +166,7 @@ def train(
             n_pred_tok_sum = ddp_stats[4].item()
 
             tok_per_gpu = n_tok_sum / world_size
-            new_tokens_seen += n_tok_sum.item()
+            new_tokens_seen += n_tok_sum
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()

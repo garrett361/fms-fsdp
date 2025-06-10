@@ -122,11 +122,12 @@ def train(
         )
 
         if cfg.z_loss is not None:
-            # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are -100
-            # NOTE: @goon - if the loss is zero (e.g. when labels are all -100), then this rank is
-            # *only* optimizing z-loss. Not great.
-            # TODO: @goon - only conditionally apply z-loss to toks corresponding to non-trivial
-            # preds? Not sure what the right thing to do is. Probably all-reduce?
+            # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are
+            # -100, in which case this rank is *only* optimizing z-loss. I think this is fine,
+            # though? Not sure if we should only be applying z-loss on the tokens which are actually
+            # being judged for CE loss or not.
+            # TODO: @goon - changed the usual .mean() call to a .sum() to match the CE sum-type
+            # loss.
             loss = (
                 loss
                 + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()

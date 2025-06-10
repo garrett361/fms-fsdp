@@ -122,6 +122,7 @@ def train(
         )
         # TODO: @goon - DELETE
         print(f"{rank=}: {input=}, {output_truncated=}, {label_shifted=}")
+        print(f"{rank=}: {(label_shifted!=-100).sum()=}")
         print(f"{rank=}: {input.shape=}, {output_truncated.shape=}, {label_shifted.shape=}")
         print(f"{rank=}: {loss=}")
         if cfg.z_loss is not None:

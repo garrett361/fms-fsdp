@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer
@@ -8,7 +9,6 @@ from fms_fsdp.utils.dataloader_utils import (
     get_infinite_iter,
 )
 from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES
-import pytest
 
 DATA = {
     0: {
@@ -81,7 +81,8 @@ class Test:
         assert isinstance(data["labels"], torch.Tensor)
         assert data["labels"].ndim == 2
 
-    def test_distributed_chat_and_cp_collator(self) -> None:
+    @pytest.mark.parametrize("dp_degree", [1, len(DATA)])
+    def test_distributed_chat_and_cp_collator(self, dp_degree: int) -> None:
         # Build the non-distributed data to check correctness
         collate_fn = ChatTokenizerCollatorCPCollator(
             TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=1, cp_rank=0
@@ -94,19 +95,23 @@ class Test:
         non_dist_data = list(non_dist_train_dataloader)
 
         # And then the data seen by distributed CP ranks
-        cp_degree = dp_degree = len(DATA)
+        cp_degree = len(DATA)
         dist_data = []
         for dp_rank in range(dp_degree):
             dp_data = []
             for cp_rank in range(cp_degree):
-                sampler = DistributedSampler(
-                    DATA,
-                    num_replicas=dp_degree,
-                    rank=dp_rank,
-                    # No shuffle, so that the order matches
-                    shuffle=False,
-                    seed=42,
-                    drop_last=False,
+                sampler = (
+                    DistributedSampler(
+                        DATA,
+                        num_replicas=dp_degree,
+                        rank=dp_rank,
+                        # No shuffle, so that the order matches
+                        shuffle=False,
+                        seed=42,
+                        drop_last=False,
+                    )
+                    if dp_degree > 1
+                    else None
                 )
                 collate_fn = ChatTokenizerCollatorCPCollator(
                     TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=cp_degree, cp_rank=cp_rank

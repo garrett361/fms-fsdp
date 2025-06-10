@@ -104,9 +104,13 @@ class Test:
             collate_fn=collate_fn,
             batch_size=1,
         )
+        # non_dist_data[batch_idx] gives the batch at this idx
         non_dist_data = list(non_dist_train_dataloader)
         # And then the data seen by distributed CP ranks
         cp_degree = len(DATA)
+
+        # dist_data[dp_rank][cp_rank][batch_idx] will give the batch that the indicated rank sees at
+        # the indicated batch step
         dist_data = {
             dp_rank: {cp_rank: None for cp_rank in range(cp_degree)}
             for dp_rank in range(dp_degree)

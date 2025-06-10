@@ -32,6 +32,8 @@ def train(
     cp_degree: int = 1,
 ):
     world_size = int(os.environ["WORLD_SIZE"])
+    new_tokens_seen = 0
+    ce_loss = torch.nn.CrossEntropyLoss(reduction="sum")
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
             raise ValueError(f"tracker {cfg.tracker} not supported.")
@@ -74,7 +76,12 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
-    ddp_stats = torch.zeros(3).to(local_rank)
+    # ddp_stats:
+    # 0: loss
+    # 1: grad
+    # 2: steps
+    # 3: n_toks
+    ddp_stats = torch.zeros(4).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -105,36 +112,39 @@ def train(
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
         # NOTE: @goon - default so sum loss!
-        ce_loss = torch.nn.CrossEntropyLoss(reduction="sum")
 
         # NOTE: @goon - need to shift the labels manually
-
         output_truncated = output[:, :-1]
         label_shifted = label[:, 1:]
         loss = ce_loss(
             output_truncated.view(-1, output_truncated.size(-1)),
             label_shifted.view(-1).long(),
         )
+        print(f"{rank=}: {loss=}")
         if cfg.z_loss is not None:
             # NOTE: @goon - if the loss is nan, we don't get any z-loss here, so the z-loss may only
             # get applied to the final ranks. Not great.
-            loss = loss + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()
+            loss = (
+                loss
+                + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()
+            )
 
         if cfg.grad_acc_steps != 1:
             loss = loss / cfg.grad_acc_steps
 
+        # NOTE: @goon - FSDP1 will average the grads, where we would really want to sum them for a
+        # sum loss. This doesn't hugely matter for AdamW, and we won't worry about it for now.
         loss.backward()
         if torch.isnan(loss):
             # NOTE: @goon - a nan loss will occur if the rank has non-trivial inputs, but trivial
             # labels. Grads are all zeros (not None's) in this case.
             ddp_stats[0] += 0.0
         else:
-            # Multiply by world size to undo the later averaging, so that we truly get the sum loss
-            # reported across the world.
-            ddp_stats[0] += world_size * loss.detach().item()
+            ddp_stats[0] += loss.detach().item()
         if not should_step:
             continue
 
+        ddp_stats[3] += inputs.numel()
         ddp_stats[2] += 1
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
@@ -145,13 +155,14 @@ def train(
 
         if step_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
-            train_loss = ddp_stats[0] / ddp_stats[2]
-            g_norm = ddp_stats[1] / ddp_stats[2]
+            n_steps = ddp_stats[2].item()
+            train_loss = ddp_stats[0] / n_steps
+            g_norm = ddp_stats[1] / n_steps
             elapsed_time = time.time() - loop_start
-            tok_per_gpu = (
-                cfg.batch_size * cfg.seq_length * cfg.grad_acc_steps // cp_degree
-            )
-            new_tokens_seen = (step_idx - start_step) * world_size * tok_per_gpu
+            n_tok_sum = ddp_stats[3].item()
+
+            tok_per_gpu = n_tok_sum / world_size / n_steps
+            new_tokens_seen += n_tok_sum.item()
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()

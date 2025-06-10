@@ -84,3 +84,5 @@ class train_config:
 
     # SFT
     chat_template_name: str = "tulu"
+    # Limit the number of examples in the dataset.  For sanity checking
+    _n_examples: Optional[int] = None

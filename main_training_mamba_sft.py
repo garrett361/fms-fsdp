@@ -2,6 +2,7 @@ import math
 import os
 from contextlib import contextmanager
 from pathlib import Path
+from warnings import warn
 
 import fire
 import torch
@@ -170,6 +171,11 @@ def main(**kwargs):
     train_dataset = load_dataset(
         "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
     )["train"]
+
+    # For sanity checking:
+    if cfg._n_examples:
+        warn(f"only using {cfg._n_examples=} for sanity checking!", stacklevel=1)
+        train_dataset = train_dataset.select(range(cfg._n_examples))
 
     # NOTE: @goon - open-instruct pre-maps the training example around this point, but this takes a
     # while (~3 hrs for longcontext_121824_cleaned_v1), so we use ChatTokenizerCollatorCPCollator

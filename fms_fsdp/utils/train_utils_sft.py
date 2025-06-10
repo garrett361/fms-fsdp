@@ -124,20 +124,26 @@ def train(
         if rank == world_size - 1:
             assert (label_shifted != -100).sum()
         print(f"{rank=}: {loss=}")
+
         if cfg.z_loss is not None:
             # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are -100
             # NOTE: @goon - if the loss is zero (e.g. when labels are all -100), then this rank is
             # *only* optimizing z-loss. Not great.
+            # TODO: @goon - only conditionally apply z-loss to toks corresponding to non-trivial
+            # preds? Not sure what the right thing to do is.
             loss = (
                 loss
                 + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()
             )
 
-        # NOTE: @goon - FSDP1 will average the grads, where we would really want to sum them for a
+        # NOTE: @goon - FSDP1 will average the grads, whereas we would really want to sum them for a
         # sum loss. This doesn't hugely matter for AdamW, and we won't worry about it for now.
         # This also makes run with the same global_bs = world_size * batch_size * grad_acc  not
         # precisely equal, but it should be a relatively minor effect.
         loss.backward()
+
+        params_and_grads = {n: (p, p.grad) for n, p in model.named_parameters()}
+        print(f"{rank=}, {params_and_grads=}")
 
         ddp_stats[0] += loss.detach().item()
         if not should_step:

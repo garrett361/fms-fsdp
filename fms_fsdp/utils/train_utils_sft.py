@@ -190,8 +190,8 @@ def train(
                 print("tokens seen:", total_tokens_seen)
                 print("new tokens seen:", new_tokens_seen)
                 print("gradient norm:", current_gnorm)
-                print("reserved memory:", reserved_mem)
-                print("allocated memory:", allocated_mem)
+                print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
+                print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
                 print("current step time:", current_step_time)
                 print("overall step time:", overall_step_time)
                 print("current token per gpu per sec:", current_throughput)
@@ -203,6 +203,7 @@ def train(
                 print(f"Total tok/step: {world_size * tok_per_gpu}")
                 remaining_steps = cfg.num_steps - step_idx + 1
                 remaining_secs = remaining_steps * current_step_time
+                print(f"remaining steps: {remaining_steps}")
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
 
                 next_ckpt_step_idx = (

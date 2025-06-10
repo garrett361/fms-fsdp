@@ -33,8 +33,7 @@ def train(
 ):
     world_size = int(os.environ["WORLD_SIZE"])
     new_tokens_seen = 0
-    # NOTE: @goon - default to sum loss!
-    ce_loss = torch.nn.CrossEntropyLoss(reduction="sum")
+    ce_loss = torch.nn.CrossEntropyLoss(reduction=cfg.sft_loss_type)
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
             raise ValueError(f"tracker {cfg.tracker} not supported.")
@@ -125,15 +124,15 @@ def train(
 
         if cfg.z_loss is not None:
             # NOTE: @goon - with a reduction="sum" loss, the CE loss is 0.0 when all labels are
-            # -100, in which case this rank is *only* optimizing z-loss. I think this is fine,
-            # though? Not sure if we should only be applying z-loss on the tokens which are actually
-            # being judged for CE loss or not.
-            # TODO: @goon - changed the usual .mean() call to a .sum() to match the CE sum-type
-            # loss.
-            loss = (
-                loss
-                + cfg.z_loss * torch.logsumexp(output_truncated, dim=-1).pow(2).mean()
-            )
+            # -100, in which case this rank is *only* optimizing z-loss. With a mean loss, it will
+            # be a nan.  Think about how to handle this.
+            z_loss_tensor = torch.logsumexp(output_truncated, dim=-1).pow(2)
+            if cfg.sft_loss_type == "sum":
+                loss = loss + cfg.z_loss * z_loss_tensor.sum()
+            elif cfg.sft_loss_type == "mean":
+                loss = loss + cfg.z_loss * z_loss_tensor.mean()
+            else:
+                raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
 
         # NOTE: @goon - FSDP1 will average the grads, whereas we would really want to sum them for a
         # sum loss. This doesn't hugely matter for AdamW, and we won't worry about it for now.
@@ -141,7 +140,13 @@ def train(
         # precisely equal, but it should be a relatively minor effect.
         loss.backward()
 
-        ddp_stats[0] += loss.detach().item()
+        # NOTE: @goon - when using a "mean" loss, the loss will be nan when if all labels are -100,
+        # as is usually the case for early ranks. Count these as zeros for now. This messes up the
+        # reporting a bit, but not sure what else to do?
+        if torch.isnan(loss):
+            ddp_stats[0] += 0.0
+        else:
+            ddp_stats[0] += loss.detach().item()
         ddp_stats[2] += 1  # n_fwd_bwd_passes
         ddp_stats[3] += input.numel()  # n_tok_sum
         ddp_stats[4] += (label != -100).sum().item()  # n_pred_toks
@@ -157,13 +162,27 @@ def train(
 
         if step_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
+            # num fwd/bwd passes summed over all ranks
             n_fwd_bwd_passes = ddp_stats[2].item()
-            train_loss = ddp_stats[0] / n_fwd_bwd_passes
             g_norm = ddp_stats[1] / n_fwd_bwd_passes
             elapsed_time = time.time() - loop_start
             n_tok_sum = ddp_stats[3].item()
             n_pred_tok_sum = ddp_stats[4].item()
-            avg_train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
+
+            # Cases:
+            # 1) sft_loss_type == "sum": we compute the sum of the losses over all ranks,
+            # averaged over the number of fwd/bwd steps *per rank*. This scales with the global
+            # batch size, and so we also compute the average of this loss over the number of
+            # non-trivial pred toks.
+            # 2) sft_loss_type == "mean": straight average over all ranks and steps
+            if cfg.sft_loss_type == "sum":
+                n_fwd_bwd_passed_per_rank = n_fwd_bwd_passes / world_size
+                train_loss = ddp_stats[0] / n_fwd_bwd_passed_per_rank
+                train_loss_per_pred_tok = ddp_stats[0] / n_pred_tok_sum
+            elif cfg.sft_loss_type == "mean":
+                train_loss = ddp_stats[0] / n_fwd_bwd_passes
+            else:
+                raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
 
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
@@ -185,7 +204,8 @@ def train(
 
                 print("\nstep:", step_idx)
                 print("loss:", current_loss)
-                print("avg loss per pred tok:", avg_train_loss_per_pred_tok)
+                if cfg.sft_loss_type == "sum":
+                    print("avg loss per pred tok:", train_loss_per_pred_tok)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("new tokens seen:", new_tokens_seen)
@@ -219,7 +239,6 @@ def train(
                     vals_to_track = {
                         "learning rate": current_lr,
                         "loss": current_loss,
-                        "loss_per_pred_tok": avg_train_loss_per_pred_tok,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
                         "current throughput (token per gpu per sec)": current_throughput,
@@ -227,6 +246,8 @@ def train(
                         "gpu reserved memory": reserved_mem,
                         "gpu allocated memory": allocated_mem,
                     }
+                    if cfg.sft_loss_type == "sum":
+                        vals_to_track["loss_per_pred_tok"] = train_loss_per_pred_tok
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":

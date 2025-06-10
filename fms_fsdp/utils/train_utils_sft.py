@@ -121,7 +121,8 @@ def train(
             label_shifted.view(-1).long(),
         )
         # TODO: @goon - DELETE
-        print(f"{rank=}: {output_truncated=}, {label_shifted=}")
+        print(f"{rank=}: {input=}, {output_truncated=}, {label_shifted=}")
+        print(f"{rank=}: {input.shape=}, {output_truncated.shape=}, {label_shifted.shape=}")
         print(f"{rank=}: {loss=}")
         if cfg.z_loss is not None:
             # NOTE: @goon - if the loss is nan, we don't get any z-loss here, so the z-loss may only

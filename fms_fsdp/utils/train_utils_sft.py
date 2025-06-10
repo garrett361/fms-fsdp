@@ -145,7 +145,7 @@ def train(
         if not should_step:
             continue
 
-        ddp_stats[4] += (labels != -100).sum().item()
+        ddp_stats[4] += (label != -100).sum().item()
         ddp_stats[3] += inputs.numel()
         ddp_stats[2] += 1
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()

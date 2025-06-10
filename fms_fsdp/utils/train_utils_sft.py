@@ -162,10 +162,10 @@ def train(
             n_tok_sum = ddp_stats[3].item()
             n_pred_tok_sum = ddp_stats[4].item()
 
-            tok_per_gpu = n_tok_sum / world_size
-            new_tokens_seen += n_tok_sum
+            tok_per_gpu = int(n_tok_sum / world_size /  n_fwd_bwd_passes)
+            new_tokens_seen += int(n_tok_sum)
             if rank == 0:
-                total_tokens_seen = tokens_seen + new_tokens_seen
+                total_tokens_seen = int(tokens_seen + new_tokens_seen)
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()

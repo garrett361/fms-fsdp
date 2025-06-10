@@ -142,12 +142,12 @@ def train(
         loss.backward()
 
         ddp_stats[0] += loss.detach().item()
+        ddp_stats[2] += 1  # n_fwd_bwd_passes
+        ddp_stats[3] += input.numel()  # n_tok_sum
+        ddp_stats[4] += (label != -100).sum().item()  # n_pred_toks
         if not should_step:
             continue
 
-        ddp_stats[4] += (label != -100).sum().item()
-        ddp_stats[3] += input.numel()
-        ddp_stats[2] += 1
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
@@ -164,7 +164,7 @@ def train(
             n_tok_sum = ddp_stats[3].item()
             n_pred_tok_sum = ddp_stats[4].item()
 
-            tok_per_gpu = int(n_tok_sum / world_size /  n_fwd_bwd_passes)
+            tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
             if rank == 0:
                 total_tokens_seen = int(tokens_seen + new_tokens_seen)

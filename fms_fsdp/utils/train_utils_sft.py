@@ -123,8 +123,6 @@ def train(
             label_shifted.view(-1).long(),
         )
         # TODO: @goon - DELETE
-        if rank == world_size - 1:
-            assert (label_shifted != -100).sum()
         print(f"{rank=}: {loss=}")
 
         if cfg.z_loss is not None:

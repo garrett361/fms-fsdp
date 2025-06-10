@@ -127,7 +127,9 @@ def train(
             # predictions
             pred_idxs = label_shifted != -100
             if pred_idxs.any():
-                z_loss_tensor = torch.logsumexp(output_truncated[pred_idxs], dim=-1).pow(2)
+                z_loss_tensor = torch.logsumexp(
+                    output_truncated[pred_idxs], dim=-1
+                ).pow(2)
                 if cfg.sft_loss_type == "sum":
                     loss = loss + cfg.z_loss * z_loss_tensor.sum()
                 elif cfg.sft_loss_type == "mean":
@@ -169,6 +171,7 @@ def train(
             elapsed_time = time.time() - loop_start
             n_tok_sum = ddp_stats[3].item()
             n_pred_tok_sum = ddp_stats[4].item()
+            avg_n_pred_toks = n_pred_tok_sum / n_fwd_bwd_passes
 
             # Cases:
             # 1) sft_loss_type == "sum": we compute the sum of the losses over all ranks,
@@ -210,6 +213,7 @@ def train(
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("new tokens seen:", new_tokens_seen)
+                print("avg toks preds per gpu:", avg_n_pred_toks)
                 print("gradient norm:", current_gnorm)
                 print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
                 print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")

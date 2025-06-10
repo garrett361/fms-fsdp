@@ -163,6 +163,7 @@ def train(
             elapsed_time = time.time() - loop_start
             n_tok_sum = ddp_stats[3].item()
             n_pred_tok_sum = ddp_stats[4].item()
+            avg_train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
 
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
@@ -184,6 +185,7 @@ def train(
 
                 print("\nstep:", step_idx)
                 print("loss:", current_loss)
+                print("avg loss per pred tok:", avg_train_loss_per_pred_tok)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("new tokens seen:", new_tokens_seen)
@@ -216,6 +218,7 @@ def train(
                     vals_to_track = {
                         "learning rate": current_lr,
                         "loss": current_loss,
+                        "loss_per_pred_tok": avg_train_loss_per_pred_tok,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
                         "current throughput (token per gpu per sec)": current_throughput,

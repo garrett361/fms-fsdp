@@ -79,7 +79,7 @@ def train(
     # ddp_stats:
     # 0: loss
     # 1: grad
-    # 2: num fwd/bwd passes
+    # 2: num fwd/bwd passes (!= n_optim_steps when grad_acc != 1)
     # 3: n_toks: total sequence length
     # 4: n_pred_toks: number of actual tokens which are predicted
     ddp_stats = torch.zeros(5).to(local_rank)
@@ -120,6 +120,8 @@ def train(
             output_truncated.view(-1, output_truncated.size(-1)),
             label_shifted.view(-1).long(),
         )
+        # TODO: @goon - DELETE
+        print(f"{rank=}: {output_truncated=}, {label_shifted=}")
         print(f"{rank=}: {loss=}")
         if cfg.z_loss is not None:
             # NOTE: @goon - if the loss is nan, we don't get any z-loss here, so the z-loss may only

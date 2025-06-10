@@ -85,10 +85,11 @@ def main(**kwargs):
         _,  # NOTE: @goon - We'll override param_init_fn for mamba below
     ) = get_policies(cfg, rank, block)
     if cfg.low_cpu_fsdp:
-        # NOTE: @goon - the params will be junk after using this. Only intended to be used in
-        # conjunction with loading proper weights from a checkpoint.
         def param_init_fn(module):
             module.to_empty(device=torch.cuda.current_device())
+            if hasattr(module, "reset_parameters"):
+                with torch.no_grad():
+                    module.reset_parameters()
     else:
         param_init_fn = None
 

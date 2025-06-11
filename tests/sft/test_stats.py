@@ -62,7 +62,7 @@ print(f"max toks: {pred_tok_count_t.max()=}")
 print(f"min toks: {pred_tok_count_t.min()=}")
 print(f"std toks: {pred_tok_count_t.std()=}")
 
-print("\n*** Input/Predicted Ratio ***")
+print("\n*** Predicted/Input Ratio ***")
 print(f"pred toks/input_tok: {pred_tok_count_t.mean()/tok_count_t.mean()=}")
 
 print(f"\n{actual_dataset_len=}")

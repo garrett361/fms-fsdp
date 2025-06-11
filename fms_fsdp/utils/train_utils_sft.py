@@ -31,6 +31,9 @@ def train(
     tokens_seen,
     cp_degree: int = 1,
 ):
+    if cfg.sft_loss_type not in ("sum", "mean"):
+        raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
+
     world_size = int(os.environ["WORLD_SIZE"])
     new_tokens_seen = 0
     ce_loss = torch.nn.CrossEntropyLoss(reduction=cfg.sft_loss_type)
@@ -134,14 +137,17 @@ def train(
                     loss = loss + cfg.z_loss * z_loss_tensor.sum()
                 elif cfg.sft_loss_type == "mean":
                     loss = loss + cfg.z_loss * z_loss_tensor.mean()
-                else:
-                    raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
 
-        # NOTE: @goon - FSDP1 will average the grads, whereas we would really want to sum them for a
-        # sum loss. This doesn't hugely matter for AdamW, and we won't worry about it for now.
-        # This also makes run with the same global_bs = world_size * batch_size * grad_acc  not
-        # precisely equal, but it should be a relatively minor effect.
-        loss.backward()
+        # Grad accumulation & FSDP averaging handling cases:
+        # 1) Mean loss: logically we are averaging over grad acc steps, so divide by the grad acc
+        #    factor before backwards.
+        # 2) Sum loss: logically we are summing over all ranks, so we both *avoid* dividing by grad
+        #    acc steps and multiply by the world size to counteract the FSDP averaging.
+        # (Note: These scaling factors largely drop out of Adam anyway.)
+        if cfg.sft_loss_type == "mean":
+            (loss / cfg.grad_acc_steps).backward()
+        elif cfg.sft_loss_type == "sum":
+            (loss * world_size).backward()
 
         # NOTE: @goon - when using a "mean" loss, the loss will be nan when if all labels are -100,
         # as is usually the case for early ranks. Count these as zeros for now. This messes up the
@@ -185,8 +191,6 @@ def train(
                 train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes
-            else:
-                raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
 
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)

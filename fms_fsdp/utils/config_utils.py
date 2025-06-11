@@ -199,6 +199,46 @@ LLAMA4_MAVERICK_CFG = MambaConfig(
     tie_embeddings=False,
 )
 
+# https://huggingface.co/allenai/OLMoE-1B-7B-0924/blob/main/config.json
+OLMOE_7B_CFG = MambaConfig(
+    d_model=2048,
+    d_intermediate=1024,
+    n_layer=16,
+    # vocab_size=50304,
+    # NOTE: @goon - use llama3 vocab size everywhere for dev speed
+    vocab_size=LLAMA3_VOCAB_SIZE,
+    ssm_cfg={"layer": "Mamba2"},
+    attn_layer_idx=list(range(16)),
+    attn_cfg={
+        "causal": True,
+        "d_conv": 0,
+        "head_dim": 128,
+        "num_heads": 16,
+        "num_heads_kv": 16,
+        "out_proj_bias": False,
+        "qkv_proj_bias": False,
+        "rotary_emb_dim": 64,
+    },
+    # all moe
+    moe_layer_idx=list(range(16)),
+    moe_cfg={
+        "n_routed_experts": 64,
+        "n_activated_experts": 8,
+        "n_shared_experts": 0,
+        "d_intermediate": 1024,
+        # TODO: @goon - double check group cfg is right
+        "n_expert_groups": 1,
+        "n_limited_groups": 1,
+        "score_func": "softmax",
+        "route_scale": 1.0,
+    },
+    rms_norm=True,
+    residual_in_fp32=True,
+    fused_add_norm=True,
+    pad_vocab_size_multiple=1,
+    tie_embeddings=False,
+)
+
 
 def update_config(config, **kwargs):
     if isinstance(config, (tuple, list)):
@@ -523,6 +563,8 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
     # NOTE: @goon -  Below are regex-based dev configs, for easy configuring of small models via
     # args. E.g. specify --model_variant=deepseek-v3-dev_8_layer to run a shortened version of
     # deepseek-v3 with only 8 layers.
+    elif model_variant == "olmoe-7b":
+        model_config = OLMOE_7B_CFG
     elif mamba_moe_dev_config := re.search(
         r"mamba_moe_dev_(\d+)_layer_(\d+)_exp_(\d+)_act", model_variant
     ):

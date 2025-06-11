@@ -1,8 +1,6 @@
 import torch
-from mamba_ssm.models.mixer_seq_simple import (
-    MambaLMHeadModel,
-    get_total_exp_and_active_params,
-)
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.moe_utils import get_total_exp_and_active_params
 
 from fms_fsdp.utils.config_utils import get_model_config
 
@@ -122,7 +120,6 @@ class TestBuildModels:
             model = MambaLMHeadModel(mamba_config)
         assert len(model.backbone.layers) == n_layers
         total, exp, active = get_total_exp_and_active_params(model)
-        total
 
     def test_llama4_maverick_dev_cfg(self) -> None:
         n_layers = 3
@@ -130,3 +127,12 @@ class TestBuildModels:
         with torch.device("meta"):
             model = MambaLMHeadModel(mamba_config)
         assert len(model.backbone.layers) == n_layers
+
+    def test_olmoe_7b(self) -> None:
+        mamba_config = get_model_config("olmoe-7b")
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config)
+        total, exp, active = get_total_exp_and_active_params(model)
+        assert total == 7_238_387_712
+        assert exp == 6_442_450_944
+        assert active == 1_601_243_136  # ~52B (NOTE: @goon - should be ~37B?)

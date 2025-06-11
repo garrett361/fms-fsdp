@@ -314,9 +314,12 @@ def get_infinite_iter(dataloader):
     Infinite iterator, skipping over the None cases above.
     """
     found_item = False
-    epoch_idx=0
+    epoch_idx = 0
+    sampler = dataloader.sampler
+    should_set_epochs = isinstance(sampler, DistributedSampler)
     while True:
-        dataloader.sampler.set_epoch(epoch_idx)
+        if should_set_epochs:
+            sampler.set_epoch(epoch_idx)
         for item in iter(dataloader):
             if item is not None:
                 yield item

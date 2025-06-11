@@ -118,11 +118,9 @@ def train(
         if cfg.z_loss is not None:
             # NOTE: @goon - only applying z-loss to the tokens correspoding to non-trivial
             # predictions
-            pred_idxs = label_shifted != -100
+            pred_idxs = label != -100
             if pred_idxs.any():
-                z_loss_tensor = torch.logsumexp(
-                    output_truncated[pred_idxs], dim=-1
-                ).pow(2)
+                z_loss_tensor = torch.logsumexp(output[pred_idxs], dim=-1).pow(2)
                 if cfg.sft_loss_type == "sum":
                     loss = loss + cfg.z_loss * z_loss_tensor.sum()
                 elif cfg.sft_loss_type == "mean":

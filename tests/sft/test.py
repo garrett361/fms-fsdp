@@ -46,42 +46,45 @@ BIG_MAX_SEQ_LEN = 2**30
 class Test:
     seed: int = 42
 
-    def test_chat_collator(self) -> None:
+    @pytest.mark.parametrize("batch_size", [1, 2])
+    def test_chat_collator(self, batch_size: int) -> None:
         collate_fn = ChatTokenizerCollator(TOKENIZER, BIG_MAX_SEQ_LEN)
         train_dataloader = DataLoader(
             DATA,
             collate_fn=collate_fn,
-            batch_size=1,
+            batch_size=batch_size,
         )
         data_iter = get_infinite_iter(train_dataloader)
         data = next(data_iter)
-        assert isinstance(data, dict)
-        assert len(data) == 3
-        assert isinstance(data["input_ids"], torch.Tensor)
-        # NOTE: @goon - no batch dim, yet
-        assert data["input_ids"].ndim == 1
-        assert isinstance(data["labels"], torch.Tensor)
-        assert data["labels"].ndim == 1
-        assert isinstance(data["n_labels_toks"], int)
+        assert isinstance(data, list)
+        assert isinstance(data[0], dict)
+        for d in data:
+            assert len(d) == 3
+            assert isinstance(d["input_ids"], torch.Tensor)
+            # NOTE: @goon - no batch dim, yet
+            assert d["input_ids"].ndim == 1
+            assert isinstance(d["labels"], torch.Tensor)
+            assert d["labels"].ndim == 1
+            assert isinstance(d["n_labels_toks"], int)
 
-    def test_chat_and_cp_collator(self) -> None:
+    @pytest.mark.parametrize("batch_size", [1, 2])
+    def test_chat_and_cp_collator(self, batch_size: int) -> None:
         collate_fn = ChatTokenizerCollatorCPCollator(
             TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=1, cp_rank=0
         )
         train_dataloader = DataLoader(
             DATA,
             collate_fn=collate_fn,
-            batch_size=1,
+            batch_size=batch_size,
         )
         data_iter = get_infinite_iter(train_dataloader)
         data = next(data_iter)
         assert isinstance(data, dict)
         assert len(data) == 2
-        assert isinstance(data["input_ids"], torch.Tensor)
-        # NOTE: @goon - batch dim
-        assert data["input_ids"].ndim == 2
-        assert isinstance(data["labels"], torch.Tensor)
-        assert data["labels"].ndim == 2
+        for t in data.values():
+            assert isinstance(t, torch.Tensor)
+            assert t.shape[0] == batch_size
+            assert t.ndim == 2
 
     @pytest.mark.parametrize("dp_degree", [1, len(DATA)])
     def test_distributed_chat_and_cp_collator(self, dp_degree: int) -> None:
@@ -164,7 +167,8 @@ class Test:
                     assert torch.all(expected == seen_concat_no_padding)
                     assert torch.all(padding == (0 if field == "input_ids" else -100))
 
-    def test_chat_and_cp_collator_skipping(self) -> None:
+    @pytest.mark.parametrize("batch_size", [1, 2])
+    def test_chat_and_cp_collator_skipping(self, batch_size: int) -> None:
         """
         Test that when the labels would all be -100 padding, these examples are skipped.
         """
@@ -174,7 +178,7 @@ class Test:
         train_dataloader = DataLoader(
             DATA,
             collate_fn=collate_fn,
-            batch_size=1,
+            batch_size=batch_size,
         )
         data_iter = get_infinite_iter(train_dataloader)
         with pytest.raises(RuntimeError, match="trivial None data"):

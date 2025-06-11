@@ -192,16 +192,18 @@ class ChatTokenizerCollator:
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
 
-    def __call__(self, example):
-        assert isinstance(example, list), f"{type(example)=}"
-        assert len(example) == 1, (
-            f"only batch size 1 currently suppored, {len(example)=}"
-        )
-        out = encode_sft_example(
-            example[0], tokenizer=self.tokenizer, max_seq_length=self.max_seq_length
-        )
-        if out["n_labels_toks"] == 0:
-            # Using None to signify not enough non-trivial tokens
+    def __call__(self, examples: list[str]):
+        out = [
+            encode_sft_example(
+                e, tokenizer=self.tokenizer, max_seq_length=self.max_seq_length
+            )
+            for e in examples
+        ]
+
+        # Using None to signify not enough non-trivial tokens.
+        # NOTE: @goon - : not ideal for batch size > 1 # since we are throwing away the whole batch
+        # if even 1 example is trivial. Don't think this will matter hugely in practice.
+        if any(o["n_labels_toks"] == 0 for o in out):
             return None
         return out
 
@@ -211,19 +213,19 @@ class CPDataCollator:
         self,
         cp_degree: int,
         cp_rank: int,
+        pad_id: int = 0,
         separator_id=-100,
     ):
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
+        self.pad_id = pad_id
         self.separator_id = separator_id
 
-    def __call__(self, features):
+    def __call__(self, features: list[dict]):
         """
         Return None if there are non non-trivial preds
         """
-        assert isinstance(features, list), f"{features=}"
-        assert len(features) == 1, f"only batch size 1 supported, {features=}"
-        if features[0] is None:
+        if features is None:
             # Handling the None cases from ChatTokenizerCollator
             return None
         ret = {"input_ids": [], "labels": []}
@@ -267,6 +269,37 @@ class CPDataCollator:
             labels = torch.chunk(labels, chunks=self.cp_degree)[self.cp_rank]
             ret["labels"].append(labels)
 
+        # Handle padding
+        if len(ret["input_ids"]) != 1:
+            seqlens = [t.numel() for t in ret["input_ids"]]
+            max_seqlen = max(seqlens)
+            for idx, seqlen in enumerate(seqlens):
+                n_pad_toks = max_seqlen - seqlen
+                if n_pad_toks:
+                    input_ids, labels = ret["input_ids"][idx], ret["labels"][idx]
+                    ret["input_ids"][idx] = torch.cat(
+                        [
+                            input_ids,
+                            torch.full(
+                                (n_pad_toks,),
+                                self.pad_id,
+                                device=input_ids.device,
+                                dtype=input_ids.dtype,
+                            ),
+                        ]
+                    )
+                    ret["labels"][idx] = torch.cat(
+                        [
+                            labels,
+                            torch.full(
+                                (n_pad_toks,),
+                                self.separator_id,
+                                device=labels.device,
+                                dtype=labels.dtype,
+                            ),
+                        ]
+                    )
+
         # Stack and add a batch dimension
         ret["input_ids"] = torch.stack(ret["input_ids"], dim=0)
         ret["labels"] = torch.stack(ret["labels"], dim=0)
@@ -292,7 +325,7 @@ class ChatTokenizerCollatorCPCollator:
         self.cp_collator = CPDataCollator(cp_degree, cp_rank, separator_id)
 
     def __call__(self, example):
-        return self.cp_collator([self.chat_collator(example)])
+        return self.cp_collator(self.chat_collator(example))
 
 
 def get_infinite_iter(dataloader):

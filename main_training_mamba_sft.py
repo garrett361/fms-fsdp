@@ -179,10 +179,8 @@ def main(**kwargs):
         train_dataset = train_dataset.select(range(cfg._n_examples))
 
     # NOTE: @goon - open-instruct pre-maps the training example around this point, but this takes a
-    # while (~3 hrs for longcontext_121824_cleaned_v1), so we use ChatTokenizerCollatorCPCollator
-    # to tokenize on the fly.
+    # while, so we use ChatTokenizerCollatorCPCollator # to tokenize on the fly.
     if not cfg.use_dummy_dataset:
-        assert cfg.batch_size == 1, "only batch size 1 supported for now"
         sampler = DistributedSampler(
             train_dataset,
             num_replicas=dp_degree,
@@ -202,7 +200,7 @@ def main(**kwargs):
         )
         train_loader = get_infinite_iter(train_loader)
 
-        print(f"{rank=}, {dp_rank=}, {cp_rank=}")
+        print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
     else:
         raise ValueError("This script assumes no dummy loader is used")
     if rank == 0:

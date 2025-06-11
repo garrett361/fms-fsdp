@@ -307,7 +307,6 @@ def main(**kwargs):
         checkpointer,
         start_step,
         tokens_seen,
-        cp_degree,
     )
 
     checkpointer.save_single_file(cfg.num_steps, model)

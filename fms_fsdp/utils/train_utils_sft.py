@@ -218,7 +218,8 @@ def train(
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("new tokens seen:", new_tokens_seen)
-                print("avg toks preds per gpu:", avg_n_pred_toks)
+                print("avg toks preds per gpu per example:", avg_n_pred_toks)
+                print(f"current tokens/step: {world_size * tok_per_gpu}")
                 print("gradient norm:", current_gnorm)
                 print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
                 print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
@@ -230,7 +231,6 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
-                print(f"current tokens/step: {world_size * tok_per_gpu}")
                 remaining_steps = cfg.num_steps - step_idx + 1
                 remaining_secs = remaining_steps * current_step_time
                 print(f"remaining steps: {remaining_steps}")

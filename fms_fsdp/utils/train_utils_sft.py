@@ -143,7 +143,8 @@ def train(
         #    factor before backwards.
         # 2) Sum loss: logically we are summing over all ranks, so we both *avoid* dividing by grad
         #    acc steps and multiply by the world size to counteract the FSDP averaging.
-        # (Note: These scaling factors largely drop out of Adam anyway.)
+        # (Note: These scaling factors largely drop out of Adam anyway. Globally re-scaling the loss 
+        # via loss -> loss * X has the same effect as scaling eps -> eps / X.)
         if cfg.sft_loss_type == "mean":
             (loss / cfg.grad_acc_steps).backward()
         elif cfg.sft_loss_type == "sum":

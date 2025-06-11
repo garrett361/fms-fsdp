@@ -126,6 +126,7 @@ def main(**kwargs):
     else:
         cp_mesh = None
         cp_degree = 1
+        cp_rank = 0
         dp_rank = rank
     dp_degree = world_size // cp_degree
 

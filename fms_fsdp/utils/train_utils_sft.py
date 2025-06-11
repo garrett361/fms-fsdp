@@ -29,7 +29,6 @@ def train(
     checkpointer,
     start_step,
     tokens_seen,
-    cp_degree: int = 1,
 ):
     if cfg.sft_loss_type not in ("sum", "mean"):
         raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
@@ -114,15 +113,7 @@ def train(
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
 
-        # NOTE: @goon - need to shift the labels manually post-forward. Must be done post-forward
-        # because the inputs are padded to be specifically divisible by the cp_degree and similar
-        # factors.
-        output_truncated = output[:, :-1]
-        label_shifted = label[:, 1:]
-        loss = ce_loss(
-            output_truncated.reshape(-1, output_truncated.size(-1)),
-            label_shifted.reshape(-1).long(),
-        )
+        loss = ce_loss(output.view(-1, output.size(-1)), label.reshape(-1).long())
 
         if cfg.z_loss is not None:
             # NOTE: @goon - only applying z-loss to the tokens correspoding to non-trivial

@@ -1,4 +1,5 @@
 import torch
+from torch.utils.data import DistributedSampler
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -250,6 +251,21 @@ class CPDataCollator:
         for item in features:
             input_ids = item["input_ids"]
             labels = item["labels"]
+            # [CP causal shifting]
+            # At this point, the input and labels are in exact causal alignment. We want to shift
+            # the label indices over so that input_idx[t] is the input at time step t, while
+            # labels[t] is the ground-truth tok at time t + 1. Then the loss is computed like
+            # (schematically):
+            #
+            # ```py
+            # out = model(inputs_ids)
+            # loss = F.cross_entropy(out, labels)
+            # ```
+
+            # Shift and mask the final token
+            labels = labels.roll(-1)
+            labels[-1] = self.separator_id
+
             n_pad_toks = padded_numel - input_ids.numel()
             if n_pad_toks > 0:
                 input_ids_padding = torch.full(

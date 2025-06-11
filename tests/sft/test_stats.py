@@ -24,8 +24,14 @@ print("MAP")
 
 
 def count_toks(example):
+    """
+    Counts both the number of total tokens and number of non-masked predicted tokens.
+    """
     toks = encode_sft_example(example, tokenizer=tokenizer, max_seq_length=2**30)
-    return {"n_toks": toks["input_ids"].numel()}
+    return {
+        "n_toks": toks["input_ids"].numel(),
+        "n_pred_toks": (toks["labels"] != -100).sum().item(),
+    }
 
 
 train_dataset = train_dataset.map(
@@ -40,10 +46,22 @@ train_dataset = train_dataset.map(
     desc="Tokenizing and reformatting instruction data",
 )
 tok_count_t = torch.tensor([e["n_toks"] for e in train_dataset], dtype=torch.float32)
+pred_tok_count_t = torch.tensor(
+    [e["n_pred_toks"] for e in train_dataset], dtype=torch.float32
+)
+
+print("*** Input Tokens ***")
 print(f"mean toks: {tok_count_t.mean()=}")
 print(f"max toks: {tok_count_t.max()=}")
 print(f"min toks: {tok_count_t.min()=}")
 print(f"std toks: {tok_count_t.std()=}")
+
+print("*** Predicted Tokens ***")
+print(f"mean toks: {pred_tok_count_t.mean()=}")
+print(f"max toks: {pred_tok_count_t.max()=}")
+print(f"min toks: {pred_tok_count_t.min()=}")
+print(f"std toks: {pred_tok_count_t.std()=}")
+
 
 print(f"{actual_dataset_len=}")
 print(f"Approx total tokens in dataset: {actual_dataset_len * tok_count_t.mean()=}")

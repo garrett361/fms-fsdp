@@ -143,7 +143,7 @@ def train(
         #    factor before backwards.
         # 2) Sum loss: logically we are summing over all ranks, so we both *avoid* dividing by grad
         #    acc steps and multiply by the world size to counteract the FSDP averaging.
-        # (Note: These scaling factors largely drop out of Adam anyway. Globally re-scaling the loss 
+        # (Note: These scaling factors largely drop out of Adam anyway. Globally re-scaling the loss
         # via loss -> loss * X has the same effect as scaling eps -> eps / X.)
         if cfg.sft_loss_type == "mean":
             (loss / cfg.grad_acc_steps).backward()
@@ -192,7 +192,7 @@ def train(
                 train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes
-
+            # tok_per_gpu: number of tokens seen by each GPU on average per optim step
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
             if rank == 0:
@@ -230,7 +230,7 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
-                print(f"Total tok/step: {world_size * tok_per_gpu}")
+                print(f"current tokens/step: {world_size * tok_per_gpu}")
                 remaining_steps = cfg.num_steps - step_idx + 1
                 remaining_secs = remaining_steps * current_step_time
                 print(f"remaining steps: {remaining_steps}")

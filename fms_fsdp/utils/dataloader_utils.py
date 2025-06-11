@@ -214,7 +214,7 @@ class CPDataCollator:
         cp_degree: int,
         cp_rank: int,
         pad_id: int = 0,
-        separator_id=-100,
+        separator_id: int = -100,
     ):
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
@@ -234,23 +234,29 @@ class CPDataCollator:
             dtype=features[0]["input_ids"].dtype,
             device=features[0]["input_ids"].device,
         )
+
+        # Need padding, both to align all elements in the batch and also to meet CP divisibility
+        # requirements
+        seqlens = [f["input_ids"].numel() for f in features]
+        max_seqlen = max(seqlens)
+
+        # NOTE: @goon - if using zig-zag, the per-rank tok counts also need to be even, hence
+        # the factors of two
+        padded_numel = (
+            2
+            * self.cp_degree
+            * ((max_seqlen + 2 * self.cp_degree - 1) // (2 * self.cp_degree))
+        )
         for item in features:
             input_ids = item["input_ids"]
             labels = item["labels"]
-
-            # Need to pad out seq_len to a multiple of cp_degree
-            numel = input_ids.numel()
-            # NOTE: @goon - if using zig-zag, the per-rank tok counts also need to be even, hence
-            # the factors of two
-            padded_numel = (
-                2
-                * self.cp_degree
-                * ((numel + 2 * self.cp_degree - 1) // (2 * self.cp_degree))
-            )
-            n_pad_toks = padded_numel - numel
+            n_pad_toks = padded_numel - input_ids.numel()
             if n_pad_toks > 0:
-                input_ids_padding = torch.zeros(
-                    n_pad_toks, device=input_ids.device, dtype=input_ids.dtype
+                input_ids_padding = torch.full(
+                    (n_pad_toks,),
+                    self.pad_id,
+                    device=labels.device,
+                    dtype=labels.dtype,
                 )
                 labels_padding = torch.full(
                     (n_pad_toks,),
@@ -261,44 +267,11 @@ class CPDataCollator:
                 input_ids = torch.cat([input_ids, input_ids_padding])
                 labels = torch.cat([labels, labels_padding])
 
-            # Mask out very first token
-            labels[0] = separator
             # Chunk up and divide among ranks
             input_ids = torch.chunk(input_ids, chunks=self.cp_degree)[self.cp_rank]
             ret["input_ids"].append(input_ids)
             labels = torch.chunk(labels, chunks=self.cp_degree)[self.cp_rank]
             ret["labels"].append(labels)
-
-        # Handle padding
-        if len(ret["input_ids"]) != 1:
-            seqlens = [t.numel() for t in ret["input_ids"]]
-            max_seqlen = max(seqlens)
-            for idx, seqlen in enumerate(seqlens):
-                n_pad_toks = max_seqlen - seqlen
-                if n_pad_toks:
-                    input_ids, labels = ret["input_ids"][idx], ret["labels"][idx]
-                    ret["input_ids"][idx] = torch.cat(
-                        [
-                            input_ids,
-                            torch.full(
-                                (n_pad_toks,),
-                                self.pad_id,
-                                device=input_ids.device,
-                                dtype=input_ids.dtype,
-                            ),
-                        ]
-                    )
-                    ret["labels"][idx] = torch.cat(
-                        [
-                            labels,
-                            torch.full(
-                                (n_pad_toks,),
-                                self.separator_id,
-                                device=labels.device,
-                                dtype=labels.dtype,
-                            ),
-                        ]
-                    )
 
         # Stack and add a batch dimension
         ret["input_ids"] = torch.stack(ret["input_ids"], dim=0)
@@ -313,7 +286,8 @@ class ChatTokenizerCollatorCPCollator:
         max_seq_length: int,
         cp_degree: int,
         cp_rank: int,
-        separator_id=-100,
+        pad_id: int = 0,
+        separator_id: int = -100,
     ):
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
@@ -321,8 +295,15 @@ class ChatTokenizerCollatorCPCollator:
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
 
-        self.chat_collator = ChatTokenizerCollator(tokenizer, max_seq_length)
-        self.cp_collator = CPDataCollator(cp_degree, cp_rank, separator_id)
+        self.chat_collator = ChatTokenizerCollator(
+            tokenizer=tokenizer, max_seq_length=max_seq_length
+        )
+        self.cp_collator = CPDataCollator(
+            cp_degree=cp_degree,
+            cp_rank=cp_rank,
+            pad_id=pad_id,
+            separator_id=separator_id,
+        )
 
     def __call__(self, example):
         return self.cp_collator(self.chat_collator(example))

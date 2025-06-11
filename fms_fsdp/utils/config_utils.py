@@ -240,6 +240,45 @@ OLMOE_7B_CFG = MambaConfig(
 )
 
 
+HYBRID_1B_MOE = MambaConfig(
+    d_model=1536,
+    d_intermediate=768,
+    n_layer=8,
+    vocab_size=LLAMA3_VOCAB_SIZE,
+    ssm_cfg={"layer": "Mamba2"},
+    # Every 4-th layer a full attn.
+    attn_layer_idx=list(range(3, 8, 4)),
+    attn_cfg={
+        "causal": True,
+        "d_conv": 0,
+        "head_dim": 128,
+        "num_heads": 16,
+        "num_heads_kv": 16,
+        "out_proj_bias": False,
+        "qkv_proj_bias": False,
+        "rotary_emb_dim": 64,
+    },
+    # all moe
+    moe_layer_idx=list(range(8)),
+    moe_cfg={
+        "n_routed_experts": 32,
+        "n_activated_experts": 4,
+        "n_shared_experts": 0,
+        "d_intermediate": 768,
+        # TODO: @goon - double check group cfg is right
+        "n_expert_groups": 1,
+        "n_limited_groups": 1,
+        "score_func": "softmax",
+        "route_scale": 1.0,
+    },
+    rms_norm=True,
+    residual_in_fp32=True,
+    fused_add_norm=True,
+    pad_vocab_size_multiple=1,
+    tie_embeddings=False,
+)
+
+
 def update_config(config, **kwargs):
     if isinstance(config, (tuple, list)):
         for c in config:
@@ -565,6 +604,8 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
     # deepseek-v3 with only 8 layers.
     elif model_variant == "olmoe-7b":
         model_config = OLMOE_7B_CFG
+    elif model_variant == "hybrid-1b":
+        model_config = HYBRID_1B_MOE
     elif mamba_moe_dev_config := re.search(
         r"mamba_moe_dev_(\d+)_layer_(\d+)_exp_(\d+)_act", model_variant
     ):

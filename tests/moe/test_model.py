@@ -135,4 +135,13 @@ class TestBuildModels:
         total, exp, active = get_total_exp_and_active_params(model)
         assert total == 7_238_387_712
         assert exp == 6_442_450_944
-        assert active == 1_601_243_136  # ~52B (NOTE: @goon - should be ~37B?)
+        assert active == 1_601_243_136
+
+    def test_hybrid_1b(self) -> None:
+        mamba_config = get_model_config("hybrid-1b")
+        with torch.device("meta"):
+            model = MambaLMHeadModel(mamba_config)
+        total, exp, active = get_total_exp_and_active_params(model)
+        assert total == 1_413_412_704 # ~ 1.4B
+        assert exp == 905_969_664
+        assert active == 141_341_2704

@@ -56,12 +56,13 @@ print(f"max toks: {tok_count_t.max()=}")
 print(f"min toks: {tok_count_t.min()=}")
 print(f"std toks: {tok_count_t.std()=}")
 
-print("*** Predicted Tokens ***")
+print("\n*** Predicted Tokens ***")
 print(f"mean toks: {pred_tok_count_t.mean()=}")
 print(f"max toks: {pred_tok_count_t.max()=}")
 print(f"min toks: {pred_tok_count_t.min()=}")
 print(f"std toks: {pred_tok_count_t.std()=}")
 
 
-print(f"{actual_dataset_len=}")
+print(f"\n{actual_dataset_len=}")
 print(f"Approx total tokens in dataset: {actual_dataset_len * tok_count_t.mean()=}")
+print(f"Approx total pred tokens in dataset: {actual_dataset_len * pred_tok_count_t.mean()=}")

@@ -85,6 +85,7 @@ def main(**kwargs):
         _,  # NOTE: @goon - We'll override param_init_fn for mamba below
     ) = get_policies(cfg, rank, block)
     if cfg.low_cpu_fsdp:
+
         def param_init_fn(module):
             module.to_empty(device=torch.cuda.current_device())
             if hasattr(module, "reset_parameters"):
@@ -123,7 +124,9 @@ def main(**kwargs):
             dp_rank = two_d_mesh["outer"].get_local_rank()
             cp_rank = two_d_mesh["inner"].get_local_rank()
     else:
-        raise ValueError("This script expects cfg.cp=True")
+        cp_mesh = None
+        cp_degree = 1
+        dp_rank = rank
     dp_degree = world_size // cp_degree
 
     if cfg.sharding_strategy == "fsdp":

@@ -87,7 +87,10 @@ class Test:
             assert t.ndim == 2
 
     @pytest.mark.parametrize("dp_degree", [1, len(DATA)])
-    def test_distributed_chat_and_cp_collator(self, dp_degree: int) -> None:
+    @pytest.mark.parametrize("cp_degree", [1, len(DATA)])
+    def test_distributed_chat_and_cp_collator(
+        self, dp_degree: int, cp_degree: int
+    ) -> None:
         # Build the non-distributed data to check correctness
         collate_fn = ChatTokenizerCollatorCPCollator(
             TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=1, cp_rank=0
@@ -110,7 +113,6 @@ class Test:
         # non_dist_data[batch_idx] gives the batch at this idx
         non_dist_data = list(non_dist_train_dataloader)
         # And then the data seen by distributed CP ranks
-        cp_degree = len(DATA)
 
         # dist_data[dp_rank][cp_rank][batch_idx] will give the batch that the indicated rank sees at
         # the indicated batch step

@@ -314,11 +314,14 @@ def get_infinite_iter(dataloader):
     Infinite iterator, skipping over the None cases above.
     """
     found_item = False
+    epoch_idx=0
     while True:
+        dataloader.sampler.set_epoch(epoch_idx)
         for item in iter(dataloader):
             if item is not None:
                 yield item
                 found_item = True
+        epoch_idx += 1
 
         if not found_item:
             raise RuntimeError(

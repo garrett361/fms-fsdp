@@ -120,8 +120,8 @@ def train(
         output_truncated = output[:, :-1]
         label_shifted = label[:, 1:]
         loss = ce_loss(
-            output_truncated.view(-1, output_truncated.size(-1)),
-            label_shifted.view(-1).long(),
+            output_truncated.reshape(-1, output_truncated.size(-1)),
+            label_shifted.reshape(-1).long(),
         )
 
         if cfg.z_loss is not None:

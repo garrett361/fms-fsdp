@@ -99,6 +99,7 @@ def train(
         train_loader, start=start_step * cfg.grad_acc_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
+        print(f"[{rank=}] {input.shape=}, {label.shape=}")
 
         step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
         should_step = batch_idx % cfg.grad_acc_steps == 0

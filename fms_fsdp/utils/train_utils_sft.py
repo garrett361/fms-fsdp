@@ -125,6 +125,7 @@ def train(
                     loss = loss + cfg.z_loss * z_loss_tensor.sum()
                 elif cfg.sft_loss_type == "mean":
                     loss = loss + cfg.z_loss * z_loss_tensor.mean()
+                del z_loss_tensor
 
         # Grad accumulation & FSDP averaging handling cases:
         # 1) Mean loss: logically we are averaging over grad acc steps, so divide by the grad acc

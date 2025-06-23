@@ -269,7 +269,7 @@ def main(**kwargs):
     # Skip previous batches
     if start_step > 0:
         # TODO: @goon - check off by one
-        for _ in range(start_step):
+        for _ in range(cfg.grad_acc_steps * start_step):
             next(train_loader)
 
     # LR schedule

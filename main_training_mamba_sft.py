@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer
 
 from fms_fsdp import config
-from fms_fsdp.utils.checkpointing_utils import Checkpointer
+from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import (
     ChatTokenizerCollatorCPCollator,

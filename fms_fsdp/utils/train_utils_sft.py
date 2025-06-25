@@ -205,7 +205,8 @@ def train(
                     print("avg loss per pred tok:", train_loss_per_pred_tok)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
-                print("new tokens seen:", new_tokens_seen)
+                print("current token seen:", n_tok_sum)
+                print("current pred toks:",  n_pred_tok_sum)
                 print("avg toks preds per gpu per example:", avg_n_pred_toks)
                 print(f"current tokens/step: {world_size * tok_per_gpu}")
                 print("gradient norm:", current_gnorm)
@@ -239,6 +240,7 @@ def train(
                         "loss": current_loss,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
+                        "current token seen": n_tok_sum,
                         "current pred toks": n_pred_tok_sum,
                         "current throughput (token per gpu per sec)": current_throughput,
                         "overall throughput (token per gpu per sec)": overall_throughput,

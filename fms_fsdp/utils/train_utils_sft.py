@@ -147,7 +147,7 @@ def train(
         else:
             ddp_stats[0] += loss.detach().item()
         ddp_stats[2] += 1  # n_fwd_bwd_passes
-        ddp_stats[3] += input.numel()  # n_tok_sum
+        ddp_stats[3] += (input != 0).sum().item()  # n_tok_sum (don't include padding!)
         ddp_stats[4] += (label != -100).sum().item()  # n_pred_toks
         if not should_step:
             continue
@@ -239,6 +239,7 @@ def train(
                         "loss": current_loss,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
+                        "current pred toks": n_pred_tok_sum,
                         "current throughput (token per gpu per sec)": current_throughput,
                         "overall throughput (token per gpu per sec)": overall_throughput,
                         "gpu reserved memory": reserved_mem,

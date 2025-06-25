@@ -121,7 +121,6 @@ class Test:
             for dp_rank in range(dp_degree)
         }
         for dp_rank in range(dp_degree):
-            dp_data = []
             for cp_rank in range(cp_degree):
                 sampler = DistributedSampler(
                     DATA,

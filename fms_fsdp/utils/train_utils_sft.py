@@ -116,8 +116,8 @@ def train(
         loss = ce_loss(output.view(-1, output.size(-1)), label.reshape(-1).long())
 
         if cfg.z_loss is not None:
-            # NOTE: @goon - only applying z-loss to the tokens correspoding to non-trivial
-            # predictions
+            # NOTE: @goon - only applying z-loss to the tokens corresponding to non-trivial
+            # predictions. Might not be the right thing to do.
             pred_idxs = label != -100
             if pred_idxs.any():
                 z_loss_tensor = torch.logsumexp(output[pred_idxs], dim=-1).pow(2)
@@ -170,14 +170,13 @@ def train(
             avg_n_pred_toks = n_pred_tok_sum / n_fwd_bwd_passes
 
             # Cases:
-            # 1) sft_loss_type == "sum": we compute the sum of the losses over all ranks,
-            # averaged over the number of fwd/bwd steps *per rank*. This scales with the global
-            # batch size, and so we also compute the average of this loss over the number of
-            # non-trivial pred toks.
+            # 1) sft_loss_type == "sum": we compute the sum of the losses over all ranks, averaged
+            #    over the number of optimizer steps. This scales with the global batch size, and so
+            #    we also compute the average of this loss over the number of non-trivial pred toks.
             # 2) sft_loss_type == "mean": straight average over all ranks and steps
             if cfg.sft_loss_type == "sum":
-                n_fwd_bwd_passed_per_rank = n_fwd_bwd_passes / world_size
-                train_loss = ddp_stats[0] / n_fwd_bwd_passed_per_rank
+                n_optim_steps = cfg.report_interval * world_size
+                train_loss = ddp_stats[0] / n_optim_steps
                 train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes

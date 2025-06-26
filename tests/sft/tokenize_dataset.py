@@ -7,11 +7,13 @@ from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
 
 tokenizer = AutoTokenizer.from_pretrained("/datasets/tokenizers/llama3")
 tokenizer.chat_template = CHAT_TEMPLATES["tulu"]
+print("LOAD DATA")
 train_dataset = load_dataset(
     "parquet",
     data_dir="/datasets/long_context_sft/longcontext_121824_cleaned_v1",
     num_proc=4,
 )["train"]
+print("MAP DATA")
 train_dataset = train_dataset.map(
     partial(
         encode_sft_example,

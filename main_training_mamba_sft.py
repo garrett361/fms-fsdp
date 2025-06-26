@@ -1,6 +1,7 @@
 import math
 import os
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 from warnings import warn
 
@@ -25,9 +26,10 @@ from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import (
     ChatTokenizerCollatorCPCollator,
+    CPDataCollator,
     get_infinite_iter,
 )
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES
+from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
 from fms_fsdp.utils.train_utils_sft import (
     get_policies,
     get_profiler,
@@ -173,29 +175,67 @@ def main(**kwargs):
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     tokenizer.chat_template = CHAT_TEMPLATES[cfg.chat_template_name]
 
-    train_dataset = load_dataset(
-        "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
-    )["train"]
+    with local_rank_zero_first(rank):
+        train_dataset = load_dataset(
+            "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
+        )["train"]
+        # For sanity checking:
+        if cfg._n_examples:
+            warn(f"only using {cfg._n_examples=} for sanity checking!", stacklevel=1)
+            train_dataset = train_dataset.select(range(cfg._n_examples))
+        if not rank:
+            print("Dataset loaded")
 
-    # For sanity checking:
-    if cfg._n_examples:
-        warn(f"only using {cfg._n_examples=} for sanity checking!", stacklevel=1)
-        train_dataset = train_dataset.select(range(cfg._n_examples))
-
-    # NOTE: @goon - open-instruct pre-maps the training example around this point, but this takes a
-    # while, so we use ChatTokenizerCollatorCPCollator # to tokenize on the fly.
+    print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
     if not cfg.use_dummy_dataset:
-        sampler = DistributedSampler(
-            train_dataset,
-            num_replicas=dp_degree,
-            rank=dp_rank,
-            shuffle=True,
-            seed=cfg.seed,
-            drop_last=False,
-        )
-        collate_fn = ChatTokenizerCollatorCPCollator(
-            tokenizer, cfg.seq_length, cp_degree, cp_rank
-        )
+        # NOTE: @goon - open-instruct pre-maps the training example around this point, but this can
+        # takes a long time, so we also give the option to tokenize on the fly
+        if cfg.tokenize_on_fly:
+            sampler = DistributedSampler(
+                train_dataset,
+                num_replicas=dp_degree,
+                rank=dp_rank,
+                shuffle=True,
+                seed=cfg.seed,
+                drop_last=False,
+            )
+            collate_fn = ChatTokenizerCollatorCPCollator(
+                tokenizer=tokenizer,
+                max_seq_length=cfg.seq_length,
+                cp_degree=cp_degree,
+                cp_rank=cp_rank,
+                pad_id=0,
+                separator_id=-100,
+            )
+        else:
+            with local_rank_zero_first(rank):
+                assert tokenizer.is_fast
+                train_dataset = train_dataset.map(
+                    partial(
+                        encode_sft_example,
+                        tokenizer=tokenizer,
+                        max_seq_length=cfg.seq_length,
+                    ),
+                    batched=False,
+                    num_proc=torch.cuda.device_count() * cfg.num_workers,
+                    remove_columns=[
+                        name
+                        for name in train_dataset.column_names
+                        if name not in ["input_ids", "labels"]
+                    ],
+                    desc="Tokenizing and reformatting instruction data",
+                )
+                train_dataset.set_format(type="pt")
+                train_dataset = train_dataset.filter(
+                    lambda example: (example["labels"] != -100).any()
+                )
+                collate_fn = CPDataCollator(
+                    cp_degree=cp_degree,
+                    cp_rank=cp_rank,
+                    pad_id=0,
+                    separator_id=-100,
+                )
+
         train_loader = DataLoader(
             train_dataset,
             sampler=sampler,
@@ -204,7 +244,6 @@ def main(**kwargs):
         )
         train_loader = get_infinite_iter(train_loader)
 
-        print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
     else:
         raise ValueError("This script assumes no dummy loader is used")
     if rank == 0:

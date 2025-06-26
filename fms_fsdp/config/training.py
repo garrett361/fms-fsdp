@@ -87,4 +87,4 @@ class train_config:
     # Limit the number of examples in the dataset.  For sanity checking
     _n_examples: Optional[int] = None
     sft_loss_type: str = "sum"  # sum or mean. The `reduction` arg for F.cross_entropy
-    tokenize_on_fly: bool = False
+    tokenize_on_fly: bool = True

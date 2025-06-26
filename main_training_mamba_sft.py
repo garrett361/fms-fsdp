@@ -186,29 +186,28 @@ def main(**kwargs):
         if not rank:
             print("Dataset loaded")
 
-    print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
-    if not cfg.use_dummy_dataset:
-        # NOTE: @goon - open-instruct pre-maps the training example around this point, but this can
-        # takes a long time, so we also give the option to tokenize on the fly
-        if cfg.tokenize_on_fly:
-            sampler = DistributedSampler(
-                train_dataset,
-                num_replicas=dp_degree,
-                rank=dp_rank,
-                shuffle=True,
-                seed=cfg.seed,
-                drop_last=False,
-            )
-            collate_fn = ChatTokenizerCollatorCPCollator(
-                tokenizer=tokenizer,
-                max_seq_length=cfg.seq_length,
-                cp_degree=cp_degree,
-                cp_rank=cp_rank,
-                pad_id=0,
-                separator_id=-100,
-            )
-        else:
-            with local_rank_zero_first(rank):
+        print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
+        if not cfg.use_dummy_dataset:
+            # NOTE: @goon - open-instruct pre-maps the training example around this point, but this can
+            # takes a long time, so we also give the option to tokenize on the fly
+            if cfg.tokenize_on_fly:
+                sampler = DistributedSampler(
+                    train_dataset,
+                    num_replicas=dp_degree,
+                    rank=dp_rank,
+                    shuffle=True,
+                    seed=cfg.seed,
+                    drop_last=False,
+                )
+                collate_fn = ChatTokenizerCollatorCPCollator(
+                    tokenizer=tokenizer,
+                    max_seq_length=cfg.seq_length,
+                    cp_degree=cp_degree,
+                    cp_rank=cp_rank,
+                    pad_id=0,
+                    separator_id=-100,
+                )
+            else:
                 assert tokenizer.is_fast
                 train_dataset = train_dataset.map(
                     partial(
@@ -236,16 +235,15 @@ def main(**kwargs):
                     separator_id=-100,
                 )
 
-        train_loader = DataLoader(
-            train_dataset,
-            sampler=sampler,
-            collate_fn=collate_fn,
-            batch_size=cfg.batch_size,
-        )
-        train_loader = get_infinite_iter(train_loader)
-
-    else:
-        raise ValueError("This script assumes no dummy loader is used")
+            train_loader = DataLoader(
+                train_dataset,
+                sampler=sampler,
+                collate_fn=collate_fn,
+                batch_size=cfg.batch_size,
+            )
+            train_loader = get_infinite_iter(train_loader)
+        else:
+            raise ValueError("This script assumes no dummy loader is used")
     if rank == 0:
         print("Datasets constructed!")
 

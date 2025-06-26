@@ -35,6 +35,33 @@ DATA = {
             {"content": "A programming language", "role": "assistant"},
         ]
     },
+    4: {
+        "messages": [
+            {
+                "content": "This is a much longer example where I say hello repeatedly: hello hello hello hello hello hello hello.",
+                "role": "user",
+            },
+            {"content": "I will say bye repeatedly in return: bye bye bye  bye bye bye bye bye bye bye bye." , "role": "assistant"},
+        ]
+    },
+    5: {
+        "messages": [
+            {"content": "Why did the chicken cross the road?", "role": "user"},
+            {"content": "None of your business.", "role": "assistant"},
+        ]
+    },
+    6: {
+        "messages": [
+            {"content": "Why are we testing these functions?", "role": "user"},
+            {"content": "Is that a serious question?", "role": "assistant"},
+        ]
+    },
+    7: {
+        "messages": [
+            {"content": "What is python?", "role": "user"},
+            {"content": "A large snake.", "role": "assistant"},
+        ]
+    },
 }
 
 

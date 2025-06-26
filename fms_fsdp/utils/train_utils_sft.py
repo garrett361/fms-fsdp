@@ -107,7 +107,7 @@ def train(
         if cfg.sanity_print_toks:
             toks_list = input.cpu().tolist()
             for toks in toks_list:
-                print(f"[{rank=}]:  {tokenizer.decode(toks)}")
+                print(f"[{rank=}, {batch_idx=}]:  {tokenizer.decode(toks)}")
 
         optimizer.zero_grad()
         output = model(input)
@@ -206,7 +206,7 @@ def train(
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("current token seen:", n_tok_sum)
-                print("current pred toks:",  n_pred_tok_sum)
+                print("current pred toks:", n_pred_tok_sum)
                 print("avg toks preds per gpu per example:", avg_n_pred_toks)
                 print(f"current tokens/step: {world_size * tok_per_gpu}")
                 print("gradient norm:", current_gnorm)

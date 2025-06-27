@@ -250,7 +250,7 @@ class Checkpointer:
                     f"Checkpoint {load_path} is a single-file checkpoint containing only a model. Optimizer and dataloader are from scratch.",
                     model_load_time=time.time() - model_load_time,
                 )
-                return model, optimizer, dataloader, 0, 0, is_resuming
+                return model, optimizer, dataloader, 0, 0, 0, is_resuming
             else:
                 # Load model
                 with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):

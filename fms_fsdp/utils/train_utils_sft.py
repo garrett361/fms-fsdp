@@ -29,12 +29,14 @@ def train(
     checkpointer,
     start_step,
     tokens_seen,
+    pred_tokens_seen,
 ):
     if cfg.sft_loss_type not in ("sum", "mean"):
         raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
 
     world_size = int(os.environ["WORLD_SIZE"])
     new_tokens_seen = 0
+    new_pred_tokens_seen = 0
     ce_loss = torch.nn.CrossEntropyLoss(reduction=cfg.sft_loss_type)
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -185,8 +187,10 @@ def train(
             # tok_per_gpu: number of tokens seen by each GPU on average per optim step
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
+            new_pred_tokens_seen += int(n_pred_tok_sum)
             if rank == 0:
                 total_tokens_seen = int(tokens_seen + new_tokens_seen)
+                total_pred_tokens_seen = int(pred_tokens_seen + new_pred_tokens_seen)
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
@@ -207,6 +211,7 @@ def train(
                     print("avg loss per pred tok:", train_loss_per_pred_tok)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
+                print("pred tokens seen:", total_pred_tokens_seen)
                 print("current token seen:", n_tok_sum)
                 print("current pred toks:", n_pred_tok_sum)
                 print("avg toks preds per gpu per example:", avg_n_pred_toks)
@@ -221,6 +226,10 @@ def train(
                 print(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
+                )
+                print(
+                    "overall pred token per day:",
+                    int(new_pred_tokens_seen / elapsed_time * 3600 * 24),
                 )
                 remaining_steps = cfg.num_steps - step_idx + 1
                 remaining_secs = remaining_steps * current_step_time
@@ -242,6 +251,7 @@ def train(
                         "loss": current_loss,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
+                        "pred token seen": total_pred_tokens_seen,
                         "current token seen": n_tok_sum,
                         "current pred toks": n_pred_tok_sum,
                         "current throughput (token per gpu per sec)": current_throughput,
@@ -268,6 +278,7 @@ def train(
                 optimizer,
                 None,
                 tokens_seen=tokens_seen + new_tokens_seen,
+                pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
             )
 
     return train_loss

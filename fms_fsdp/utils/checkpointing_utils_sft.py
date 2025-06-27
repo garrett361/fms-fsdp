@@ -274,7 +274,13 @@ class Checkpointer:
                     metadata = torch.load(os.path.join(load_path, "metadata.pth"))
                     step = metadata.get("step", 0)
                     ntok = metadata.get("tokens_seen", 0)
-                    self.report("Metadata loaded", start_step=step, n_tokens_seen=ntok)
+                    n_pred_tok = metadata.get("pred_tokens_seen", 0)
+                    self.report(
+                        "Metadata loaded",
+                        start_step=step,
+                        n_tokens_seen=ntok,
+                        n_pred_tokens_seen=n_pred_tok,
+                    )
                 # Load optimizer
                 if optimizer is not None:
                     optim_load_time = time.time()

@@ -269,6 +269,7 @@ class Checkpointer:
                 self.report(model_load_time=time.time() - model_load_time)
                 step = 0
                 ntok = 0
+                n_pred_tok = 0
                 # Load metadata
                 if is_resuming:
                     metadata = torch.load(os.path.join(load_path, "metadata.pth"))
@@ -304,7 +305,7 @@ class Checkpointer:
                     self.report(dataset_load_time=time.time() - data_load_time)
                 else:
                     self.report("Skipping dataset load, no dataloader provided.")
-                return model, optimizer, dataloader, step, ntok, is_resuming
+                return model, optimizer, dataloader, step, ntok, n_pred_tok, is_resuming
 
     def save(
         self,

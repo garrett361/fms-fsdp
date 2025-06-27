@@ -47,7 +47,7 @@ def update_config(config, **kwargs):
                     else:
                         print(f"Warning: {config_name} does not accept parameter: {k}")
             elif isinstance(config, train_config):
-                print(f"Warning: unknown parameter {k}")
+                raise ValueError(f"Warning: unknown parameter {k}")
 
 
 def get_model_config(model_variant):

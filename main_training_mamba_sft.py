@@ -315,7 +315,14 @@ def main(**kwargs):
     # linear decay for annealing
     assert cfg.training_stage == "annealing", "SFT expects an annealing scheduler"
     if cfg.training_stage == "annealing":
-        schedule = lambda x: 1 - (1 - cfg.final_lr_ratio) * x / cfg.num_steps
+        warmup_interval = cfg.num_steps * cfg.sft_warmup_fraction
+        schedule = lambda x: min(
+            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+            1
+            - (1 - cfg.final_lr_ratio)
+            * (x - warmup_interval)
+            / (cfg.num_steps - warmup_interval),
+        )
     else:
         # cosine decay
         warmup_interval = min(2000, cfg.num_steps // 20)

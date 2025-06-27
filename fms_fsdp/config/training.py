@@ -89,3 +89,4 @@ class train_config:
     sft_loss_type: str = "sum"  # sum or mean. The `reduction` arg for F.cross_entropy
     final_lr_ratio: float = 0.1  # ratio of initial to final lr during sft
     tokenize_on_fly: bool = True
+    sft_warmup_fraction: float = 0.05 # Fraction of SFT steps to perform LR warmup on

@@ -329,7 +329,7 @@ def get_infinite_iter(dataloader):
     """
     Infinite iterator, skipping over the None cases above.
     """
-    found_item = False
+    num_samples = 0
     epoch_idx = 0
     sampler = dataloader.sampler
     should_set_epochs = isinstance(sampler, DistributedSampler)
@@ -339,10 +339,11 @@ def get_infinite_iter(dataloader):
         for item in iter(dataloader):
             if item is not None:
                 yield item
-                found_item = True
+                num_samples += 1
+        print(f"{epoch_idx=} completed after {num_samples=}")
         epoch_idx += 1
 
-        if not found_item:
+        if not num_samples:
             raise RuntimeError(
                 "dataloader only had trivial None data, probably need to increase max_seq_length"
             )

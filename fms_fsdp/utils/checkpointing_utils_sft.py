@@ -171,23 +171,19 @@ class Checkpointer:
     def _validate_ckp_path(self, path):
         """Interpret path to appropriate checkpoint. If found, return modified path. If not found, return None."""
         # Does path exist and is it non-empty?
+        is_file = os.path.isfile(path)
+        has_hf_config_json = not is_file and (Path(path) / "config.json").exists()
+        if has_hf_config_json:
+            return path
         if os.path.exists(path):
             # Is this a file?
             if os.path.isfile(path):
                 return path
-            safetensor_files = [
-                f for f in os.listdir(path) if f.endswith("safetensors")
-            ]
-            if safetensor_files:
-                assert len(safetensor_files) == 1, (
-                    f"Expected a single safetensor file {safetensor_files=}"
-                )
-                return safetensor_files[0]
             # Is this a sharded directory?
-            if "metadata.pth" in os.listdir(path):
+            elif "metadata.pth" in os.listdir(path):
                 return path
             # Is this a path to a set of checkpoints?
-            if len(os.listdir(path)) > 0:
+            elif len(os.listdir(path)) > 0:
                 latest = get_latest(path)
                 if os.path.isfile(latest):
                     return latest
@@ -214,9 +210,11 @@ class Checkpointer:
         Returns model, optimizer, dataloader, current step, and current tokens seen.
         """
         is_resuming = False
+        # First check if this is resuming a prior fms run:
         if self._validate_ckp_path(self.ckp_path) is not None:
             path = self.ckp_path
             is_resuming = True
+        # Then check the user-supplied path next
         load_path = self._validate_ckp_path(path)
         if load_path is None:
             raise ValueError(
@@ -225,29 +223,34 @@ class Checkpointer:
         else:
             self.report(f"Prior checkpoint {load_path} detected.")
             model_load_time = time.time()
-            if os.path.isfile(load_path):
-                is_safetensor_file = load_path.endswith("safetensors")
-                if is_safetensor_file:
-                    # safetensor files are assumed to be in HF format, which requires some
-                    # conversion. We load the full HF model from the the parent dir, and then
-                    # convert using a utility
+            load_path_obj = Path(load_path)
+            if load_path_obj.is_dir() and (load_path_obj / "config.json").exists():
+                hf_ckpt_dir = load_path_obj
+            elif (
+                load_path_obj.is_file()
+                and (load_path_obj.parent() / "config.json").exists()
+            ):
+                hf_ckpt_dir = load_path_obj.parent()
+            else:
+                hf_ckpt_dir = None
+
+            if load_path_obj.is_file() or hf_ckpt_dir is not None:
+                if hf_ckpt_dir is not None:
+                    self.report(f"Loading and converting HF ckpt from {hf_ckpt_dir}.")
                     from transformers import (
                         AutoModelForCausalLM,
                     )
 
-                    parent_dir = Path(load_path).parent
-                    hf_model = AutoModelForCausalLM.from_pretrained(parent_dir)
+                    hf_model = AutoModelForCausalLM.from_pretrained(hf_ckpt_dir)
                     checkpoint_data = convert_state_dict_to_mamba_ssm(hf_model)
                 else:
-                    checkpoint_data = torch.load(load_path, map_location="cpu")
+                    checkpoint_data = torch.load(load_path, map_location="cpu").get(
+                        "model_state"
+                    )
                 if is_compiled:
-                    model._orig_mod.load_state_dict(
-                        checkpoint_data.get("model_state"), strict=strict
-                    )
+                    model._orig_mod.load_state_dict(checkpoint_data, strict=strict)
                 else:
-                    model.load_state_dict(
-                        checkpoint_data.get("model_state"), strict=strict
-                    )
+                    model.load_state_dict(checkpoint_data, strict=strict)
                 if self.model_auto_placement:
                     model.to("cuda")
                 else:

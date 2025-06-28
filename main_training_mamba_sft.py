@@ -291,14 +291,20 @@ def main(**kwargs):
     checkpointer = Checkpointer(
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
+
+    ckpt_load_path = Path(cfg.ckpt_load_path)
+    is_hf_ckpt_path = (ckpt_load_path / "config.json").exists()
+    if ckpt_load_path.is_file() or is_hf_ckpt_path:
+        ckpt_load_path_str = cfg.ckpt_load_path
+    else:
+        ckpt_load_path_str = os.path.join(cfg.ckpt_load_path, "checkpoints/")
+
     model, optimizer, _, start_step, tokens_seen, pred_tokens_seen, is_resuming = (
         checkpointer.load(
             model,
             optimizer,
             None,
-            path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
-            if not os.path.isfile(cfg.ckpt_load_path)
-            else cfg.ckpt_load_path,
+            path=ckpt_load_path_str,
             strict=False,
         )
     )

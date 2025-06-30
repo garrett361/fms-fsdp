@@ -228,9 +228,9 @@ class Checkpointer:
                 hf_ckpt_dir = load_path_obj
             elif (
                 load_path_obj.is_file()
-                and (load_path_obj.parent() / "config.json").exists()
+                and (load_path_obj.parent / "config.json").exists()
             ):
-                hf_ckpt_dir = load_path_obj.parent()
+                hf_ckpt_dir = load_path_obj.parent
             else:
                 hf_ckpt_dir = None
 

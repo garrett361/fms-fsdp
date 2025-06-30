@@ -156,7 +156,9 @@ def train(
         if not should_step:
             continue
 
-        ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        # Skip clipping if grad_clip_thresh < 0
+        if cfg.grad_clip_thresh > 0:
+            ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 

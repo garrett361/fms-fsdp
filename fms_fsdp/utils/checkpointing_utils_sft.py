@@ -284,6 +284,10 @@ class Checkpointer:
                             embedding_weight[-extra_vocab_size:],
                         )
                         # Expect the added embeddings and lm head entries to all be the same
+                        # NOTE: @goon - this is apparently failing. Manual inspection shows that the
+                        # padding tokens (embedding_extras[0] and lm_head_extras[0]) are getting
+                        # some training, while the other extra entries are all the same, as
+                        # expected. Unclear why this is happening. TODO: @goon - figure out.
                         self.report(f"{lm_head_extras=}")
                         self.report(f"{embedding_extras=}")
                         embedding_mean_diff = (

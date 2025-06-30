@@ -305,7 +305,7 @@ def main(**kwargs):
             optimizer,
             None,
             path=ckpt_load_path_str,
-            strict=False,
+            strict=True,
         )
     )
     if not is_resuming:

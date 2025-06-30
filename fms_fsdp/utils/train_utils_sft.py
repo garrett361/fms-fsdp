@@ -2,6 +2,8 @@ import os
 from dataclasses import asdict
 from functools import partial
 
+import torch
+
 try:
     import packaging.version
 except ImportError:
@@ -113,6 +115,19 @@ def train(
         optimizer.zero_grad()
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
+        if cfg.sanity_print_toks:
+            for batch_idx in range(label.shape[0]):
+                idxs = label[batch_idx] != -100
+                if not torch.any(idxs):
+                    print(f"[{rank=}, {batch_idx=}]: no preds!")
+                else:
+                    gold_labels = label[batch_idx][idxs]
+                    preds = output[batch_idx][idxs].max(dim=-1).indices
+                    print(
+                        f"[{rank=}, {batch_idx=}]:\n\tLabel:{tokenizer.decode(gold_labels)}\n\tPreds:{tokenizer.decode(preds)}"
+                    )
+                    del gold_labels
+                    del preds
 
         loss = ce_loss(output.view(-1, output.size(-1)), label.reshape(-1).long())
 

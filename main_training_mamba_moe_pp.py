@@ -6,12 +6,12 @@ import fire
 import torch
 import torch.optim as optim
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.moe import MoE
 from mamba_ssm.moe_utils import (
     act_ckpt_moe,
     fully_shard_moe,
     get_total_exp_and_active_params,
     init_moe,
+    set_pp_layers,
 )
 from torch import distributed as dist
 from torch.distributed.device_mesh import init_device_mesh
@@ -104,31 +104,18 @@ def main(**kwargs):
         f"{world_size=} must be divisible by {cfg.ep_degree=}"
     )
 
+    pp_degree = world_size // cfg.ep_degree
+    mesh = init_device_mesh(
+        "cuda", (pp_degree, cfg.ep_degree), mesh_dim_names=("pp", "ep")
+    )
+
     if cfg.sharding_strategy == "hsdp":
-        fsdp_mesh = init_device_mesh(
-            "cuda",
-            (world_size // torch.cuda.device_count(), torch.cuda.device_count()),
-            mesh_dim_names=(
-                "fsdp_outer",
-                "fsdp_inner",
-            ),
-        )
+        raise NotImplementedError("TODO: hsdp")
     else:
-        fsdp_mesh = init_device_mesh(
-            "cuda", (world_size,), mesh_dim_names=("fsdp_inner",)
-        )
-    if cfg.ep_degree == world_size:
-        ep_mesh = init_device_mesh("cuda", (world_size,), mesh_dim_names=("ep_inner",))
-    else:
-        ep_mesh = init_device_mesh(
-            "cuda",
-            (world_size // cfg.ep_degree, cfg.ep_degree),
-            mesh_dim_names=("ep_outer", "ep_inner"),
-        )
+        fsdp_mesh = mesh["ep"]
 
     if rank == 0:
-        print(f"{fsdp_mesh=}")
-        print(f"{ep_mesh=}")
+        print(f"{mesh=}")
         # Count for the full model on the meta device to avoid inaccurate counts due to EP
         with torch.device("meta"):
             total, exp, active = get_total_exp_and_active_params(
@@ -150,9 +137,15 @@ def main(**kwargs):
         if rank == 0:
             print("Building model on meta device...")
         with torch.device("meta"):
-            model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["ep_inner"])
+            model = MambaLMHeadModel(mamba_config, ep_mesh=mesh["ep"])
     else:
-        model = MambaLMHeadModel(mamba_config, ep_mesh=ep_mesh["ep_inner"])
+        model = MambaLMHeadModel(mamba_config, ep_mesh=mesh["ep"])
+
+    set_pp_layers(
+        model,
+        n_stages=pp_degree,
+        stage_idx=mesh["pp"].get_local_rank(),
+    )
 
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
@@ -165,18 +158,12 @@ def main(**kwargs):
     if cfg.fsdp_activation_checkpointing:
         act_ckpt_moe(model, cfg.act_ckpt_mixer_only)
 
-    # TODO: @goon - selective AC
-
-    mp_policy = MixedPrecisionPolicy(
-        param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16
-    )
-    ep_fsdp_mesh = None if ep_mesh.ndim == 1 else ep_mesh["ep_outer"]
-    if not rank:
-        print(f"{ep_fsdp_mesh=}")
+    dtype = torch.bfloat16
+    mp_policy = MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=dtype)
     fully_shard_moe(
-        model=model,
-        fsdp_mesh=fsdp_mesh,
-        ep_fsdp_mesh=ep_fsdp_mesh,
+        model,
+        fsdp_mesh=mesh["ep"],
+        ep_fsdp_mesh=None,
         mp_policy=mp_policy,
         reshard_lm_head_after_fwd=cfg.reshard_lm_head_after_fwd,
         explicit_fwd_prefetch=cfg.explicit_fwd_prefetch,
@@ -187,13 +174,6 @@ def main(**kwargs):
         if rank == 0:
             print("Moving meta model to CUDA...")
         init_moe(model)
-
-    elif cfg.ep_degree == world_size:
-        # If the experts are not sharded and just ignored, then we must also manually move the
-        # ignored experts to cuda, as fully_shard doesn't do so.
-        for block in model.backbone.layers.values():
-            if isinstance(block.mlp, MoE):
-                block.mlp.experts.to(device=torch.cuda.current_device())
 
     if rank == 0:
         print(f"{model=}")

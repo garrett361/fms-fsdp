@@ -87,16 +87,7 @@ def main(**kwargs):
             )
         cfg.vocab_size = mamba_config.vocab_size
 
-    # get data loader
-    if rank == 0:
-        print("Constructing datasets...")
-    if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size)
-    else:
-        train_loader = get_dummy_loader(cfg, rank, world_size)
-    if rank == 0:
-        print("Datasets constructed!")
-
+    # Mesh setup
     assert world_size >= cfg.ep_degree, (
         f"{world_size=} must be at least as large as {cfg.ep_degree=}"
     )
@@ -108,6 +99,17 @@ def main(**kwargs):
     mesh = init_device_mesh(
         "cuda", (pp_degree, cfg.ep_degree), mesh_dim_names=("pp", "ep")
     )
+
+    # get data loader
+    if rank == 0:
+        print("Constructing datasets...")
+    # All PP members get the same data, so it's EP-way data parallel
+    if not cfg.use_dummy_dataset:
+        train_loader = get_data_loader(cfg, mesh["ep"].get_local_rank(), cfg.ep_degree)
+    else:
+        train_loader = get_dummy_loader(cfg, mesh["ep"].get_local_rank(), cfg.ep_degree)
+    if rank == 0:
+        print("Datasets constructed!")
 
     if cfg.sharding_strategy == "hsdp":
         raise NotImplementedError("TODO: hsdp")

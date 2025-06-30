@@ -142,6 +142,6 @@ class TestBuildModels:
         with torch.device("meta"):
             model = MambaLMHeadModel(mamba_config)
         total, exp, active = get_total_exp_and_active_params(model)
-        assert total == 1_413_412_704 # ~ 1.4B
-        assert exp == 905_969_664
-        assert active == 141_341_2704
+        assert total == 1_158_122_960 # ~ 1.1B
+        assert exp == 754_974_720
+        assert active == 497_520_080

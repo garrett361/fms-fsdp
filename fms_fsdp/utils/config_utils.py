@@ -241,7 +241,7 @@ OLMOE_7B_CFG = MambaConfig(
 
 
 HYBRID_1B_MOE = MambaConfig(
-    d_model=1536,
+    d_model=1280,
     d_intermediate=768,
     n_layer=8,
     vocab_size=LLAMA3_VOCAB_SIZE,
@@ -253,7 +253,7 @@ HYBRID_1B_MOE = MambaConfig(
         "d_conv": 0,
         "head_dim": 128,
         "num_heads": 16,
-        "num_heads_kv": 16,
+        "num_heads_kv": 4,
         "out_proj_bias": False,
         "qkv_proj_bias": False,
         "rotary_emb_dim": 64,

@@ -242,11 +242,13 @@ class Checkpointer:
                     )
 
                     hf_model = AutoModelForCausalLM.from_pretrained(hf_ckpt_dir)
-                    checkpoint_data = convert_state_dict_to_mamba_ssm(hf_model)
-                else:
-                    checkpoint_data = torch.load(load_path, map_location="cpu").get(
+                    checkpoint_data = convert_state_dict_to_mamba_ssm(hf_model)[
                         "model_state"
-                    )
+                    ]
+                else:
+                    checkpoint_data = torch.load(load_path, map_location="cpu")[
+                        "model_state"
+                    ]
                 if is_compiled:
                     model._orig_mod.load_state_dict(checkpoint_data, strict=strict)
                 else:

@@ -20,6 +20,7 @@ from fms_fsdp.policies import *
 def train(
     cfg,
     model,
+    tokenizer,
     local_rank,
     rank,
     train_loader,
@@ -91,10 +92,6 @@ def train(
     start = time.time()
     loop_start = time.time()
     train_loss = -1
-    if cfg.sanity_print_toks:
-        from transformers import AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path, use_fast=True)
 
     for batch_idx, batch in enumerate(
         train_loader, start=start_step * cfg.grad_acc_steps + 1

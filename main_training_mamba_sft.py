@@ -354,6 +354,7 @@ def main(**kwargs):
     train(
         cfg,
         model,
+        tokenizer,
         local_rank,
         rank,
         train_loader,

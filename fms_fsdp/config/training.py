@@ -90,6 +90,9 @@ class train_config:
     loss_free_balancing_lr: Optional[float] = None
 
     # PP settings
+    # [PP Batch Config]
+    # For pp, the batch_size sets the total batch size per pipeline instance, which further split
+    # into batch_size / n_microbatches sized microbatches which are pipelined through the model.
     n_microbatches: Optional[int] = None
 
     # Misc

@@ -224,13 +224,14 @@ def main(**kwargs):
     )
 
     if is_first:
-        input_args = torch.randint(
-            cfg.vocab_size,
-            size=(cfg.batch_size // cfg.n_microbatches, cfg.seq_length),
+        input_args = torch.empty(
+            cfg.batch_size // cfg.n_microbatches,
+            cfg.seq_length,
             device="meta",
+            dtype=torch.int32,
         )
     else:
-        input_args = torch.randn(
+        input_args = torch.empty(
             cfg.batch_size // cfg.n_microbatches,
             cfg.seq_length,
             model.config.d_model,
@@ -238,12 +239,12 @@ def main(**kwargs):
             device="meta",
         )
     if is_last:
-        output_args = torch.randn(
+        output_args = torch.empty(
             cfg.batch_size // cfg.n_microbatches,
             cfg.seq_length,
             cfg.vocab_size,
-            device="meta",
             dtype=dtype,
+            device="meta",
         )
     else:
         output_args = torch.randn(

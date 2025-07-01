@@ -160,7 +160,7 @@ def main(**kwargs):
         # NOTE: @goon - DTensor.numel() will report the full logical parameter counts, whereas we
         # want the actual count of local params here.
         total_params_local = sum(
-            p.numel() if isinstance(p, DTensor) else p.to_local().numel()
+            p.to_local().numel() if isinstance(p, DTensor) else p.numel()
             for p in model.parameters()
             if p.requires_grad
         )

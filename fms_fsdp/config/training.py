@@ -89,6 +89,9 @@ class train_config:
     # loss_free moe balancing
     loss_free_balancing_lr: Optional[float] = None
 
+    # PP settings
+    n_microbatches: Optional[int] = None
+
     # Misc
     foreach: Optional[bool] = None
     fused: Optional[bool] = None

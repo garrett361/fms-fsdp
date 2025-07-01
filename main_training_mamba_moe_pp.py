@@ -253,15 +253,19 @@ def main(**kwargs):
     )
 
     # Create pipeline schedule
-    # TODO: @goon - make n_microbatches configurable
-    n_microbatches = mesh["pp"].size()
+    assert cfg.n_microbatches, f"{cfg.n_microbatches=}"
+    assert cfg.batch_size % cfg.n_microbatches == 0, (
+        f"{cfg.n_microbatches=}, {cfg.batch_size=}"
+    )
 
     def flattened_cross_entropy(
         input: torch.Tensor, target: torch.Tensor
     ) -> torch.Tensor:
         return F.cross_entropy(input.view(-1, input.size(-1)), target.view(-1).long())
 
-    pp_schedule = Schedule1F1B(stage, n_microbatches, loss_fn=flattened_cross_entropy)
+    pp_schedule = Schedule1F1B(
+        stage, cfg.n_microbatches, loss_fn=flattened_cross_entropy
+    )
 
     # optionally load from checkpoint (when continue pretraining)
     if cfg.skip_ckpt:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import fire
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.moe_utils import (
@@ -17,17 +18,18 @@ from torch import distributed as dist
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.elastic.multiprocessing.errors import record
 from torch.distributed.fsdp import MixedPrecisionPolicy
+from torch.distributed.pipelining import PipelineStage, Schedule1F1B
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import CheckpointerFSDP2
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
-from fms_fsdp.utils.train_utils_moe import (
+from fms_fsdp.utils.train_utils_moe_pp import (
     get_profiler,
     setup,
     setup_environ_flags,
-    train_moe,
+    train_moe_pp,
 )
 
 """
@@ -131,10 +133,15 @@ def main(**kwargs):
 
     # Model building order:
     # 1. Create model, maybe on meta device.
-    # 2. Activation checkpointing, if applicable
-    # 3. Compile, if applicable
+    # 2. adjust layers for pp (set_pp_layers)
+    # 3. Activation checkpointing, if applicable
     # 4. fully_shard
     # 5. init weights, if meta device was used
+    # 6. Build optimizers
+    # 7. Optionally compile
+    # 8. Build pipeline stages
+    # 10. Build pipeline schedule
+
     if cfg.low_cpu_fsdp:
         if rank == 0:
             print("Building model on meta device...")
@@ -198,6 +205,64 @@ def main(**kwargs):
         fused=cfg.fused,
     )
 
+    # PP setup
+
+    # PP Metadata
+
+    is_first = mesh["pp"].get_local_rank() == 0
+    is_last = mesh["pp"].get_local_rank() == mesh["pp"].size() - 1
+
+    # Set input/output tensor shapes to avoid PP from trying (and often failing) to auto-determine
+    # shapes.
+
+    if is_first:
+        input_args = torch.randint(
+            cfg.vocab_size,
+            size=(cfg.batch_size, cfg.seq_length),
+            device="meta",
+        )
+    else:
+        input_args = torch.randn(
+            cfg.batch_size,
+            cfg.seq_length,
+            model.config.d_model,
+            dtype=dtype,
+            device="meta",
+        )
+    if is_last:
+        output_args = torch.randn(
+            cfg.batch_size, cfg.seq_length, cfg.vocab_size, device="meta", dtype=dtype
+        )
+    else:
+        output_args = torch.randn(
+            cfg.batch_size,
+            cfg.seq_length,
+            model.config.d_model,
+            dtype=dtype,
+            device="meta",
+        )
+
+    stage = PipelineStage(
+        model,
+        mesh["pp"].get_local_rank(),
+        mesh["pp"].size(),
+        local_rank,  # Is an int fine here?
+        group=mesh["pp"].get_group(),
+        input_args=input_args,
+        output_args=output_args,
+    )
+
+    # Create pipeline schedule
+    # TODO: @goon - make n_microbatches configurable
+    n_microbatches = mesh["pp"].size()
+
+    def flattened_cross_entropy(
+        input: torch.Tensor, target: torch.Tensor
+    ) -> torch.Tensor:
+        return F.cross_entropy(input.view(-1, input.size(-1)), target.view(-1).long())
+
+    pp_schedule = Schedule1F1B(stage, n_microbatches, loss_fn=flattened_cross_entropy)
+
     # optionally load from checkpoint (when continue pretraining)
     if cfg.skip_ckpt:
         checkpointer = None
@@ -256,9 +321,13 @@ def main(**kwargs):
     # Train
     if rank == 0:
         print(f"Training for {cfg.num_steps} steps")
-    train_moe(
+    train_moe_pp(
         cfg,
         model,
+        pp_schedule,
+        mesh,
+        is_first,
+        is_last,
         local_rank,
         rank,
         train_loader,

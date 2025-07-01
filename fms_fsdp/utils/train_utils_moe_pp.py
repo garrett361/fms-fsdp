@@ -28,9 +28,13 @@ from torch.distributed.fsdp import ShardingStrategy
 from fms_fsdp.policies import *
 
 
-def train_moe(
+def train_moe_pp(
     cfg,
     model,
+    pp_schedule,
+    mesh,
+    is_first,
+    is_last,
     local_rank,
     rank,
     train_loader,
@@ -88,6 +92,7 @@ def train_moe(
     model.train()
 
     if cfg.tok_count_hooks or cfg.loss_free_balancing_lr:
+        raise NotImplementedError  # TODO: @goon - probably need some mesh info here.
         tok_count_hook_dict = attach_tok_count_hooks(model)
         tok_stats_dict = defaultdict(int)
     else:
@@ -99,6 +104,9 @@ def train_moe(
     else:
         block_mag_hook_dict = None
 
+    # ddp_stats
+    # 0: losses
+    # 1: steps
     ddp_stats = torch.zeros(2).to(local_rank)
     g_norms = []
 
@@ -106,28 +114,26 @@ def train_moe(
     loop_start = time.time()
     train_loss = -1
     if cfg.extra_timing:
-        fwd_timer, bwd_timer = CUDATimer(), CUDATimer()
-    else:
-        from contextlib import nullcontext
+        raise NotImplementedError("extra_timing not yet implemented forPP")
 
-        fwd_timer = bwd_timer = nullcontext()
-
+    pp_losses_list = []
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        with fwd_timer:
-            if batch_idx > cfg.num_steps:
-                break
-            input = input.to(local_rank)
-            label = label.to(local_rank)
+        input = input.to(local_rank)
+        label = label.to(local_rank)
 
-            optimizer.zero_grad()
-            output = model(input)
-            output = output.logits if hasattr(output, "logits") else output
-            ce_loss = torch.nn.CrossEntropyLoss()
-            loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
-        with bwd_timer:
-            loss.backward()
+        optimizer.zero_grad()
+        if is_first:
+            pp_schedule.step(input)
+            out_pp = None
+        elif is_last:
+            out_pp = pp_schedule.step(target=label, losses=pp_losses_list)
+        else:
+            pp_schedule.step()
+            out_pp = None
 
         if cfg.loss_free_balancing_lr:
+            raise NotImplementedError  # TODO: @goon -
+            # TODO: @goon - specify mesh in all reduce
             tok_count_hook_dict.all_reduce()
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
@@ -141,8 +147,7 @@ def train_moe(
             g_norms.append(-1.0)
         else:
             norm_t = clip_grad_norm_(
-                model.parameters(),
-                cfg.grad_clip_thresh,
+                model.parameters(), cfg.grad_clip_thresh, pp_mesh=mesh["pp"]
             )
             if isinstance(norm_t, DTensor):
                 norm_t = norm_t.full_tensor()
@@ -151,8 +156,11 @@ def train_moe(
             optimizer.step()
             scheduler.step()
 
-        ddp_stats[0] += loss.detach().item()
-        ddp_stats[1] += 1
+        # Only adjust ddp_stats on those ranks which actually compute losses
+        if pp_losses_list:
+            ddp_stats[0] += torch.stack(pp_losses_list).mean().detach().item()
+            ddp_stats[1] += 1
+            pp_losses_list.clear()
 
         if profiler:
             profiler.step()
@@ -164,20 +172,6 @@ def train_moe(
             new_tokens_seen = (
                 (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
             )
-
-            if cfg.extra_timing:
-                fwd_time_mean_s = fwd_timer.get_mean_time_s()
-                fwd_time_std_s = fwd_timer.get_std_time_s()
-                fwd_timer.reset()
-
-                bwd_time_mean_s = bwd_timer.get_mean_time_s()
-                bwd_time_std_s = bwd_timer.get_std_time_s()
-                bwd_timer.reset()
-                if rank == 0:
-                    print(f"{fwd_time_mean_s=}")
-                    print(f"{fwd_time_std_s=}")
-                    print(f"{bwd_time_mean_s=}")
-                    print(f"{bwd_time_std_s=}")
 
             # Update tok_stats_dict if not already done
             if tok_stats_dict is not None and not tok_stats_dict:

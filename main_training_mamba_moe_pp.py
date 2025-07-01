@@ -168,16 +168,16 @@ def main(**kwargs):
     if mesh["ep"].get_local_rank() == 0:
         print(f"\nPP model on {mesh['pp'].get_local_rank()=}: {model}")
 
-    # NOTE: @goon - Sanity checking param count:
-    if rank == 0:
-        # NOTE: @goon - DTensor.numel() will report the full logical parameter counts, whereas we
-        # want the actual count of local params here.
-        total_params_local = sum(
-            p.to_local().numel() if isinstance(p, DTensor) else p.numel()
-            for p in model.parameters()
-            if p.requires_grad
-        )
-        print(f"\n--> Local model has {total_params_local / 1e9} Billion params\n")
+    dist.barrier()
+    # NOTE: @goon - DTensor.numel() will report the full logical parameter counts, whereas we
+    # want the actual count of local params here.
+    total_params_local = sum(
+        p.to_local().numel() if isinstance(p, DTensor) else p.numel()
+        for p in model.parameters()
+        if p.requires_grad
+    )
+    print(f"\n--> Local model on {rank=} has {total_params_local / 1e9} Billion params\n")
+    dist.barrier()
 
     # AC
     if cfg.fsdp_activation_checkpointing:

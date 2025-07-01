@@ -76,6 +76,11 @@ def main(**kwargs):
         if cfg.loss_free_balancing_lr < 0:
             raise ValueError(f"{cfg.loss_free_balancing_lr=} must be non-negative.")
         mamba_config.moe_cfg["gate_bias"] = True
+
+    # NOTE: @goon - set return_logits = True to avoid returning a CausalLMOutput object and just
+    # return logit torch.Tensor. A feature of the mamba_moe branch of mamba
+    mamba_config.return_logits = True
+
     if not rank:
         print(f"{mamba_config.moe_cfg=}")
 

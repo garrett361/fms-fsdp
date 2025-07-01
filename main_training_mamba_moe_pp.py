@@ -108,6 +108,12 @@ def main(**kwargs):
         "cuda", (pp_degree, cfg.ep_degree), mesh_dim_names=("pp", "ep")
     )
 
+    dist.barrier()
+    if not rank:
+        print("\nRank Assignments:")
+    print(f"[{rank=}] {mesh['ep'].get_local_rank()=} {mesh['pp'].get_local_rank()=}")
+    dist.barrier()
+
     # get data loader
     if rank == 0:
         print("Constructing datasets...")

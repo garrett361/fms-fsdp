@@ -17,6 +17,7 @@ from torch import distributed as dist
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.elastic.multiprocessing.errors import record
 from torch.distributed.fsdp import MixedPrecisionPolicy
+from torch.distributed.tensor import DTensor
 from torch.optim.lr_scheduler import LambdaLR
 
 from fms_fsdp import config
@@ -156,8 +157,12 @@ def main(**kwargs):
 
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
+        # NOTE: @goon - DTensor.numel() will report the full logical parameter counts, whereas we
+        # want the actual count of local params here.
         total_params_local = sum(
-            p.numel() for p in model.parameters() if p.requires_grad
+            p.numel() if isinstance(p, DTensor) else p.to_local().numel()
+            for p in model.parameters()
+            if p.requires_grad
         )
         print(f"\n--> Local model has {total_params_local / 1e9} Billion params\n")
 

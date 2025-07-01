@@ -172,11 +172,11 @@ def train_moe_pp(
             train_loss = ddp_stats[0] / ddp_stats[1]
             elapsed_time = time.time() - loop_start
 
-            # NOTE: @goon - For pp, the batch_size sets the total batch size per pipeline instance, changing the
-            # throughput computation slightly.
-            new_tokens_seen = (
-                (batch_idx - start_step) * mesh["pp"].size() * cfg.batch_size * cfg.seq_length
-            )
+            # NOTE: @goon - For pp, the batch_size sets the total batch size per pipeline instance,
+            # changing the throughput computation slightly.
+            n_pipeline_instances = mesh.size() // mesh["pp"].size()
+            total_tok_per_step = n_pipeline_instances * cfg.batch_size * cfg.seq_length
+            new_tokens_seen = (batch_idx - start_step) * total_tok_per_step
 
             # Update tok_stats_dict if not already done
             if tok_stats_dict is not None and not tok_stats_dict:
@@ -210,11 +210,12 @@ def train_moe_pp(
                 current_gnorm = sum(g_norms) / len(g_norms)
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (batch_idx - start_step)
+                # NOTE: @goon - another change in the PP throughput computation here:
                 current_throughput = int(
-                    cfg.batch_size * cfg.seq_length / current_step_time
+                    total_tok_per_step / world_size / current_step_time
                 )
                 overall_throughput = int(
-                    cfg.batch_size * cfg.seq_length / overall_step_time
+                    total_tok_per_step / world_size / overall_step_time
                 )
 
                 print("step:", batch_idx)

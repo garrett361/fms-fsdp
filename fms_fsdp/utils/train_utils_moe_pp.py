@@ -171,8 +171,11 @@ def train_moe_pp(
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[1]
             elapsed_time = time.time() - loop_start
+
+            # NOTE: @goon - For pp, the batch_size sets the total batch size per pipeline instance, changing the
+            # throughput computation slightly.
             new_tokens_seen = (
-                (batch_idx - start_step) * world_size * cfg.batch_size * cfg.seq_length
+                (batch_idx - start_step) * mesh["pp"].size() * cfg.batch_size * cfg.seq_length
             )
 
             # Update tok_stats_dict if not already done

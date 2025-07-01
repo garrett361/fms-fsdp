@@ -151,7 +151,7 @@ def main(**kwargs):
         model = MambaLMHeadModel(mamba_config, ep_mesh=mesh["ep"])
 
     if rank == 0:
-        print(f"Full model: {model}")
+        print(f"\nFull model: {model}")
 
     set_pp_layers(
         model,
@@ -160,7 +160,7 @@ def main(**kwargs):
     )
 
     if mesh["ep"].get_local_rank() == 0:
-        print(f"PP model on {mesh['pp'].get_local_rank()=}: {model}")
+        print(f"\nPP model on {mesh['pp'].get_local_rank()=}: {model}")
 
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
@@ -175,6 +175,7 @@ def main(**kwargs):
 
     dtype = torch.bfloat16
     mp_policy = MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=dtype)
+    print("Running fully_shard ...")
     fully_shard_moe(
         model,
         fsdp_mesh=mesh["ep"],
@@ -189,7 +190,6 @@ def main(**kwargs):
         if rank == 0:
             print("Moving meta model to CUDA...")
         init_moe(model)
-
 
     # torch compile
     if cfg.use_torch_compile:
@@ -212,7 +212,6 @@ def main(**kwargs):
     # PP setup
 
     # PP Metadata
-
     is_first = mesh["pp"].get_local_rank() == 0
     is_last = mesh["pp"].get_local_rank() == mesh["pp"].size() - 1
 
@@ -246,6 +245,7 @@ def main(**kwargs):
             device="meta",
         )
 
+    print("Creating PipelineStage ...")
     stage = PipelineStage(
         model,
         mesh["pp"].get_local_rank(),
@@ -255,6 +255,8 @@ def main(**kwargs):
         input_args=input_args,
         output_args=output_args,
     )
+    if mesh["ep"].get_local_rank() == 0:
+        print(f"\nPP stage on {mesh['pp'].get_local_rank()=}: {stage}")
 
     # Create pipeline schedule
     assert cfg.n_microbatches, f"{cfg.n_microbatches=}"
@@ -267,9 +269,12 @@ def main(**kwargs):
     ) -> torch.Tensor:
         return F.cross_entropy(input.view(-1, input.size(-1)), target.view(-1).long())
 
+    print("Creating PipelineStage ...")
     pp_schedule = Schedule1F1B(
         stage, cfg.n_microbatches, loss_fn=flattened_cross_entropy
     )
+    if mesh["ep"].get_local_rank() == 0:
+        print(f"\nPP schedule on {mesh['pp'].get_local_rank()=}: {pp_schedule}")
 
     # optionally load from checkpoint (when continue pretraining)
     if cfg.skip_ckpt:

@@ -269,8 +269,7 @@ def main(**kwargs):
         input_args=input_args,
         output_args=output_args,
     )
-    if mesh["ep"].get_local_rank() == 0:
-        print(f"\nPP stage on {mesh['pp'].get_local_rank()=}: {stage}")
+    # NOTE: @goon -  PipleineStage doesn't have a nice repr; no reason to print.
 
     def flattened_cross_entropy(
         input: torch.Tensor, target: torch.Tensor
@@ -283,8 +282,7 @@ def main(**kwargs):
     pp_schedule = Schedule1F1B(
         stage, cfg.n_microbatches, loss_fn=flattened_cross_entropy
     )
-    if mesh["ep"].get_local_rank() == 0:
-        print(f"\nPP schedule on {mesh['pp'].get_local_rank()=}: {pp_schedule}")
+    # NOTE: @goon -  Schedules don't have a nice repr; no reason to print.
 
     # optionally load from checkpoint (when continue pretraining)
     if cfg.skip_ckpt:

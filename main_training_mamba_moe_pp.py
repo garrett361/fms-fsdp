@@ -175,7 +175,8 @@ def main(**kwargs):
 
     dtype = torch.bfloat16
     mp_policy = MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=dtype)
-    print("Running fully_shard ...")
+    if not rank:
+        print("Running fully_shard ...")
     fully_shard_moe(
         model,
         fsdp_mesh=mesh["ep"],
@@ -255,7 +256,8 @@ def main(**kwargs):
             device="meta",
         )
 
-    print("Creating PipelineStage ...")
+    if not rank:
+        print("Creating PipelineStage ...")
     stage = PipelineStage(
         model,
         mesh["pp"].get_local_rank(),
@@ -273,7 +275,8 @@ def main(**kwargs):
     ) -> torch.Tensor:
         return F.cross_entropy(input.view(-1, input.size(-1)), target.view(-1).long())
 
-    print("Creating PP Schedule ...")
+    if not rank:
+        print("Creating PP Schedule ...")
     pp_schedule = Schedule1F1B(
         stage, cfg.n_microbatches, loss_fn=flattened_cross_entropy
     )

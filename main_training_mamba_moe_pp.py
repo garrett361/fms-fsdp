@@ -150,11 +150,17 @@ def main(**kwargs):
     else:
         model = MambaLMHeadModel(mamba_config, ep_mesh=mesh["ep"])
 
+    if rank == 0:
+        print(f"Full model: {model}")
+
     set_pp_layers(
         model,
         n_stages=pp_degree,
         stage_idx=mesh["pp"].get_local_rank(),
     )
+
+    if mesh["ep"].get_local_rank() == 0:
+        print(f"PP model on {mesh['pp'].get_local_rank()=}: {model}")
 
     # NOTE: @goon - Sanity checking param count:
     if rank == 0:
@@ -184,8 +190,6 @@ def main(**kwargs):
             print("Moving meta model to CUDA...")
         init_moe(model)
 
-    if rank == 0:
-        print(f"{model=}")
 
     # torch compile
     if cfg.use_torch_compile:

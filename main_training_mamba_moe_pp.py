@@ -176,7 +176,7 @@ def main(**kwargs):
         for p in model.parameters()
         if p.requires_grad
     )
-    print(f"\n--> Local model on {rank=} has {total_params_local / 1e9} Billion params\n")
+    print(f"--> Local model on {rank=} has {total_params_local / 1e9} Billion params\n")
     dist.barrier()
 
     # AC

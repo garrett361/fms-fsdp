@@ -177,6 +177,7 @@ def main(**kwargs):
     mp_policy = MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=dtype)
     if not rank:
         print("Running fully_shard ...")
+    dist.barrier()
     fully_shard_moe(
         model,
         fsdp_mesh=mesh["ep"],
@@ -258,6 +259,7 @@ def main(**kwargs):
 
     if not rank:
         print("Creating PipelineStage ...")
+    dist.barrier()
     stage = PipelineStage(
         model,
         mesh["pp"].get_local_rank(),
@@ -277,6 +279,7 @@ def main(**kwargs):
 
     if not rank:
         print("Creating PP Schedule ...")
+    dist.barrier()
     pp_schedule = Schedule1F1B(
         stage, cfg.n_microbatches, loss_fn=flattened_cross_entropy
     )

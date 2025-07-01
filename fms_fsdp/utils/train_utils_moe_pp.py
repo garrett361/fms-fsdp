@@ -118,6 +118,8 @@ def train_moe_pp(
 
     pp_losses_list = []
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
+        if batch_idx > cfg.num_steps:
+            break
         input = input.to(local_rank)
         label = label.to(local_rank)
 

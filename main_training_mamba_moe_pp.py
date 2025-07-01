@@ -218,15 +218,20 @@ def main(**kwargs):
     # Set input/output tensor shapes to avoid PP from trying (and often failing) to auto-determine
     # shapes.
 
+    assert cfg.n_microbatches, f"{cfg.n_microbatches=}"
+    assert cfg.batch_size % cfg.n_microbatches == 0, (
+        f"{cfg.n_microbatches=}, {cfg.batch_size=}"
+    )
+
     if is_first:
         input_args = torch.randint(
             cfg.vocab_size,
-            size=(cfg.batch_size, cfg.seq_length),
+            size=(cfg.batch_size // cfg.n_microbatches, cfg.seq_length),
             device="meta",
         )
     else:
         input_args = torch.randn(
-            cfg.batch_size,
+            cfg.batch_size // cfg.n_microbatches,
             cfg.seq_length,
             model.config.d_model,
             dtype=dtype,
@@ -234,11 +239,15 @@ def main(**kwargs):
         )
     if is_last:
         output_args = torch.randn(
-            cfg.batch_size, cfg.seq_length, cfg.vocab_size, device="meta", dtype=dtype
+            cfg.batch_size // cfg.n_microbatches,
+            cfg.seq_length,
+            cfg.vocab_size,
+            device="meta",
+            dtype=dtype,
         )
     else:
         output_args = torch.randn(
-            cfg.batch_size,
+            cfg.batch_size // cfg.n_microbatches,
             cfg.seq_length,
             model.config.d_model,
             dtype=dtype,
@@ -258,18 +267,12 @@ def main(**kwargs):
     if mesh["ep"].get_local_rank() == 0:
         print(f"\nPP stage on {mesh['pp'].get_local_rank()=}: {stage}")
 
-    # Create pipeline schedule
-    assert cfg.n_microbatches, f"{cfg.n_microbatches=}"
-    assert cfg.batch_size % cfg.n_microbatches == 0, (
-        f"{cfg.n_microbatches=}, {cfg.batch_size=}"
-    )
-
     def flattened_cross_entropy(
         input: torch.Tensor, target: torch.Tensor
     ) -> torch.Tensor:
         return F.cross_entropy(input.view(-1, input.size(-1)), target.view(-1).long())
 
-    print("Creating PipelineStage ...")
+    print("Creating PP Schedule ...")
     pp_schedule = Schedule1F1B(
         stage, cfg.n_microbatches, loss_fn=flattened_cross_entropy
     )

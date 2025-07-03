@@ -626,24 +626,24 @@ def get_model_config(model_variant) -> LLaMAConfig | MambaConfig:
         n_layer = int(ds2_lite_cfg_dev[1])
         model_config = deepcopy(DS2_LITE_CFG)
         model_config.n_layer = n_layer
-        print(f"Building dev model with: {n_layer=}")
+        print(f"Building {model_variant} dev model")
     elif ds2_cfg_dev := re.search(r"deepseek-v2-dev_(\d+)_layer", model_variant):
         n_layer = int(ds2_cfg_dev[1])
         model_config = deepcopy(DS2_CFG)
         model_config.n_layer = n_layer
-        print(f"Building dev model with: {n_layer=}")
+        print(f"Building {model_variant} dev model")
     elif ds3_cfg_dev := re.search(r"deepseek-v3-dev_(\d+)_layer", model_variant):
         n_layer = int(ds3_cfg_dev[1])
         model_config = deepcopy(DS3_CFG)
         model_config.n_layer = n_layer
-        print(f"Building dev model with: {n_layer=}")
+        print(f"Building {model_variant} dev model")
     elif maverick_cfg_dev := re.search(
         r"llama4-maverick-dev_(\d+)_layer", model_variant
     ):
         n_layer = int(maverick_cfg_dev[1])
         model_config = deepcopy(LLAMA4_MAVERICK_CFG)
         model_config.n_layer = n_layer
-        print(f"Building dev model with: {n_layer=}")
+        print(f"Building {model_variant} dev model")
 
     else:
         raise ValueError(f"model variant {model_variant} not supported.")

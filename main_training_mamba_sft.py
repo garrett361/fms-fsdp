@@ -354,6 +354,7 @@ def main(**kwargs):
         print(f"Training for {cfg.num_steps} steps")
     train(
         cfg,
+        mamba_config,
         model,
         tokenizer,
         local_rank,

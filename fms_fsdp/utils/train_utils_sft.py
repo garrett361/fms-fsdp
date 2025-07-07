@@ -17,10 +17,12 @@ import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
+from fms_fsdp.utils.checkpointing_utils_sft import save_as_single_hf_safetensors_file
 
 
 def train(
     cfg,
+    mamba_config,
     model,
     tokenizer,
     local_rank,
@@ -295,6 +297,18 @@ def train(
                 None,
                 tokens_seen=tokens_seen + new_tokens_seen,
                 pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
+            )
+            _, model_state_dict_fms = checkpointer.save_single_file(step_idx, model)
+
+            hf_output_dir = os.path.join(
+                checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
+            )
+            save_as_single_hf_safetensors_file(
+                mamba_cfg=mamba_config,
+                mamba_state_dict=model_state_dict_fms,
+                output_dir=hf_output_dir,
+                tokenizer=tokenizer,
+                precision="fp32",
             )
 
     return train_loss

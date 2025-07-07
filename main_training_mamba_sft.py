@@ -43,13 +43,12 @@ from fms_fsdp.utils.train_utils_sft import (
 
 
 @contextmanager
-def local_rank_zero_first(rank):
-    is_local_rank_zero = rank % torch.cuda.device_count() == 0
-    if not is_local_rank_zero:
+def rank_zero_first(rank):
+    if rank:
         dist.barrier()
 
     yield
-    if is_local_rank_zero:
+    if not rank:
         dist.barrier()
 
 
@@ -178,16 +177,16 @@ def main(**kwargs):
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     tokenizer.chat_template = CHAT_TEMPLATES[cfg.chat_template_name]
 
-    with local_rank_zero_first(rank):
+    with rank_zero_first(rank):
         train_dataset = load_dataset(
             "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
         )["train"]
+        if not rank:
+            print(f"Train dataset loaded with {len(train_dataset)} total examples")
         # For sanity checking:
         if cfg._n_examples:
             warn(f"only using {cfg._n_examples=} for sanity checking!", stacklevel=1)
             train_dataset = train_dataset.select(range(cfg._n_examples))
-        if not rank:
-            print("Dataset loaded")
 
         print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
         if not cfg.use_dummy_dataset:
@@ -216,7 +215,7 @@ def main(**kwargs):
                     partial(
                         encode_sft_example,
                         tokenizer=tokenizer,
-                        max_seq_length=cfg.seq_length,
+                        max_seq_length=None,
                     ),
                     batched=False,
                     num_proc=torch.cuda.device_count() * cfg.num_workers,
@@ -229,8 +228,10 @@ def main(**kwargs):
                 )
                 train_dataset.set_format(type="pt")
                 train_dataset = train_dataset.filter(
-                    lambda example: (example["labels"] != -100).any()
+                    lambda example: example["labels"].numel() <= cfg.seq_length
                 )
+                if not rank:
+                    print(f"Train dataset post filtering: {len(train_dataset)} total examples")
                 collate_fn = CPDataCollator(
                     cp_degree=cp_degree,
                     cp_rank=cp_rank,

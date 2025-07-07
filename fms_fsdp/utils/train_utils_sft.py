@@ -95,7 +95,7 @@ def train(
     loop_start = time.time()
     train_loss = -1
 
-    for batch_idx, batch in enumerate(
+    for batch_idx, (epoch_idx, batch) in enumerate(
         train_loader, start=start_step * cfg.grad_acc_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
@@ -224,6 +224,7 @@ def train(
                 if cfg.sft_loss_type == "sum":
                     print("avg loss per pred tok:", train_loss_per_pred_tok)
                 print("LR:", current_lr)
+                print(f"{epoch_idx=}")
                 print("tokens seen:", total_tokens_seen)
                 print("pred tokens seen:", total_pred_tokens_seen)
                 print("current token seen:", n_tok_sum)
@@ -265,6 +266,7 @@ def train(
                         "loss": current_loss,
                         "gradient norm": current_gnorm,
                         "token seen": total_tokens_seen,
+                        "epoch": epoch_idx,
                         "pred token seen": total_pred_tokens_seen,
                         "current token seen": n_tok_sum,
                         "current pred toks": n_pred_tok_sum,

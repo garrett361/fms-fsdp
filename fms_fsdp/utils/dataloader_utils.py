@@ -338,7 +338,7 @@ def get_infinite_iter(dataloader):
             sampler.set_epoch(epoch_idx)
         for item in iter(dataloader):
             if item is not None:
-                yield item
+                yield epoch_idx, item
                 num_samples += 1
         print(f"{epoch_idx=} completed after {num_samples=}")
         epoch_idx += 1

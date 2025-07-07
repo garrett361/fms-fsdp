@@ -12,9 +12,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_proc_load", type=int, default=cpu_count // 2)
     parser.add_argument("--num_proc_map", type=int, default=cpu_count // 2)
-    parser.add_argument("--data_dir", type=str, default="/datasets/tokenizers/llama3")
     parser.add_argument(
-        "--tokenizer_path",
+        "--tokenizer_path", type=str, default="/datasets/tokenizers/llama3"
+    )
+    parser.add_argument(
+        "--data_dir",
         type=str,
         default="/datasets/long_context_sft/longcontext_121824_cleaned_v1",
     )

@@ -19,6 +19,7 @@ if __name__ == "__main__":
         type=str,
         default=None,
     )
+    parser.add_argument("--seq_lens", type=str, default="16384,32768,65536,131072")
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
@@ -47,3 +48,14 @@ if __name__ == "__main__":
     )
     if args.save_path:
         train_dataset.save_to_disk(args.save_path)
+        for seqlen in sorted([int(s) for s in args.seq_lens.split(",")], reverse=True):
+
+            def get_filter(seqlen):
+                return lambda x: [len(e) <= seqlen for e in x["labels"]]
+
+            train_dataset = train_dataset.filter(
+                get_filter(seqlen),
+                batched=True,
+                num_proc=args.num_proc_map,
+            )
+            train_dataset.save_to_disk(args.save_path + f"_max_seqlen_{seqlen}")

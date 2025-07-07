@@ -20,6 +20,11 @@ if __name__ == "__main__":
         type=str,
         default="/datasets/long_context_sft/longcontext_121824_cleaned_v1",
     )
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        default=None,
+    )
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
@@ -46,3 +51,5 @@ if __name__ == "__main__":
         ],
         desc="Tokenizing and reformatting instruction data",
     )
+    if args.save_path:
+        train_dataset.save_to_disk(args.save_path)

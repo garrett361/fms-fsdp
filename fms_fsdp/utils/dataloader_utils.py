@@ -230,6 +230,18 @@ class CPDataCollator:
             # Handling the None cases from ChatTokenizerCollator
             return None
         ret = {"input_ids": [], "labels": []}
+
+        # features is a list[dict[str, Union[list[int], Tensor]]], make it always be list[dict[str,
+        # Tensor]]
+        if not torch.is_tensor(features[0]["input_ids"]):
+            features = [
+                {
+                    "input_ids": torch.tensor(f["input_ids"]),
+                    "labels": torch.tensor(f["labels"]),
+                }
+                for f in features
+            ]
+
         separator = torch.tensor(
             self.separator_id,
             dtype=features[0]["input_ids"].dtype,

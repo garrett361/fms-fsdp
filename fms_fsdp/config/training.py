@@ -12,7 +12,7 @@ class train_config:
     # dataset and dataloader
     use_dummy_dataset: bool = False
     sanity_print_toks: bool = False
-    data_path: str = "/fsx/data"
+    data_path: Optional[str] = None
     file_type: str = "arrow"
     col_name: str = "tokens"
     tokenizer_path: str = "/fsx/tokenizer"
@@ -89,4 +89,14 @@ class train_config:
     sft_loss_type: str = "sum"  # sum or mean. The `reduction` arg for F.cross_entropy
     final_lr_ratio: float = 0.1  # ratio of initial to final lr during sft
     tokenize_on_fly: bool = True
-    sft_warmup_fraction: float = 0.05 # Fraction of SFT steps to perform LR warmup on
+    sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
+    data_path_pretokenized: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if (self.data_path_pretokenized is None and self.data_path is None) or (
+            self.data_path_pretokenized is not None and self.data_path is not None
+        ):
+            raise ValueError(
+                "Exactly one of data_path_pretokenized or data_path must be non-trivial. "
+                f"{self.data_path_pretokenized=}, {self.data_path=}"
+            )

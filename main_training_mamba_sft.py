@@ -9,7 +9,7 @@ import fire
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
@@ -178,9 +178,12 @@ def main(**kwargs):
     tokenizer.chat_template = CHAT_TEMPLATES[cfg.chat_template_name]
 
     with rank_zero_first(rank):
-        train_dataset = load_dataset(
-            "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
-        )["train"]
+        if cfg.data_path_pretokenized:
+            train_dataset = load_from_disk(cfg.data_path_pretokenized)
+        else:
+            train_dataset = load_dataset(
+                "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
+            )["train"]
         if not rank:
             print(f"Train dataset loaded with {len(train_dataset)} total examples")
         # For sanity checking:
@@ -192,7 +195,14 @@ def main(**kwargs):
         if not cfg.use_dummy_dataset:
             # NOTE: @goon - open-instruct pre-maps the training example around this point, but this can
             # takes a long time, so we also give the option to tokenize on the fly
-            if cfg.tokenize_on_fly:
+            if cfg.data_path_pretokenized:
+                collate_fn = CPDataCollator(
+                    cp_degree=cp_degree,
+                    cp_rank=cp_rank,
+                    pad_id=0,
+                    separator_id=-100,
+                )
+            elif cfg.tokenize_on_fly:
                 sampler = DistributedSampler(
                     train_dataset,
                     num_replicas=dp_degree,
@@ -231,7 +241,9 @@ def main(**kwargs):
                     lambda example: example["labels"].numel() <= cfg.seq_length
                 )
                 if not rank:
-                    print(f"Train dataset post filtering: {len(train_dataset)} total examples")
+                    print(
+                        f"Train dataset post filtering: {len(train_dataset)} total examples"
+                    )
                 collate_fn = CPDataCollator(
                     cp_degree=cp_degree,
                     cp_rank=cp_rank,

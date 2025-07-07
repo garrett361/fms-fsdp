@@ -208,6 +208,7 @@ def main(**kwargs):
             # NOTE: @goon - open-instruct pre-maps the training example around this point, but this can
             # takes a long time, so we also give the option to tokenize on the fly
             if cfg.data_path_pretokenized:
+                # The dataset is assumed to have been filtered already
                 collate_fn = CPDataCollator(
                     cp_degree=cp_degree,
                     cp_rank=cp_rank,

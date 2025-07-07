@@ -203,14 +203,6 @@ def main(**kwargs):
                     separator_id=-100,
                 )
             elif cfg.tokenize_on_fly:
-                sampler = DistributedSampler(
-                    train_dataset,
-                    num_replicas=dp_degree,
-                    rank=dp_rank,
-                    shuffle=True,
-                    seed=cfg.seed,
-                    drop_last=False,
-                )
                 collate_fn = ChatTokenizerCollatorCPCollator(
                     tokenizer=tokenizer,
                     max_seq_length=cfg.seq_length,
@@ -251,6 +243,14 @@ def main(**kwargs):
                     separator_id=-100,
                 )
 
+            sampler = DistributedSampler(
+                train_dataset,
+                num_replicas=dp_degree,
+                rank=dp_rank,
+                shuffle=True,
+                seed=cfg.seed,
+                drop_last=False,
+            )
             train_loader = DataLoader(
                 train_dataset,
                 sampler=sampler,

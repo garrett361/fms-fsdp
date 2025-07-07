@@ -188,8 +188,13 @@ def main(**kwargs):
         if cfg.data_path_pretokenized:
             train_dataset = load_from_disk(cfg.data_path_pretokenized)
         else:
+            data_path = Path(cfg.data_path)
+            if data_path.is_file() and data_path.suffix in ["json", "jsonl"]:
+                dataset_type = "json"
+            else:
+                dataset_type = "parquet"
             train_dataset = load_dataset(
-                "parquet", data_dir=cfg.data_path, num_proc=cfg.num_workers
+                dataset_type, data_dir=cfg.data_path, num_proc=cfg.num_workers
             )["train"]
         if not rank:
             print(f"Train dataset loaded with {len(train_dataset)} total examples")

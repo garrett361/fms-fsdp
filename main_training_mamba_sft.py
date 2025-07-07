@@ -23,8 +23,7 @@ from transformers import AutoTokenizer
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils_sft import (
-    Checkpointer,
-    save_as_single_hf_safetensors_file,
+    Checkpointer
 )
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import (
@@ -392,19 +391,6 @@ def main(**kwargs):
         start_step,
         tokens_seen,
         pred_tokens_seen,
-    )
-
-    _, model_state_dict_fms = checkpointer.save_single_file(cfg.num_steps, model)
-
-    hf_output_dir = os.path.join(
-        checkpointer.ckp_path[:-12], "hf", "step_" + str(cfg.num_steps)
-    )
-    save_as_single_hf_safetensors_file(
-        mamba_cfg=mamba_config,
-        mamba_state_dict=model_state_dict_fms,
-        output_dir=hf_output_dir,
-        tokenizer=tokenizer,
-        precision="fp32",
     )
 
     dist.barrier()

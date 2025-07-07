@@ -56,6 +56,13 @@ def main(**kwargs):
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
+    if (cfg.data_path_pretokenized is None and cfg.data_path is None) or (
+        cfg.data_path_pretokenized is not None and cfg.data_path is not None
+    ):
+        raise ValueError(
+            "Exactly one of data_path_pretokenized or data_path must be non-trivial. "
+            f"{cfg.data_path_pretokenized=}, {cfg.data_path=}"
+        )
 
     # ensure reproducibility
     torch.cuda.manual_seed(cfg.seed)

@@ -91,12 +91,3 @@ class train_config:
     tokenize_on_fly: bool = True
     sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
     data_path_pretokenized: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        if (self.data_path_pretokenized is None and self.data_path is None) or (
-            self.data_path_pretokenized is not None and self.data_path is not None
-        ):
-            raise ValueError(
-                "Exactly one of data_path_pretokenized or data_path must be non-trivial. "
-                f"{self.data_path_pretokenized=}, {self.data_path=}"
-            )

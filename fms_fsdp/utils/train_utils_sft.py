@@ -145,17 +145,22 @@ def train(
                     loss = loss + cfg.z_loss * z_loss_tensor.mean()
                 del z_loss_tensor
 
-        # Grad accumulation & FSDP averaging handling cases:
-        # 1) Mean loss: logically we are averaging over grad acc steps, so divide by the grad acc
-        #    factor before backwards.
-        # 2) Sum loss: logically we are summing over all ranks, so we both *avoid* dividing by grad
-        #    acc steps and multiply by the world size to counteract the FSDP averaging.
-        # (Note: These scaling factors largely drop out of Adam anyway. Globally re-scaling the loss
-        # via loss -> loss * X has the same effect as scaling eps -> eps / X.)
-        if cfg.sft_loss_type == "mean":
-            (loss / cfg.grad_acc_steps).backward()
-        elif cfg.sft_loss_type == "sum":
-            (loss * world_size).backward()
+        # # NOTE: @goon - the below is what is strictly needed for correctness, but it's not what
+        # # open-instruct does. So, instead of doing the right thing, we just follow open OI to
+        # # minimize differences.
+        # # [Grad accumulation & FSDP averaging]
+        # # 1) Mean loss: logically we are averaging over grad acc steps, so divide by the grad acc
+        # #    factor before backwards.
+        # # 2) Sum loss: logically we are summing over all ranks, so we both *avoid* dividing by grad
+        # #    acc steps and multiply by the world size to counteract the FSDP averaging.
+        # # (Note: These scaling factors largely drop out of Adam anyway. Globally re-scaling the loss
+        # # via loss -> loss * X has the same effect as scaling eps -> eps / X.)
+        # if cfg.sft_loss_type == "mean":
+        #     (loss / cfg.grad_acc_steps).backward()
+        # elif cfg.sft_loss_type == "sum":
+        #     (loss * world_size).backward()
+
+        (loss / cfg.grad_acc_steps).backward()
 
         # NOTE: @goon - when using a "mean" loss, the loss will be nan when if all labels are -100,
         # as is usually the case for early ranks. Count these as zeros for now. This messes up the

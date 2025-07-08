@@ -9,7 +9,7 @@ import fire
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from datasets import load_dataset, load_from_disk
+from datasets import concatenate_datasets, load_dataset, load_from_disk
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
@@ -22,9 +22,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer
 
 from fms_fsdp import config
-from fms_fsdp.utils.checkpointing_utils_sft import (
-    Checkpointer
-)
+from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import (
     ChatTokenizerCollatorCPCollator,
@@ -185,7 +183,12 @@ def main(**kwargs):
 
     with rank_zero_first(rank):
         if cfg.data_path_pretokenized:
-            train_dataset = load_from_disk(cfg.data_path_pretokenized)
+            pretok_paths = [p.strip() for p in cfg.data_path_pretokenized.split(",")]
+            all_datasets = [load_from_disk(p) for p in pretok_paths]
+            if len(all_datasets) == 1:
+                train_dataset = all_datasets[0]
+            else:
+                train_dataset = concatenate_datasets(all_datasets)
         else:
             data_path = Path(cfg.data_path)
             if data_path.is_file() and data_path.suffix in ["json", "jsonl"]:

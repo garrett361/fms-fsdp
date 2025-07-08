@@ -90,4 +90,4 @@ class train_config:
     final_lr_ratio: float = 0.1  # ratio of initial to final lr during sft
     tokenize_on_fly: bool = True
     sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
-    data_path_pretokenized: Optional[str] = None
+    data_path_pretokenized: Optional[str] = None # One or more pretokenized data paths 

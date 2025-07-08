@@ -108,10 +108,17 @@ def train(
         input = input.to(local_rank)
         label = label.to(local_rank)
         if cfg.sanity_print_toks:
-            toks_list = input.cpu().tolist()
-            for example_idx, toks in enumerate(toks_list):
+            input_toks_list = input.cpu().tolist()
+            for example_idx, toks in enumerate(input_toks_list):
                 print(
-                    f"[{rank=}, {batch_idx=}, {example_idx=}]:  {tokenizer.decode(toks)}"
+                    f"[{rank=}, {batch_idx=}, {example_idx=} INPUTS]:  {tokenizer.decode(toks)}"
+                )
+            label_toks_list = label.cpu().tolist()
+            for example_idx, toks in enumerate(label_toks_list):
+                # The -100 masking label is not a valid token, so just take the abs to make it one
+                toks = [abs(t) for t in toks]
+                print(
+                    f"[{rank=}, {batch_idx=}, {example_idx=} LABELS]:  {tokenizer.decode(toks)}"
                 )
 
         optimizer.zero_grad()
@@ -126,7 +133,7 @@ def train(
                     gold_labels = label[batch_idx][idxs]
                     preds = output[batch_idx][idxs].max(dim=-1).indices
                     print(
-                        f"[{rank=}, {batch_idx=}]:\n\tLabel:{tokenizer.decode(gold_labels)}\n\tPreds:{tokenizer.decode(preds)}"
+                        f"[{rank=}, {batch_idx=}]:\n\tLabel: {tokenizer.decode(gold_labels)}\n\tPreds: {tokenizer.decode(preds)}"
                     )
                     del gold_labels
                     del preds

@@ -15,6 +15,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_proc_map", type=int, default=cpu_count // 2)
     parser.add_argument("--tokenizer_path", type=str)
     parser.add_argument("--data_path", type=str)
+    parser.add_argument("--chat_template", type=str, default="tulu")
     parser.add_argument(
         "--save_path",
         type=str,
@@ -25,7 +26,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
-    tokenizer.chat_template = CHAT_TEMPLATES["tulu"]
+    tokenizer.chat_template = CHAT_TEMPLATES[args.chat_template]
     print("LOAD DATA")
     data_path = Path(args.data_path)
     if data_path.is_file():

@@ -212,6 +212,7 @@ def train(
                 n_optim_steps = cfg.report_interval * world_size
                 train_loss = ddp_stats[0] / n_optim_steps
                 train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
+                train_loss_per_total_tok = ddp_stats[0].item() / n_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes
             # tok_per_gpu: number of tokens seen by each GPU on average per optim step
@@ -239,6 +240,7 @@ def train(
                 print("loss:", current_loss)
                 if cfg.sft_loss_type == "sum":
                     print("avg loss per pred tok:", train_loss_per_pred_tok)
+                    print("avg loss per total tok:", train_loss_per_total_tok)
                 print("LR:", current_lr)
                 print(f"{epoch_idx=}")
                 print("tokens seen:", total_tokens_seen)
@@ -293,6 +295,7 @@ def train(
                     }
                     if cfg.sft_loss_type == "sum":
                         vals_to_track["loss_per_pred_tok"] = train_loss_per_pred_tok
+                        vals_to_track["loss_per_total_tok"] = train_loss_per_total_tok
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":

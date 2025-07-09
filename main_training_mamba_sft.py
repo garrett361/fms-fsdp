@@ -311,7 +311,7 @@ def main(**kwargs):
     optimizer = optim.AdamW(
         model.parameters(),
         lr=cfg.learning_rate,
-        betas=(0.9, 0.95),
+        betas=(cfg.adam_beta_0, cfg.adam_beta_1),
         weight_decay=cfg.weight_decay,
     )
 

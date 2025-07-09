@@ -44,7 +44,9 @@ class train_config:
     seed: int = 2023
     z_loss: Optional[float] = None
     grad_acc_steps: int = 1
-    weight_decay: float=0.1
+    weight_decay: float = 0.1
+    adam_beta_0: float = 0.9
+    adam_beta_1: float = 0.95
 
     # continued training spec
     resuming_dataset: bool = False
@@ -91,4 +93,4 @@ class train_config:
     final_lr_ratio: float = 0.1  # ratio of initial to final lr during sft
     tokenize_on_fly: bool = True
     sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
-    data_path_pretokenized: Optional[str] = None # One or more pretokenized paths 
+    data_path_pretokenized: Optional[str] = None  # One or more pretokenized paths

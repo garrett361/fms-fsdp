@@ -111,7 +111,7 @@ def main(**kwargs):
 
     # Optimizer
     optimizer = optim.AdamW(
-        model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=cfg.weight_decay
+        model.parameters(), lr=cfg.learning_rate, betas=(cfg.adam_beta_0, cfg.adam_beta_1), weight_decay=cfg.weight_decay
     )
 
     # optionally load from checkpoint (when continue pretraining)

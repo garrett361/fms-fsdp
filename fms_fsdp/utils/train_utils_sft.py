@@ -63,7 +63,7 @@ def train(
                         dir=tracker_dir,
                         resume="allow",
                         id=run_id,
-                        config=asdict(cfg)
+                        config=asdict(cfg),
                     )
                 except wandb.errors.UsageError:
                     raise ValueError(
@@ -138,7 +138,9 @@ def train(
                     del gold_labels
                     del preds
 
-        loss = ce_loss(output.view(-1, output.size(-1)), label.reshape(-1).long())
+        loss = ce_loss(
+            output.float().view(-1, output.size(-1)), label.reshape(-1).long()
+        )
 
         if cfg.z_loss is not None:
             # NOTE: @goon - only applying z-loss to the tokens corresponding to non-trivial

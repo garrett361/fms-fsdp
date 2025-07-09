@@ -89,9 +89,11 @@ def train(
     # 0: loss
     # 1: grad
     # 2: num fwd/bwd passes (!= n_optim_steps when grad_acc != 1)
-    # 3: n_toks: total sequence length
+    # 3: n_toks: total sequence length (not counting padding)
     # 4: n_pred_toks: number of actual tokens which are predicted
-    ddp_stats = torch.zeros(5).to(local_rank)
+    # 5: batch_size: for testing get_infinite_cp_batching_iter perf
+    # 6: n_toks_padded: total sequence length (counting padding)
+    ddp_stats = torch.zeros(7).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -194,6 +196,8 @@ def train(
         ddp_stats[2] += 1  # n_fwd_bwd_passes
         ddp_stats[3] += (input != 0).sum().item()  # n_tok_sum (don't include padding!)
         ddp_stats[4] += (label != -100).sum().item()  # n_pred_toks
+        ddp_stats[5] += label.shape[0]  # batch_size
+        ddp_stats[6] += input.numel() # n_tok_sum_padded
         if not should_step:
             continue
 
@@ -213,8 +217,10 @@ def train(
             g_norm = ddp_stats[1] / n_fwd_bwd_passes
             elapsed_time = time.time() - loop_start
             n_tok_sum = ddp_stats[3].item()
+            n_tok_sum_padded = ddp_stats[6].item()
+            padding_fraction = (n_tok_sum_padded - n_tok_sum) / n_tok_sum_padded
             n_pred_tok_sum = ddp_stats[4].item()
-            avg_n_pred_toks = n_pred_tok_sum / n_fwd_bwd_passes
+            n_optim_steps = cfg.report_interval * world_size
 
             # Cases:
             # 1) sft_loss_type == "sum": we compute the sum of the losses over all ranks, averaged
@@ -222,12 +228,12 @@ def train(
             #    we also compute the average of this loss over the number of non-trivial pred toks.
             # 2) sft_loss_type == "mean": straight average over all ranks and steps
             if cfg.sft_loss_type == "sum":
-                n_optim_steps = cfg.report_interval * world_size
                 train_loss = ddp_stats[0] / n_optim_steps
                 train_loss_per_pred_tok = ddp_stats[0].item() / n_pred_tok_sum
                 train_loss_per_total_tok = ddp_stats[0].item() / n_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes
+            avg_batch_size = (ddp_stats[5] / n_fwd_bwd_passes).item()
             # tok_per_gpu: number of tokens seen by each GPU on average per optim step
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
@@ -249,38 +255,34 @@ def train(
                     device=torch.cuda.current_device()
                 )
 
+                remaining_steps = cfg.num_steps - step_idx + 1
+                remaining_secs = remaining_steps * current_step_time
                 print("\nstep:", step_idx)
                 print("loss:", current_loss)
                 if cfg.sft_loss_type == "sum":
                     print("avg loss per pred tok:", train_loss_per_pred_tok)
                     print("avg loss per total tok:", train_loss_per_total_tok)
-                print("LR:", current_lr)
-                print(f"{epoch_idx=}")
-                print("tokens seen:", total_tokens_seen)
-                print("pred tokens seen:", total_pred_tokens_seen)
-                print("current token seen:", n_tok_sum)
-                print("current pred toks:", n_pred_tok_sum)
-                print("avg toks preds per gpu per example:", avg_n_pred_toks)
-                print(f"current tokens/step: {world_size * tok_per_gpu}")
-                print("gradient norm:", current_gnorm)
-                print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
-                print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
-                print("current step time:", current_step_time)
-                print("overall step time:", overall_step_time)
-                print("current token per gpu per sec:", current_throughput)
-                print("overall token per gpu per sec:", overall_throughput)
-                print(
-                    "overall token per day:",
-                    int(new_tokens_seen / elapsed_time * 3600 * 24),
-                )
-                print(
-                    "overall pred token per day:",
-                    int(new_pred_tokens_seen / elapsed_time * 3600 * 24),
-                )
-                remaining_steps = cfg.num_steps - step_idx + 1
-                remaining_secs = remaining_steps * current_step_time
-                print(f"remaining steps: {remaining_steps}")
+                print(f"average batch size: {avg_batch_size}")
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
+                print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
+                print("current pred toks:", n_pred_tok_sum)
+                print("current step time:", current_step_time)
+                print("current token per gpu per sec:", current_throughput)
+                print("current token seen:", n_tok_sum)
+                print("current token seen with padding:", n_tok_sum_padded)
+                print(f"current tokens/step: {world_size * tok_per_gpu}")
+                print(f"{epoch_idx=}")
+                print("gradient norm:", current_gnorm)
+                print("LR:", current_lr)
+                print("overall pred token per day:", int(new_pred_tokens_seen / elapsed_time * 3600 * 24),)
+                print("overall step time:", overall_step_time)
+                print("overall token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24),)
+                print("overall token per gpu per sec:", overall_throughput)
+                print("padding fraction:", padding_fraction)
+                print("pred tokens seen:", total_pred_tokens_seen)
+                print(f"remaining steps: {remaining_steps}")
+                print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
+                print("tokens seen:", total_tokens_seen)
 
                 next_ckpt_step_idx = (
                     (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval
@@ -293,18 +295,21 @@ def train(
 
                 if cfg.tracker:
                     vals_to_track = {
-                        "learning rate": current_lr,
-                        "loss": current_loss,
-                        "gradient norm": current_gnorm,
-                        "token seen": total_tokens_seen,
-                        "epoch": epoch_idx,
-                        "pred token seen": total_pred_tokens_seen,
-                        "current token seen": n_tok_sum,
+                        "batch size per gpu": avg_batch_size,
                         "current pred toks": n_pred_tok_sum,
                         "current throughput (token per gpu per sec)": current_throughput,
-                        "overall throughput (token per gpu per sec)": overall_throughput,
-                        "gpu reserved memory": reserved_mem,
+                        "current token seen with padding": n_tok_sum_padded,
+                        "current token seen": n_tok_sum,
+                        "epoch": epoch_idx,
                         "gpu allocated memory": allocated_mem,
+                        "gpu reserved memory": reserved_mem,
+                        "gradient norm": current_gnorm,
+                        "learning rate": current_lr,
+                        "loss": current_loss,
+                        "overall throughput (token per gpu per sec)": overall_throughput,
+                        "padding fraction": padding_fraction,
+                        "pred token seen": total_pred_tokens_seen,
+                        "token seen": total_tokens_seen,
                     }
                     if cfg.sft_loss_type == "sum":
                         vals_to_track["loss_per_pred_tok"] = train_loss_per_pred_tok

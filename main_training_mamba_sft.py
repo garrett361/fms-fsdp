@@ -25,9 +25,12 @@ from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import (
+    ChatTokenizerCollator,
     ChatTokenizerCollatorCPCollator,
     CPDataCollator,
+    PretokenizedCollator,
     get_infinite_iter,
+    get_infinite_cp_batching_iter,
 )
 from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
 from fms_fsdp.utils.train_utils_sft import (
@@ -211,20 +214,33 @@ def main(**kwargs):
             # takes a long time, so we also give the option to tokenize on the fly
             if cfg.data_path_pretokenized:
                 # The dataset is assumed to have been filtered already
-                collate_fn = CPDataCollator(
-                    cp_degree=cp_degree,
-                    cp_rank=cp_rank,
-                    pad_id=0,
-                    separator_id=-100,
+                collate_fn = (
+                    PretokenizedCollator()
+                    if cfg.use_batching_iter
+                    else CPDataCollator(
+                        cp_degree=cp_degree,
+                        cp_rank=cp_rank,
+                        pad_id=cfg.pad_id,
+                        separator_id=cfg.separator_id,
+                    )
                 )
             elif cfg.tokenize_on_fly:
-                collate_fn = ChatTokenizerCollatorCPCollator(
-                    tokenizer=tokenizer,
-                    max_seq_length=cfg.seq_length,
-                    cp_degree=cp_degree,
-                    cp_rank=cp_rank,
-                    pad_id=0,
-                    separator_id=-100,
+                collate_fn = (
+                    ChatTokenizerCollator(
+                        cp_degree=cp_degree,
+                        cp_rank=cp_rank,
+                        pad_id=cfg.pad_id,
+                        separator_id=cfg.separator_id,
+                    )
+                    if cfg.use_batching_iter
+                    else ChatTokenizerCollatorCPCollator(
+                        tokenizer=tokenizer,
+                        max_seq_length=cfg.seq_length,
+                        cp_degree=cp_degree,
+                        cp_rank=cp_rank,
+                        pad_id=cfg.pad_id,
+                        separator_id=cfg.separator_id,
+                    )
                 )
             else:
                 assert tokenizer.is_fast
@@ -251,11 +267,13 @@ def main(**kwargs):
                     print(
                         f"Train dataset post filtering: {len(train_dataset)} total examples"
                     )
-                collate_fn = CPDataCollator(
-                    cp_degree=cp_degree,
-                    cp_rank=cp_rank,
-                    pad_id=0,
-                    separator_id=-100,
+                collate_fn = (
+                    PretokenizedCollator()
+                    if cfg.use_batching_iter
+                    else CPDataCollator(
+                        tokenizer=tokenizer,
+                        max_seq_length=cfg.seq_length,
+                    )
                 )
 
             sampler = DistributedSampler(
@@ -270,9 +288,20 @@ def main(**kwargs):
                 train_dataset,
                 sampler=sampler,
                 collate_fn=collate_fn,
-                batch_size=cfg.batch_size,
+                batch_size=1 if cfg.use_batching_iter else cfg.batch_size,
             )
-            train_loader = get_infinite_iter(train_loader)
+            train_loader = (
+                get_infinite_cp_batching_iter(
+                    train_loader,
+                    max_tokens=cfg.batch_size * cfg.seq_length,
+                    cp_degree=cp_degree,
+                    cp_rank=cp_rank,
+                    pad_id=cfg.pad_id,
+                    separator_id=cfg.separator_id,
+                )
+                if cfg.use_batching_iter
+                else get_infinite_iter(train_loader)
+            )
         else:
             raise ValueError("This script assumes no dummy loader is used")
     if rank == 0:

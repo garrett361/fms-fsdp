@@ -94,3 +94,6 @@ class train_config:
     tokenize_on_fly: bool = True
     sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
     data_path_pretokenized: Optional[str] = None  # One or more pretokenized paths
+    use_batching_iter: bool = False
+    separator_id: int = -100
+    pad_id: int = 0

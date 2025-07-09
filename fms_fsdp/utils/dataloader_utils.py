@@ -1,5 +1,7 @@
+from typing import Union
+
 import torch
-from torch.utils.data import DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler
 
 from fms_fsdp.utils.dataset_utils import (
     ArrowHandler,
@@ -209,6 +211,10 @@ class ChatTokenizerCollator:
         return out
 
 
+def _round_up_to_zig_zag_padding(num_toks: int, cp_degree: int) -> int:
+    return 2 * cp_degree * ((num_toks + 2 * cp_degree - 1) // (2 * cp_degree))
+
+
 class CPDataCollator:
     def __init__(
         self,
@@ -255,11 +261,7 @@ class CPDataCollator:
 
         # NOTE: @goon - if using zig-zag, the per-rank tok counts also need to be even, hence
         # the factors of two
-        padded_numel = (
-            2
-            * self.cp_degree
-            * ((max_seqlen + 2 * self.cp_degree - 1) // (2 * self.cp_degree))
-        )
+        padded_numel = _round_up_to_zig_zag_padding(max_seqlen, self.cp_degree)
         for item in features:
             input_ids = item["input_ids"]
             labels = item["labels"]
@@ -337,7 +339,26 @@ class ChatTokenizerCollatorCPCollator:
         return self.cp_collator(self.chat_collator(example))
 
 
-def get_infinite_iter(dataloader):
+class PretokenizedCollator:
+    """
+    For handling pre-tokenized data
+    """
+
+    def __call__(self, examples: list[dict[str, Union[list[int], int]]]):
+        out = []
+        for ex in examples:
+            item = {}
+            for k, v in ex.items():
+                if torch.torch.is_tensor(v):
+                    item[k] = v
+                elif isinstance(v, list):
+                    item[k] = torch.tensor(v)
+            out.append(item)
+
+        return out
+
+
+def get_infinite_iter(dataloader: DataLoader):
     """
     Infinite iterator, skipping over the None cases above.
     """
@@ -352,6 +373,69 @@ def get_infinite_iter(dataloader):
             if item is not None:
                 yield epoch_idx, item
                 num_samples += 1
+        print(f"{epoch_idx=} completed after {num_samples=}")
+        epoch_idx += 1
+
+        if not num_samples:
+            raise RuntimeError(
+                "dataloader only had trivial None data, probably need to increase max_seq_length"
+            )
+
+
+def get_infinite_cp_batching_iter(
+    dataloader: DataLoader,
+    max_tokens: int,
+    cp_degree: int,
+    cp_rank: int,
+    pad_id: int = 0,
+    separator_id: int = -100,
+):
+    """
+    Batching iterator which greedily forms batches which pack samples together until they would
+    exceed the max_tokens limit. Needs to form batches and then handle the same logic as
+    CPDataCollator for padding.
+    """
+    cp_collator = CPDataCollator(
+        cp_degree=cp_degree, cp_rank=cp_rank, pad_id=pad_id, separator_id=separator_id
+    )
+    num_samples = 0
+    epoch_idx = 0
+    sampler = dataloader.sampler
+    should_set_epochs = isinstance(sampler, DistributedSampler)
+    batch = []
+    while True:
+        if should_set_epochs:
+            sampler.set_epoch(epoch_idx)
+        for item in iter(dataloader):
+            assert isinstance(item, list), f"{item=}"
+            assert len(item) == 1, (
+                f"Expected batch size 1 inputs, received {len(item)=}"
+            )
+            input = item[0]["input_ids"]
+            # Find the longest example in the current batch, accounting for necessary zig-zag cp
+            # padding
+            if batch:
+                current_max_tok_example = max(
+                    _round_up_to_zig_zag_padding(ex["input_ids"].numel(), cp_degree)
+                    for ex in batch
+                )
+                tok_in_new_input = _round_up_to_zig_zag_padding(
+                    input.numel(), cp_degree
+                )
+                tok_in_batch_with_new_input = (len(batch) + 1) * max(
+                    current_max_tok_example, tok_in_new_input
+                )
+                if tok_in_batch_with_new_input > max_tokens:
+                    cp_processed_batch = cp_collator(batch)
+                    yield epoch_idx, cp_processed_batch
+                    num_samples += 1
+                else:
+                    batch.extend(item)
+
+            else:
+                if input.numel() <= max_tokens:
+                    batch.extend(item)
+
         print(f"{epoch_idx=} completed after {num_samples=}")
         epoch_idx += 1
 

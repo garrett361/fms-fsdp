@@ -1,14 +1,19 @@
+from functools import partial
+
 import pytest
 import torch
+from datasets import Dataset
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer
 
 from fms_fsdp.utils.dataloader_utils import (
     ChatTokenizerCollator,
     ChatTokenizerCollatorCPCollator,
+    PretokenizedCollator,
+    get_infinite_cp_batching_iter,
     get_infinite_iter,
 )
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES
+from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
 
 DATA = {
     0: {
@@ -41,7 +46,10 @@ DATA = {
                 "content": "This is a much longer example where I say hello repeatedly: hello hello hello hello hello hello hello.",
                 "role": "user",
             },
-            {"content": "I will say bye repeatedly in return: bye bye bye  bye bye bye bye bye bye bye bye." , "role": "assistant"},
+            {
+                "content": "I will say bye repeatedly in return: bye bye bye  bye bye bye bye bye bye bye bye.",
+                "role": "assistant",
+            },
         ]
     },
     5: {
@@ -211,3 +219,90 @@ class Test:
         data_iter = get_infinite_iter(train_dataloader)
         with pytest.raises(RuntimeError, match="trivial None data"):
             next(data_iter)
+
+    @pytest.mark.parametrize("cp_degree", [2, 4])
+    @pytest.mark.parametrize("pretokenized", [True, False])
+    def test_infinite_cp_batching_iter(
+        self, cp_degree: int, pretokenized: bool
+    ) -> None:
+        if pretokenized:
+            data = Dataset.from_list(list(DATA.values()))
+            data = data.map(
+                partial(
+                    encode_sft_example,
+                    tokenizer=TOKENIZER,
+                    max_seq_length=None,
+                ),
+                batched=False,
+                remove_columns=[
+                    name
+                    for name in data.column_names
+                    if name not in ["input_ids", "labels"]
+                ],
+                desc="Tokenizing and reformatting instruction data",
+            )
+        else:
+            data = DATA
+
+        # First without any CP complications
+        collate_fn = (
+            PretokenizedCollator()
+            if pretokenized
+            else ChatTokenizerCollator(TOKENIZER, BIG_MAX_SEQ_LEN)
+        )
+        sampler = DistributedSampler(
+            data,
+            num_replicas=1,
+            rank=0,
+            shuffle=True,
+            seed=self.seed,
+            drop_last=False,
+        )
+        train_dataloader = DataLoader(
+            data,
+            sampler=sampler,
+            collate_fn=collate_fn,
+            batch_size=1,
+        )
+        max_tokens = 100
+        max_reps = 10
+        data_iter = get_infinite_cp_batching_iter(
+            train_dataloader, max_tokens=max_tokens, cp_degree=1, cp_rank=0
+        )
+        non_cp_batches = []
+        for _ in range(max_reps):
+            _, batch = next(data_iter)
+            non_cp_batches.append(batch)
+            input, label = batch["input_ids"], batch["labels"]
+            assert input.numel() == label.numel()
+            assert input.numel() <= max_tokens, f"{input.numel()=}, {max_tokens=}"
+
+        # And then CP
+        cp_data_iters = [None] * cp_degree
+        for cp_rank in range(cp_degree):
+            sampler = DistributedSampler(
+                data,
+                num_replicas=1,
+                rank=0,
+                shuffle=True,
+                seed=self.seed,
+                drop_last=False,
+            )
+            train_dataloader = DataLoader(
+                data,
+                sampler=sampler,
+                collate_fn=collate_fn,
+                batch_size=1,
+            )
+            cp_data_iters[cp_rank] = get_infinite_cp_batching_iter(
+                train_dataloader,
+                max_tokens=max_tokens,
+                cp_degree=cp_degree,
+                cp_rank=cp_rank,
+            )
+        for batch in non_cp_batches:
+            cp_batches = [next(d)[1] for d in cp_data_iters]
+            cp_inputs_cat = torch.cat([b["input_ids"] for b in cp_batches], dim=-1)
+            cp_labels_cat = torch.cat([b["labels"] for b in cp_batches], dim=-1)
+            torch.testing.assert_close(batch["input_ids"], cp_inputs_cat)
+            torch.testing.assert_close(batch["labels"], cp_labels_cat)

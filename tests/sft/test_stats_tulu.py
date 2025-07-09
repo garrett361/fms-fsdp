@@ -11,8 +11,8 @@ tokenizer.chat_template = CHAT_TEMPLATES["tulu"]
 
 print("LOAD")
 train_dataset = load_dataset(
-    "parquet",
-    data_dir="/datasets/long_context_sft/longcontext_121824_cleaned_v1",
+    "json",
+    data_files="/datasets/instruct_data/Tuluv3/tuluv3_data.jsonl",
     num_proc=32,
 )["train"]
 

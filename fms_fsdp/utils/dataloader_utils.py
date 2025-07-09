@@ -429,6 +429,7 @@ def get_infinite_cp_batching_iter(
                     cp_processed_batch = cp_collator(batch)
                     yield epoch_idx, cp_processed_batch
                     num_samples += 1
+                    batch.clear()
                 else:
                     batch.extend(item)
 

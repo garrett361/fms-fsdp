@@ -103,7 +103,20 @@ def train(
         input, label = batch["input_ids"], batch["labels"]
         step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
         should_step = batch_idx % cfg.grad_acc_steps == 0
-        if step_idx > cfg.num_steps:
+        if step_idx > cfg.num_steps and (step_idx - 1) % cfg.checkpoint_interval != 0:
+            # Save before breaking, if a we didn't save last step
+            save(
+                checkpointer=checkpointer,
+                step_idx=step_idx - 1,
+                model=model,
+                optimizer=optimizer,
+                tokens_seen=tokens_seen,
+                new_tokens_seen=new_tokens_seen,
+                pred_tokens_seen=pred_tokens_seen,
+                new_pred_tokens_seen=new_pred_tokens_seen,
+                mamba_config=mamba_config,
+                tokenizer=tokenizer,
+            )
             break
         input = input.to(local_rank)
         label = label.to(local_rank)
@@ -307,28 +320,54 @@ def train(
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if step_idx % cfg.checkpoint_interval == 0:
-            checkpointer.save(
-                step_idx,
-                model,
-                optimizer,
-                None,
-                tokens_seen=tokens_seen + new_tokens_seen,
-                pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
-            )
-            _, model_state_dict_fms = checkpointer.save_single_file(step_idx, model)
-
-            hf_output_dir = os.path.join(
-                checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
-            )
-            save_as_single_hf_safetensors_file(
-                mamba_cfg=mamba_config,
-                mamba_state_dict=model_state_dict_fms,
-                output_dir=hf_output_dir,
+            save(
+                checkpointer=checkpointer,
+                step_idx=step_idx,
+                model=model,
+                optimizer=optimizer,
+                tokens_seen=tokens_seen,
+                new_tokens_seen=new_tokens_seen,
+                pred_tokens_seen=pred_tokens_seen,
+                new_pred_tokens_seen=new_pred_tokens_seen,
+                mamba_config=mamba_config,
                 tokenizer=tokenizer,
-                precision="fp32",
             )
 
     return train_loss
+
+
+def save(
+    checkpointer,
+    step_idx: int,
+    model,
+    optimizer,
+    tokens_seen: int,
+    new_tokens_seen: int,
+    pred_tokens_seen: int,
+    new_pred_tokens_seen: int,
+    mamba_config,
+    tokenizer,
+) -> None:
+    checkpointer.save(
+        step_idx,
+        model,
+        optimizer,
+        None,
+        tokens_seen=tokens_seen + new_tokens_seen,
+        pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
+    )
+    _, model_state_dict_fms = checkpointer.save_single_file(step_idx, model)
+
+    hf_output_dir = os.path.join(
+        checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
+    )
+    save_as_single_hf_safetensors_file(
+        mamba_cfg=mamba_config,
+        mamba_state_dict=model_state_dict_fms,
+        output_dir=hf_output_dir,
+        tokenizer=tokenizer,
+        precision="fp32",
+    )
 
 
 def setup():

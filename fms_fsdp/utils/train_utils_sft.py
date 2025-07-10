@@ -388,6 +388,7 @@ def save(
     )
     _, model_state_dict_fms = checkpointer.save_single_file(step_idx, model)
 
+    hf_save_time = time.time()
     hf_output_dir = os.path.join(
         checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
     )
@@ -397,6 +398,10 @@ def save(
         output_dir=hf_output_dir,
         tokenizer=tokenizer,
         precision="fp32",
+    )
+    checkpointer.report(
+        f"HF checkpoint saved in {hf_output_dir}",
+        hf_save_time=time.time() - hf_save_time,
     )
 
 

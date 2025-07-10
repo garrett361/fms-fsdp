@@ -216,14 +216,22 @@ def train(
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             # num fwd/bwd passes summed over all ranks
             n_fwd_bwd_passes = ddp_stats[2].item()
+            n_examples = ddp_stats[5].item()
+            n_optim_steps = cfg.report_interval * world_size
             g_norm = ddp_stats[1] / n_fwd_bwd_passes
+
             elapsed_time = time.time() - loop_start
             n_tok_sum = ddp_stats[3].item()
             n_tok_sum_padded = ddp_stats[6].item()
             padding_fraction = (n_tok_sum_padded - n_tok_sum) / n_tok_sum_padded
             n_pred_tok_sum = ddp_stats[4].item()
-            n_optim_steps = cfg.report_interval * world_size
 
+            if cfg.sft_loss_type == "sum":
+                # This is the closest analogue of the usual mean grad norm for sum losses
+                current_gnorm_per_pred_tok = (ddp_stats / n_pred_tok_sum).item()
+
+            avg_tok_per_example = n_tok_sum / n_examples
+            avg_pred_tok_per_example = n_pred_tok_sum / n_examples
             # Cases:
             # 1) sft_loss_type == "sum": we compute the sum of the losses over all ranks, averaged
             #    over the number of optimizer steps. This scales with the global batch size, and so
@@ -265,6 +273,8 @@ def train(
                     print("avg loss per pred tok:", train_loss_per_pred_tok)
                     print("avg loss per total tok:", train_loss_per_total_tok)
                 print(f"average batch size: {avg_batch_size}")
+                print(f"average tokens per example: {avg_tok_per_example}")
+                print(f"average pred tokens per example: {avg_pred_tok_per_example}")
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
                 print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
                 print("current pred toks:", n_pred_tok_sum)
@@ -291,6 +301,8 @@ def train(
                 print(f"remaining steps: {remaining_steps}")
                 print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
                 print("tokens seen:", total_tokens_seen)
+                if cfg.sft_loss_type == "sum":
+                    print("gradient norm pre pred tok:", current_gnorm_per_pred_tok)
 
                 next_ckpt_step_idx = (
                     (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval
@@ -303,6 +315,8 @@ def train(
 
                 if cfg.tracker:
                     vals_to_track = {
+                        "avg tokens per example": avg_tok_per_example,
+                        "avg pred tokens per example": avg_pred_tok_per_example,
                         "batch size per gpu": avg_batch_size,
                         "current pred toks": n_pred_tok_sum,
                         "current throughput (token per gpu per sec)": current_throughput,
@@ -322,6 +336,9 @@ def train(
                     if cfg.sft_loss_type == "sum":
                         vals_to_track["loss_per_pred_tok"] = train_loss_per_pred_tok
                         vals_to_track["loss_per_total_tok"] = train_loss_per_total_tok
+                        vals_to_track["gradient norm per pred tok"] = (
+                            current_gnorm_per_pred_tok
+                        )
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":

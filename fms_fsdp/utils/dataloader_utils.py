@@ -397,7 +397,7 @@ class InfiniteCPBatchingIter:
         self.seed = seed
         assert all(w > 0 for w in weights), f"{weights=}"
 
-        self._probs = np.array(self.weights)
+        self._probs = np.array(self.weights, dtype=np.dtype("float64"))
         self._probs /= self._probs.sum()
         self._generator = np.random.default_rng(self.seed)
         self._infinite_iters = [

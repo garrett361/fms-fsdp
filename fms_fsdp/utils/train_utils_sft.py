@@ -153,9 +153,7 @@ def train(
                     del gold_labels
                     del preds
 
-        loss = ce_loss(
-            output.view(-1, output.size(-1)), label.reshape(-1).long()
-        )
+        loss = ce_loss(output.view(-1, output.size(-1)), label.reshape(-1).long())
 
         if cfg.z_loss is not None:
             # NOTE: @goon - only applying z-loss to the tokens corresponding to non-trivial
@@ -168,6 +166,9 @@ def train(
                 elif cfg.sft_loss_type == "mean":
                     loss = loss + cfg.z_loss * z_loss_tensor.mean()
                 del z_loss_tensor
+
+        # Avoid logits memory leak
+        del output
 
         # # NOTE: @goon - the below is what is strictly needed for correctness, but it's not what
         # # open-instruct does. So, instead of doing the right thing, we just follow open OI to

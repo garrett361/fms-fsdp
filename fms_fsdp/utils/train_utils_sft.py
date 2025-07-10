@@ -197,13 +197,15 @@ def train(
         ddp_stats[3] += (input != 0).sum().item()  # n_tok_sum (don't include padding!)
         ddp_stats[4] += (label != -100).sum().item()  # n_pred_toks
         ddp_stats[5] += label.shape[0]  # batch_size
-        ddp_stats[6] += input.numel() # n_tok_sum_padded
+        ddp_stats[6] += input.numel()  # n_tok_sum_padded
         if not should_step:
             continue
 
-        # Skip clipping if grad_clip_thresh < 0
-        if cfg.grad_clip_thresh > 0:
-            ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
+        # If grad_clip_thresh < 0, set the threshold to infinity so that we don't actually clip, but
+        # still collect norm stats
+        ddp_stats[1] += model.clip_grad_norm_(
+            cfg.grad_clip_thresh if cfg.grad_clip_thresh > 0.0 else float("inf")
+        ).item()
         optimizer.step()
         scheduler.step()
 
@@ -274,9 +276,15 @@ def train(
                 print(f"{epoch_idx=}")
                 print("gradient norm:", current_gnorm)
                 print("LR:", current_lr)
-                print("overall pred token per day:", int(new_pred_tokens_seen / elapsed_time * 3600 * 24),)
+                print(
+                    "overall pred token per day:",
+                    int(new_pred_tokens_seen / elapsed_time * 3600 * 24),
+                )
                 print("overall step time:", overall_step_time)
-                print("overall token per day:", int(new_tokens_seen / elapsed_time * 3600 * 24),)
+                print(
+                    "overall token per day:",
+                    int(new_tokens_seen / elapsed_time * 3600 * 24),
+                )
                 print("overall token per gpu per sec:", overall_throughput)
                 print("padding fraction:", padding_fraction)
                 print("pred tokens seen:", total_pred_tokens_seen)

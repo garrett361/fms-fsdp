@@ -228,7 +228,7 @@ def train(
 
             if cfg.sft_loss_type == "sum":
                 # This is the closest analogue of the usual mean grad norm for sum losses
-                current_gnorm_per_pred_tok = (ddp_stats / n_pred_tok_sum).item()
+                current_gnorm_per_pred_tok = (ddp_stats[1] / n_pred_tok_sum).item()
 
             avg_tok_per_example = n_tok_sum / n_examples
             avg_pred_tok_per_example = n_pred_tok_sum / n_examples

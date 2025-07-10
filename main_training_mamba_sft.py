@@ -46,6 +46,16 @@ def rank_zero_first(rank):
         dist.barrier()
 
 
+def parse_weights(x):
+    if isinstance(x, str):
+        return [item.strip() for item in x.split(",")]
+    if isinstance(x, (list, tuple)):
+        return list(x)
+    if isinstance(x, (int, float, complex)):
+        return [x]
+    raise ValueError(f"arg input {x} cannot be parsed.")
+
+
 def main(**kwargs):
     # get configs
     cfg = config.train_config()
@@ -207,7 +217,7 @@ def main(**kwargs):
 
         train_loader = InfiniteCPBatchingIter(
             train_loader_list,
-            weights=[float(w.strip()) for w in cfg.weights.split(",")],
+            weights=parse_weights(cfg.weights),
             max_tokens=cfg.batch_size * cfg.seq_length,
             cp_degree=cp_degree,
             cp_rank=cp_rank,

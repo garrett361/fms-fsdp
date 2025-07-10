@@ -154,7 +154,7 @@ def train(
                     del preds
 
         loss = ce_loss(
-            output.float().view(-1, output.size(-1)), label.reshape(-1).long()
+            output.view(-1, output.size(-1)), label.reshape(-1).long()
         )
 
         if cfg.z_loss is not None:

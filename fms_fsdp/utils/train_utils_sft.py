@@ -284,6 +284,8 @@ def train(
                 print(f"current tokens/step: {world_size * tok_per_gpu}")
                 print(f"{epoch_idx_list=}")
                 print("gradient norm:", current_gnorm)
+                if cfg.sft_loss_type == "sum":
+                    print("gradient norm per pred tok:", current_gnorm_per_pred_tok)
                 print("LR:", current_lr)
                 print(
                     "overall pred token per day:",
@@ -300,8 +302,6 @@ def train(
                 print(f"remaining steps: {remaining_steps}")
                 print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
                 print("tokens seen:", total_tokens_seen)
-                if cfg.sft_loss_type == "sum":
-                    print("gradient norm pre pred tok:", current_gnorm_per_pred_tok)
 
                 next_ckpt_step_idx = (
                     (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval

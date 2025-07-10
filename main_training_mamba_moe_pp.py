@@ -54,6 +54,7 @@ def main(**kwargs):
     world_size = int(os.environ["WORLD_SIZE"])
 
     if rank == 0:
+        print(f"{torch.__version__=}")
         print(f"--> running with these configs {cfg}")
 
     # some setups

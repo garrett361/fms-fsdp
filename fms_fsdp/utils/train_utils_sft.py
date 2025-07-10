@@ -216,7 +216,8 @@ def train(
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             # num fwd/bwd passes summed over all ranks
             n_fwd_bwd_passes = ddp_stats[2].item()
-            n_examples = ddp_stats[5].item()
+            # Each example is over-counted by cp_degree, so correct for that:
+            n_examples = ddp_stats[5].item() / cp_degree
             n_optim_steps = cfg.report_interval * world_size
             g_norm = ddp_stats[1] / n_fwd_bwd_passes
 

@@ -461,6 +461,7 @@ class InfiniteCPBatchingIter:
             cp_rank=cp_rank,
             pad_id=pad_id,
             separator_id=separator_id,
+            naive_padding_free=naive_padding_free
         )
 
     def __iter__(self) -> Iterator[tuple[list[int], dict[str, torch.Tensor]]]:

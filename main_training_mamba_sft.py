@@ -337,6 +337,7 @@ def main(**kwargs):
         tokenizer,
         local_rank,
         rank,
+        cp_degree,
         train_loader,
         optimizer,
         scheduler,

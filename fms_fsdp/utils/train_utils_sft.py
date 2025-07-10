@@ -275,7 +275,6 @@ def train(
                 print(f"average batch size: {avg_batch_size}")
                 print(f"average tokens per example: {avg_tok_per_example}")
                 print(f"average pred tokens per example: {avg_pred_tok_per_example}")
-                print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
                 print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
                 print("current pred toks:", n_pred_tok_sum)
                 print("current step time:", current_step_time)
@@ -312,6 +311,7 @@ def train(
                 print(
                     f"Approx. time to next ckpt: {timedelta(seconds=secs_until_ckpt)}"
                 )
+                print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
 
                 if cfg.tracker:
                     vals_to_track = {

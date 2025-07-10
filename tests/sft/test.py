@@ -311,6 +311,9 @@ class Test:
             cp_inputs = torch.cat([b["input_ids"] for b in cp_batches], dim=-1)
             cp_labels = torch.cat([b["labels"] for b in cp_batches], dim=-1)
 
+            assert cp_inputs.numel() == cp_labels.numel()
+            assert cp_inputs.numel() <= max_tokens, f"{cp_inputs.numel()=}, {max_tokens=}"
+
             # Should agree up to possible CP padding differences
             num_padding_elements = (inputs == 0).sum(dim=-1).min()
             if num_padding_elements:

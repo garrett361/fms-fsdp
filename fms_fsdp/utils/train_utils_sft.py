@@ -276,6 +276,7 @@ def train(
                 print(f"average tokens per example: {avg_tok_per_example}")
                 print(f"average pred tokens per example: {avg_pred_tok_per_example}")
                 print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
+                print("current examples:", n_examples)
                 print("current pred toks:", n_pred_tok_sum)
                 print("current step time:", current_step_time)
                 print("current token per gpu per sec:", current_throughput)
@@ -318,6 +319,7 @@ def train(
                         "avg tokens per example": avg_tok_per_example,
                         "avg pred tokens per example": avg_pred_tok_per_example,
                         "batch size per gpu": avg_batch_size,
+                        "current num examples": n_examples,
                         "current pred toks": n_pred_tok_sum,
                         "current throughput (token per gpu per sec)": current_throughput,
                         "current token seen with padding": n_tok_sum_padded,

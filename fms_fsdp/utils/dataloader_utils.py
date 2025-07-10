@@ -223,20 +223,21 @@ class CPDataCollator:
         cp_rank: int,
         pad_id: int = 0,
         separator_id: int = -100,
+        naive_padding_free: bool = False,
     ):
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
         self.pad_id = pad_id
         self.separator_id = separator_id
+        self.naive_padding_free = naive_padding_free
 
-    def __call__(self, features: list[dict]):
+    def __call__(self, features: list[dict[str, torch.Tensor]]):
         """
         Return None if there are non non-trivial preds
         """
         if features is None:
             # Handling the None cases from ChatTokenizerCollator
             return None
-        ret = {"input_ids": [], "labels": []}
 
         # features is a list[dict[str, Union[list[int], Tensor]]], make it always be list[dict[str,
         # Tensor]]
@@ -249,12 +250,12 @@ class CPDataCollator:
                 for f in features
             ]
 
-        separator = torch.tensor(
-            self.separator_id,
-            dtype=features[0]["input_ids"].dtype,
-            device=features[0]["input_ids"].device,
-        )
+        if self.naive_padding_free:
+            return self._collate_with_naive_padding_free(features)
+        return self._collate_with_padding(features)
 
+    def _collate_with_padding(self, features) -> dict[str, torch.Tensor]:
+        ret = {"input_ids": [], "labels": []}
         # Need padding, both to align all elements in the batch and also to meet CP divisibility
         # requirements
         seqlens = [f["input_ids"].numel() for f in features]
@@ -299,15 +300,58 @@ class CPDataCollator:
                 labels = torch.cat([labels, labels_padding])
 
             # Chunk up and divide among ranks
-            input_ids = torch.chunk(input_ids, chunks=self.cp_degree)[self.cp_rank]
-            ret["input_ids"].append(input_ids)
-            labels = torch.chunk(labels, chunks=self.cp_degree)[self.cp_rank]
-            ret["labels"].append(labels)
+            ret["input_ids"].append(
+                torch.chunk(input_ids, chunks=self.cp_degree, dim=-1)[self.cp_rank]
+            )
+            ret["labels"].append(
+                torch.chunk(labels, chunks=self.cp_degree, dim=-1)[self.cp_rank]
+            )
 
         # Stack and add a batch dimension
         ret["input_ids"] = torch.stack(ret["input_ids"], dim=0)
         ret["labels"] = torch.stack(ret["labels"], dim=0)
         return ret
+
+    def _collate_with_naive_padding_free(self, features) -> dict[str, torch.Tensor]:
+        input_ids_list = []
+        labels_list = []
+        for item in features:
+            input_ids = item["input_ids"]
+            labels = item["labels"]
+            # Shift and mask the final token
+            labels = labels.roll(-1)
+            labels[-1] = self.separator_id
+            input_ids_list.append(input_ids)
+            labels_list.append(labels)
+
+        # Concatenate, pad, and chunk
+        n_toks = sum(i.numel() for i in input_ids_list)
+        padded_numel = _round_up_to_zig_zag_padding(n_toks, self.cp_degree)
+        n_pad_toks = padded_numel - n_toks
+        if n_pad_toks > 0:
+            input_ids_padding = torch.full(
+                (n_pad_toks,),
+                self.pad_id,
+                device=labels.device,
+                dtype=labels.dtype,
+            )
+            labels_padding = torch.full(
+                (n_pad_toks,),
+                self.separator_id,
+                device=labels.device,
+                dtype=labels.dtype,
+            )
+            input_ids_list.append(input_ids_padding)
+            labels_list.append(labels_padding)
+
+        # Concatenate, add a batch dimension, and chunk:
+        input_ids = torch.cat(input_ids_list, dim=-1)[None]
+        input_ids = input_ids.chunk(chunks=self.cp_degree, dim=-1)[self.cp_rank]
+
+        labels = torch.cat(labels_list, dim=-1)[None]
+        labels = labels.chunk(chunks=self.cp_degree, dim=-1)[self.cp_rank]
+
+        return {"input_ids": input_ids, "labels": labels}
 
 
 class ChatTokenizerCollatorCPCollator:
@@ -319,21 +363,25 @@ class ChatTokenizerCollatorCPCollator:
         cp_rank: int,
         pad_id: int = 0,
         separator_id: int = -100,
+        naive_padding_free: bool = False,
     ):
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
         self.separator_id = separator_id
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
+        self.naive_padding_free = naive_padding_free
 
         self.chat_collator = ChatTokenizerCollator(
-            tokenizer=tokenizer, max_seq_length=max_seq_length
+            tokenizer=tokenizer,
+            max_seq_length=max_seq_length,
         )
         self.cp_collator = CPDataCollator(
             cp_degree=cp_degree,
             cp_rank=cp_rank,
             pad_id=pad_id,
             separator_id=separator_id,
+            naive_padding_free=naive_padding_free,
         )
 
     def __call__(self, example):
@@ -386,6 +434,7 @@ class InfiniteCPBatchingIter:
         pad_id: int = 0,
         separator_id: int = -100,
         seed: int = 42,
+        naive_padding_free: bool = False,
     ) -> None:
         self.dataloader_list = dataloader_list
         self.weights = weights
@@ -395,6 +444,7 @@ class InfiniteCPBatchingIter:
         self.pad_id = pad_id
         self.separator_id = separator_id
         self.seed = seed
+        self.naive_padding_free = naive_padding_free
         assert all(w > 0 for w in weights), f"{weights=}"
 
         self._probs = np.array(self.weights, dtype=np.dtype("float64"))

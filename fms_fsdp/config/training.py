@@ -91,3 +91,4 @@ class train_config:
     sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
     separator_id: int = -100
     pad_id: int = 0
+    naive_padding_free: bool = False

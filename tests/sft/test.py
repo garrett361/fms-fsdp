@@ -102,10 +102,17 @@ class Test:
             assert d["labels"].ndim == 1
             assert isinstance(d["n_labels_toks"], int)
 
+    @pytest.mark.parametrize("naive_padding_free", [True, False])
     @pytest.mark.parametrize("batch_size", [1, 2])
-    def test_chat_and_cp_collator(self, batch_size: int) -> None:
+    def test_chat_and_cp_collator(
+        self, batch_size: int, naive_padding_free: bool
+    ) -> None:
         collate_fn = ChatTokenizerCollatorCPCollator(
-            TOKENIZER, BIG_MAX_SEQ_LEN, cp_degree=1, cp_rank=0
+            TOKENIZER,
+            BIG_MAX_SEQ_LEN,
+            cp_degree=1,
+            cp_rank=0,
+            naive_padding_free=naive_padding_free,
         )
         train_dataloader = DataLoader(
             DATA,
@@ -118,8 +125,10 @@ class Test:
         assert len(data) == 2
         for t in data.values():
             assert isinstance(t, torch.Tensor)
-            assert t.shape[0] == batch_size
-            assert t.ndim == 2
+            if naive_padding_free:
+                assert t.shape[0] == 1
+            else:
+                assert t.shape[0] == batch_size
 
     @pytest.mark.parametrize("dp_degree", [1, len(DATA)])
     @pytest.mark.parametrize("cp_degree", [1, len(DATA)])
@@ -203,9 +212,12 @@ class Test:
                     assert torch.all(expected == seen_concat_no_padding)
                     assert torch.all(padding == (0 if field == "input_ids" else -100))
 
+    @pytest.mark.parametrize("naive_padding_free", [True, False])
     @pytest.mark.parametrize("cp_degree", [1, 2, 4])
     @pytest.mark.parametrize("num_datasets", [1, 2, 3])
-    def test_infinite_cp_batching_iter(self, cp_degree: int, num_datasets: int) -> None:
+    def test_infinite_cp_batching_iter(
+        self, cp_degree: int, num_datasets: int, naive_padding_free: bool
+    ) -> None:
         weights = [float(n) for n in range(1, num_datasets + 1)]
         pretok_dataset = Dataset.from_list(list(DATA.values()))
         pretok_dataset = pretok_dataset.map(
@@ -253,6 +265,7 @@ class Test:
             max_tokens=max_tokens,
             cp_degree=1,
             cp_rank=0,
+            naive_padding_free=naive_padding_free,
         )
         non_cp_batches = []
         for rep_idx, (_, batch) in enumerate(data_iter):
@@ -289,6 +302,7 @@ class Test:
                 max_tokens=max_tokens,
                 cp_degree=cp_degree,
                 cp_rank=cp_rank,
+                naive_padding_free=naive_padding_free,
             )
         for batch, cp_batch_tuple in zip(non_cp_batches, zip(*cp_data_iters)):
             inputs, labels = batch["input_ids"], batch["labels"]

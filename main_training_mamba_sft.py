@@ -1,15 +1,13 @@
 import math
 import os
 from contextlib import contextmanager
-from functools import partial
 from pathlib import Path
-from warnings import warn
 
 import fire
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from datasets import concatenate_datasets, load_dataset, load_from_disk
+from datasets import load_from_disk
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
@@ -25,14 +23,10 @@ from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
 from fms_fsdp.utils.config_utils import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils import (
-    ChatTokenizerCollator,
-    ChatTokenizerCollatorCPCollator,
-    CPDataCollator,
+    InfiniteCPBatchingIter,
     PretokenizedCollator,
-    get_infinite_iter,
-    get_infinite_cp_batching_iter,
 )
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
+from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES
 from fms_fsdp.utils.train_utils_sft import (
     get_policies,
     get_profiler,
@@ -56,13 +50,6 @@ def main(**kwargs):
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
-    if (cfg.data_path_pretokenized is None and cfg.data_path is None) or (
-        cfg.data_path_pretokenized is not None and cfg.data_path is not None
-    ):
-        raise ValueError(
-            "Exactly one of data_path_pretokenized or data_path must be non-trivial. "
-            f"{cfg.data_path_pretokenized=}, {cfg.data_path=}"
-        )
 
     # ensure reproducibility
     torch.cuda.manual_seed(cfg.seed)
@@ -140,6 +127,7 @@ def main(**kwargs):
         cp_rank = 0
         dp_rank = rank
     dp_degree = world_size // cp_degree
+    print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
 
     if cfg.sharding_strategy == "fsdp":
         fsdp_mesh = get_1D_world_mesh(world_size)
@@ -184,126 +172,49 @@ def main(**kwargs):
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     tokenizer.chat_template = CHAT_TEMPLATES[cfg.chat_template_name]
 
+    if cfg.use_dummy_dataset:
+        raise ValueError("This script does not suport dummy data.")
+
     with rank_zero_first(rank):
-        if cfg.data_path_pretokenized:
-            pretok_paths = [p.strip() for p in cfg.data_path_pretokenized.split(",")]
-            all_datasets = [load_from_disk(p) for p in pretok_paths]
-            if len(all_datasets) == 1:
-                train_dataset = all_datasets[0]
-            else:
-                train_dataset = concatenate_datasets(all_datasets)
-        else:
-            data_path = Path(cfg.data_path)
-            if data_path.is_file() and data_path.suffix in ["json", "jsonl"]:
-                dataset_type = "json"
-            else:
-                dataset_type = "parquet"
-            train_dataset = load_dataset(
-                dataset_type, data_dir=cfg.data_path, num_proc=cfg.num_workers
-            )["train"]
+        # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
+        dataset_paths = [p.strip() for p in cfg.datasets.split(",")]
+        train_dataset_list = [load_from_disk(p) for p in dataset_paths]
         if not rank:
-            print(f"Train dataset loaded with {len(train_dataset)} total examples")
-        # For sanity checking:
-        if cfg._n_examples:
-            warn(f"only using {cfg._n_examples=} for sanity checking!", stacklevel=1)
-            train_dataset = train_dataset.select(range(cfg._n_examples))
+            print(
+                f"Train datasets loaded with {sum(len(td) for td in train_dataset_list)} total examples"
+            )
 
-        print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
-        if not cfg.use_dummy_dataset:
-            # NOTE: @goon - open-instruct pre-maps the training example around this point, but this can
-            # takes a long time, so we also give the option to tokenize on the fly
-            if cfg.data_path_pretokenized:
-                # The dataset is assumed to have been filtered already
-                collate_fn = (
-                    PretokenizedCollator()
-                    if cfg.use_batching_iter
-                    else CPDataCollator(
-                        cp_degree=cp_degree,
-                        cp_rank=cp_rank,
-                        pad_id=cfg.pad_id,
-                        separator_id=cfg.separator_id,
-                    )
-                )
-            elif cfg.tokenize_on_fly:
-                collate_fn = (
-                    ChatTokenizerCollator(
-                        cp_degree=cp_degree,
-                        cp_rank=cp_rank,
-                        pad_id=cfg.pad_id,
-                        separator_id=cfg.separator_id,
-                    )
-                    if cfg.use_batching_iter
-                    else ChatTokenizerCollatorCPCollator(
-                        tokenizer=tokenizer,
-                        max_seq_length=cfg.seq_length,
-                        cp_degree=cp_degree,
-                        cp_rank=cp_rank,
-                        pad_id=cfg.pad_id,
-                        separator_id=cfg.separator_id,
-                    )
-                )
-            else:
-                assert tokenizer.is_fast
-                train_dataset = train_dataset.map(
-                    partial(
-                        encode_sft_example,
-                        tokenizer=tokenizer,
-                        max_seq_length=None,
-                    ),
-                    batched=False,
-                    num_proc=torch.cuda.device_count() * cfg.num_workers,
-                    remove_columns=[
-                        name
-                        for name in train_dataset.column_names
-                        if name not in ["input_ids", "labels"]
-                    ],
-                    desc="Tokenizing and reformatting instruction data",
-                )
-                train_dataset.set_format(type="pt")
-                train_dataset = train_dataset.filter(
-                    lambda example: example["labels"].numel() <= cfg.seq_length
-                )
-                if not rank:
-                    print(
-                        f"Train dataset post filtering: {len(train_dataset)} total examples"
-                    )
-                collate_fn = (
-                    PretokenizedCollator()
-                    if cfg.use_batching_iter
-                    else CPDataCollator(
-                        tokenizer=tokenizer,
-                        max_seq_length=cfg.seq_length,
-                    )
-                )
-
-            sampler = DistributedSampler(
-                train_dataset,
+        samplers = [
+            DistributedSampler(
+                td,
                 num_replicas=dp_degree,
                 rank=dp_rank,
                 shuffle=True,
                 seed=cfg.seed,
                 drop_last=False,
             )
-            train_loader = DataLoader(
-                train_dataset,
+            for td in train_dataset_list
+        ]
+        train_loader_list = [
+            DataLoader(
+                td,
                 sampler=sampler,
-                collate_fn=collate_fn,
-                batch_size=1 if cfg.use_batching_iter else cfg.batch_size,
+                collate_fn=PretokenizedCollator(),
+                batch_size=1,
             )
-            train_loader = (
-                get_infinite_cp_batching_iter(
-                    train_loader,
-                    max_tokens=cfg.batch_size * cfg.seq_length,
-                    cp_degree=cp_degree,
-                    cp_rank=cp_rank,
-                    pad_id=cfg.pad_id,
-                    separator_id=cfg.separator_id,
-                )
-                if cfg.use_batching_iter
-                else get_infinite_iter(train_loader)
-            )
-        else:
-            raise ValueError("This script assumes no dummy loader is used")
+            for td, sampler in zip(train_dataset_list, samplers)
+        ]
+
+        train_loader = InfiniteCPBatchingIter(
+            train_loader_list,
+            weights=[float(w.strip()) for w in cfg.weights.split(",")],
+            max_tokens=cfg.batch_size * cfg.seq_length,
+            cp_degree=cp_degree,
+            cp_rank=cp_rank,
+            pad_id=cfg.pad_id,
+            separator_id=cfg.separator_id,
+            seed=cfg.seed,
+        )
     if rank == 0:
         print("Datasets constructed!")
 
@@ -373,9 +284,9 @@ def main(**kwargs):
 
     # Skip previous batches
     if start_step > 0:
-        # TODO: @goon - check off by one
-        for _ in range(cfg.grad_acc_steps * start_step):
-            next(train_loader)
+        for step_idx, _ in enumerate(train_loader):
+            if step_idx >= cfg.grad_acc_steps * start_step - 1:
+                break
 
     # LR schedule
     # linear decay for annealing

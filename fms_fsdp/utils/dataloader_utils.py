@@ -1,5 +1,6 @@
-from typing import Union
+from typing import Iterator, Union
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
@@ -362,7 +363,6 @@ def get_infinite_iter(dataloader: DataLoader):
     """
     Infinite iterator, skipping over the None cases above.
     """
-    num_samples = 0
     epoch_idx = 0
     sampler = dataloader.sampler
     should_set_epochs = isinstance(sampler, DistributedSampler)
@@ -372,18 +372,88 @@ def get_infinite_iter(dataloader: DataLoader):
         for item in iter(dataloader):
             if item is not None:
                 yield epoch_idx, item
-                num_samples += 1
-        print(f"{epoch_idx=} completed after {num_samples=}")
         epoch_idx += 1
 
-        if not num_samples:
-            raise RuntimeError(
-                "dataloader only had trivial None data, probably need to increase max_seq_length"
+
+class InfiniteCPBatchingIter:
+    def __init__(
+        self,
+        dataloader_list: list[DataLoader],
+        weights: list[float],
+        max_tokens: int,
+        cp_degree: int,
+        cp_rank: int,
+        pad_id: int = 0,
+        separator_id: int = -100,
+        seed: int = 42,
+    ) -> None:
+        self.dataloader_list = dataloader_list
+        self.weights = weights
+        self.max_tokens = max_tokens
+        self.cp_degree = cp_degree
+        self.cp_rank = cp_rank
+        self.pad_id = pad_id
+        self.separator_id = separator_id
+        self.seed = seed
+        assert all(w > 0 for w in weights), f"{weights=}"
+
+        self._probs = np.array(self.weights)
+        self._probs /= self._probs.sum()
+        self._generator = np.random.default_rng(self.seed)
+        self._infinite_iters = [
+            (idx, get_infinite_iter(dl)) for idx, dl in enumerate(self.dataloader_list)
+        ]
+        self._batch = []
+        self._epoch_idxs = [0 for _ in self.dataloader_list]
+
+        self._cp_collator = CPDataCollator(
+            cp_degree=cp_degree,
+            cp_rank=cp_rank,
+            pad_id=pad_id,
+            separator_id=separator_id,
+        )
+
+    def __iter__(self) -> Iterator[tuple[list[int], dict[str, torch.Tensor]]]:
+        while True:
+            # Select a dataloader per the given weights
+            iter_idx, rand_iter = self._generator.choice(
+                self._infinite_iters, p=self._probs
             )
+            epoch_idx, item = next(rand_iter)
+            self._epoch_idxs[iter_idx] = epoch_idx
+            assert isinstance(item, list), f"{item=}"
+            assert len(item) == 1, (
+                f"Expected batch size 1 inputs, received {len(item)=}"
+            )
+            input = item[0]["input_ids"]
+            if self._batch:
+                current_max_tok_example = max(
+                    _round_up_to_zig_zag_padding(
+                        ex["input_ids"].numel(), self.cp_degree
+                    )
+                    for ex in self._batch
+                )
+                tok_in_new_input = _round_up_to_zig_zag_padding(
+                    input.numel(), self.cp_degree
+                )
+                tok_in_batch_with_new_input = (len(self._batch) + 1) * max(
+                    current_max_tok_example, tok_in_new_input
+                )
+                if tok_in_batch_with_new_input > self.max_tokens:
+                    self.cp_processed_batch = self._cp_collator(self._batch)
+                    yield self._epoch_idxs, self.cp_processed_batch
+                    self._batch.clear()
+                else:
+                    self._batch.extend(item)
+
+            else:
+                if input.numel() <= self.max_tokens:
+                    self._batch.extend(item)
 
 
 def get_infinite_cp_batching_iter(
-    dataloader: DataLoader,
+    dataloader_list: list[DataLoader],
+    weights: list[float],
     max_tokens: int,
     cp_degree: int,
     cp_rank: int,
@@ -400,8 +470,8 @@ def get_infinite_cp_batching_iter(
     )
     num_samples = 0
     epoch_idx = 0
-    sampler = dataloader.sampler
-    should_set_epochs = isinstance(sampler, DistributedSampler)
+    samplers = [dl.sampler for dl in dataloader_list]
+    should_set_epochs = [isinstance(s, DistributedSampler) for s in samplers]
     batch = []
     while True:
         if should_set_epochs:

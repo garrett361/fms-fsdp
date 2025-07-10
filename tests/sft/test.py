@@ -9,8 +9,8 @@ from transformers import AutoTokenizer
 from fms_fsdp.utils.dataloader_utils import (
     ChatTokenizerCollator,
     ChatTokenizerCollatorCPCollator,
+    InfiniteCPBatchingIter,
     PretokenizedCollator,
-    get_infinite_cp_batching_iter,
     get_infinite_iter,
 )
 from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
@@ -90,7 +90,7 @@ class Test:
             batch_size=batch_size,
         )
         data_iter = get_infinite_iter(train_dataloader)
-        data = next(data_iter)
+        epoch_idx, data = next(data_iter)
         assert isinstance(data, list)
         assert isinstance(data[0], dict)
         for d in data:
@@ -113,7 +113,7 @@ class Test:
             batch_size=batch_size,
         )
         data_iter = get_infinite_iter(train_dataloader)
-        data = next(data_iter)
+        epoch_idx, data = next(data_iter)
         assert isinstance(data, dict)
         assert len(data) == 2
         for t in data.values():
@@ -203,75 +203,61 @@ class Test:
                     assert torch.all(expected == seen_concat_no_padding)
                     assert torch.all(padding == (0 if field == "input_ids" else -100))
 
-    @pytest.mark.parametrize("batch_size", [1, 2])
-    def test_chat_and_cp_collator_skipping(self, batch_size: int) -> None:
-        """
-        Test that when the labels would all be -100 padding, these examples are skipped.
-        """
-        collate_fn = ChatTokenizerCollatorCPCollator(
-            TOKENIZER, 4, cp_degree=1, cp_rank=0
+    @pytest.mark.parametrize("cp_degree", [1, 2, 4])
+    @pytest.mark.parametrize("num_datasets", [1, 2, 3])
+    def test_infinite_cp_batching_iter(self, cp_degree: int, num_datasets: int) -> None:
+        weights = [float(n) for n in range(1, num_datasets + 1)]
+        pretok_dataset = Dataset.from_list(list(DATA.values()))
+        pretok_dataset = pretok_dataset.map(
+            partial(
+                encode_sft_example,
+                tokenizer=TOKENIZER,
+                max_seq_length=None,
+            ),
+            batched=False,
+            remove_columns=[
+                name
+                for name in pretok_dataset.column_names
+                if name not in ["input_ids", "labels"]
+            ],
+            desc="Tokenizing and reformatting instruction data",
         )
-        train_dataloader = DataLoader(
-            DATA,
-            collate_fn=collate_fn,
-            batch_size=batch_size,
-        )
-        data_iter = get_infinite_iter(train_dataloader)
-        with pytest.raises(RuntimeError, match="trivial None data"):
-            next(data_iter)
-
-    @pytest.mark.parametrize("cp_degree", [2, 4])
-    @pytest.mark.parametrize("pretokenized", [True, False])
-    def test_infinite_cp_batching_iter(
-        self, cp_degree: int, pretokenized: bool
-    ) -> None:
-        if pretokenized:
-            data = Dataset.from_list(list(DATA.values()))
-            data = data.map(
-                partial(
-                    encode_sft_example,
-                    tokenizer=TOKENIZER,
-                    max_seq_length=None,
-                ),
-                batched=False,
-                remove_columns=[
-                    name
-                    for name in data.column_names
-                    if name not in ["input_ids", "labels"]
-                ],
-                desc="Tokenizing and reformatting instruction data",
-            )
-        else:
-            data = DATA
 
         # First without any CP complications
-        collate_fn = (
-            PretokenizedCollator()
-            if pretokenized
-            else ChatTokenizerCollator(TOKENIZER, BIG_MAX_SEQ_LEN)
-        )
-        sampler = DistributedSampler(
-            data,
-            num_replicas=1,
-            rank=0,
-            shuffle=True,
-            seed=self.seed,
-            drop_last=False,
-        )
-        train_dataloader = DataLoader(
-            data,
-            sampler=sampler,
-            collate_fn=collate_fn,
-            batch_size=1,
-        )
+        dataloader_list = []
+        for idx in range(num_datasets):
+            # Make the different datasets different sizes.
+            sliced_pretok_dataset = pretok_dataset.select(
+                range(len(pretok_dataset) - idx)
+            )
+            sampler = DistributedSampler(
+                sliced_pretok_dataset,
+                num_replicas=1,
+                rank=0,
+                shuffle=True,
+                seed=self.seed,
+                drop_last=False,
+            )
+            train_dataloader = DataLoader(
+                sliced_pretok_dataset,
+                sampler=sampler,
+                collate_fn=PretokenizedCollator(),
+                batch_size=1,
+            )
+            dataloader_list.append(train_dataloader)
         max_tokens = 100
         max_reps = 10
-        data_iter = get_infinite_cp_batching_iter(
-            train_dataloader, max_tokens=max_tokens, cp_degree=1, cp_rank=0
+        data_iter = InfiniteCPBatchingIter(
+            dataloader_list=dataloader_list,
+            weights=weights,
+            max_tokens=max_tokens,
+            cp_degree=1,
+            cp_rank=0,
         )
         non_cp_batches = []
-        for _ in range(max_reps):
-            _, batch = next(data_iter)
+        for rep_idx, (_, batch) in enumerate(data_iter):
+            if rep_idx > max_reps:
+                break
             non_cp_batches.append(batch)
             input, label = batch["input_ids"], batch["labels"]
             assert input.numel() == label.numel()
@@ -280,8 +266,11 @@ class Test:
         # And then CP
         cp_data_iters = [None] * cp_degree
         for cp_rank in range(cp_degree):
+            sliced_pretok_dataset = pretok_dataset.select(
+                range(len(pretok_dataset) - idx)
+            )
             sampler = DistributedSampler(
-                data,
+                sliced_pretok_dataset,
                 num_replicas=1,
                 rank=0,
                 shuffle=True,
@@ -289,20 +278,34 @@ class Test:
                 drop_last=False,
             )
             train_dataloader = DataLoader(
-                data,
+                sliced_pretok_dataset,
                 sampler=sampler,
-                collate_fn=collate_fn,
+                collate_fn=PretokenizedCollator(),
                 batch_size=1,
             )
-            cp_data_iters[cp_rank] = get_infinite_cp_batching_iter(
-                train_dataloader,
+            cp_data_iters[cp_rank] = data_iter = InfiniteCPBatchingIter(
+                dataloader_list=dataloader_list,
+                weights=weights,
                 max_tokens=max_tokens,
                 cp_degree=cp_degree,
                 cp_rank=cp_rank,
             )
-        for batch in non_cp_batches:
-            cp_batches = [next(d)[1] for d in cp_data_iters]
-            cp_inputs_cat = torch.cat([b["input_ids"] for b in cp_batches], dim=-1)
-            cp_labels_cat = torch.cat([b["labels"] for b in cp_batches], dim=-1)
-            torch.testing.assert_close(batch["input_ids"], cp_inputs_cat)
-            torch.testing.assert_close(batch["labels"], cp_labels_cat)
+        for batch, cp_batch_tuple in zip(non_cp_batches, zip(*cp_data_iters)):
+            inputs, labels = batch["input_ids"], batch["labels"]
+
+            cp_batches = [b[1] for b in cp_batch_tuple]
+            cp_inputs = torch.cat([b["input_ids"] for b in cp_batches], dim=-1)
+            cp_labels = torch.cat([b["labels"] for b in cp_batches], dim=-1)
+
+            # Should agree up to possible CP padding differences
+            num_padding_elements = (inputs == 0).sum(dim=-1).min()
+            if num_padding_elements:
+                inputs = inputs[:, :-num_padding_elements]
+                labels = labels[:, :-num_padding_elements]
+            num_cp_padding_elements = (cp_inputs == 0).sum(dim=-1).min()
+            if num_cp_padding_elements:
+                cp_inputs = cp_inputs[:, :-num_cp_padding_elements]
+                cp_labels = cp_labels[:, :-num_cp_padding_elements]
+
+            torch.testing.assert_close(inputs, cp_inputs)
+            torch.testing.assert_close(labels, cp_labels)

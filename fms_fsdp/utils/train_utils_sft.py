@@ -99,7 +99,7 @@ def train(
     loop_start = time.time()
     train_loss = -1
 
-    for batch_idx, (epoch_idx, batch) in enumerate(
+    for batch_idx, (epoch_idx_list, batch) in enumerate(
         train_loader, start=start_step * cfg.grad_acc_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
@@ -282,7 +282,7 @@ def train(
                 print("current token seen:", n_tok_sum)
                 print("current token seen with padding:", n_tok_sum_padded)
                 print(f"current tokens/step: {world_size * tok_per_gpu}")
-                print(f"{epoch_idx=}")
+                print(f"{epoch_idx_list=}")
                 print("gradient norm:", current_gnorm)
                 print("LR:", current_lr)
                 print(
@@ -322,7 +322,6 @@ def train(
                         "current throughput (token per gpu per sec)": current_throughput,
                         "current token seen with padding": n_tok_sum_padded,
                         "current token seen": n_tok_sum,
-                        "epoch": epoch_idx,
                         "gpu allocated memory": allocated_mem,
                         "gpu reserved memory": reserved_mem,
                         "gradient norm": current_gnorm,

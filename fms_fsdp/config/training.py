@@ -12,7 +12,6 @@ class train_config:
     # dataset and dataloader
     use_dummy_dataset: bool = False
     sanity_print_toks: bool = False
-    data_path: Optional[str] = None
     file_type: str = "arrow"
     col_name: str = "tokens"
     tokenizer_path: str = "/fsx/tokenizer"
@@ -87,13 +86,8 @@ class train_config:
 
     # SFT
     chat_template_name: str = "tulu"
-    # Limit the number of examples in the dataset.  For sanity checking
-    _n_examples: Optional[int] = None
     sft_loss_type: str = "sum"  # sum or mean. The `reduction` arg for F.cross_entropy
     final_lr_ratio: float = 0.1  # ratio of initial to final lr during sft
-    tokenize_on_fly: bool = True
     sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
-    data_path_pretokenized: Optional[str] = None  # One or more pretokenized paths
-    use_batching_iter: bool = False
     separator_id: int = -100
     pad_id: int = 0

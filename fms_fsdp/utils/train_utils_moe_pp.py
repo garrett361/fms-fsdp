@@ -174,15 +174,18 @@ def train_moe_pp(
             total_tok_per_step = n_pipeline_instances * cfg.batch_size * cfg.seq_length
             new_tokens_seen = (batch_idx - start_step) * total_tok_per_step
 
-            # Update tok_stats_dict if not already done
+            # Update tok_stats_dict if not already done.
             if tok_stats_dict is not None and not tok_stats_dict:
-                assert not tok_count_hook_dict.is_reduced, (
-                    f"{tok_count_hook_dict=}, {tok_stats_dict=}"
-                )
-                tok_count_hook_dict.reduce(dst=0, group=mesh["ep"].get_group())
-                update_tok_stats_dict(
-                    tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
-                )
+                # NOTE: @goon - tok_count_hook_dict may also be empty due to no MoE layers on some
+                # ranks.  Need to rework the logic here.
+                if tok_count_hook_dict:
+                    assert not tok_count_hook_dict.is_reduced, (
+                        f"{tok_count_hook_dict=}, {tok_stats_dict=}"
+                    )
+                    tok_count_hook_dict.reduce(dst=0, group=mesh["ep"].get_group())
+                    update_tok_stats_dict(
+                        tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
+                    )
 
             if block_mag_hook_dict is not None:
                 block_mag_hook_dict.reduce(dst=0, op=dist.ReduceOp.AVG)

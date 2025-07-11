@@ -134,9 +134,7 @@ def train_moe_pp(
             out_pp = None
 
         if cfg.loss_free_balancing_lr:
-            raise NotImplementedError  # TODO: @goon -
-            # TODO: @goon - specify mesh in all reduce
-            tok_count_hook_dict.all_reduce()
+            tok_count_hook_dict.all_reduce(group=mesh["ep"].group())
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
             )

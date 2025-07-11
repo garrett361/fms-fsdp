@@ -92,7 +92,6 @@ def train_moe_pp(
     model.train()
 
     if cfg.tok_count_hooks or cfg.loss_free_balancing_lr:
-        raise NotImplementedError  # TODO: @goon - probably need some mesh info here.
         tok_count_hook_dict = attach_tok_count_hooks(model)
         tok_stats_dict = defaultdict(int)
     else:
@@ -131,8 +130,9 @@ def train_moe_pp(
         else:
             pp_schedule.step()
 
-        if cfg.loss_free_balancing_lr:
-            tok_count_hook_dict.all_reduce(group=mesh["ep"].group())
+        # Not all PP shards are guaranteed to have MoE layers:
+        if cfg.loss_free_balancing_lr and tok_count_hook_dict:
+            tok_count_hook_dict.all_reduce(group=mesh["ep"].get_group())
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
             )

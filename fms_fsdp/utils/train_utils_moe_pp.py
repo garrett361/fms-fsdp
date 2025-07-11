@@ -176,8 +176,10 @@ def train_moe_pp(
 
             # Update tok_stats_dict if not already done
             if tok_stats_dict is not None and not tok_stats_dict:
-                assert not tok_count_hook_dict.is_reduced
-                tok_count_hook_dict.reduce(dst=0)
+                assert not tok_count_hook_dict.is_reduced, (
+                    f"{tok_count_hook_dict=}, {tok_count_hook_dict=}"
+                )
+                tok_count_hook_dict.reduce(dst=0, group=mesh["ep"].get_group())
                 update_tok_stats_dict(
                     tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
                 )
@@ -277,7 +279,7 @@ def train_moe_pp(
 
             if tok_count_hook_dict:
                 tok_count_hook_dict.reset()
-                tok_stats_dict = defaultdict(int)
+                tok_stats_dict.clear()
             if block_mag_hook_dict:
                 block_mag_hook_dict.reset()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())

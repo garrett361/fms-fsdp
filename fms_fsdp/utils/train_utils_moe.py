@@ -282,7 +282,7 @@ def train_moe(
 
             if tok_count_hook_dict:
                 tok_count_hook_dict.reset()
-                tok_stats_dict = defaultdict(int)
+                tok_stats_dict.clear()
             if block_mag_hook_dict:
                 block_mag_hook_dict.reset()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())

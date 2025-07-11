@@ -106,20 +106,21 @@ def train(
         input, label = batch["input_ids"], batch["labels"]
         step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
         should_step = batch_idx % cfg.grad_acc_steps == 0
-        if step_idx > cfg.num_steps and (step_idx - 1) % cfg.checkpoint_interval != 0:
-            # Save before breaking, if a we didn't save last step
-            save(
-                checkpointer=checkpointer,
-                step_idx=step_idx - 1,
-                model=model,
-                optimizer=optimizer,
-                tokens_seen=tokens_seen,
-                new_tokens_seen=new_tokens_seen,
-                pred_tokens_seen=pred_tokens_seen,
-                new_pred_tokens_seen=new_pred_tokens_seen,
-                mamba_config=mamba_config,
-                tokenizer=tokenizer,
-            )
+        if step_idx > cfg.num_steps:
+            if (step_idx - 1) % cfg.checkpoint_interval != 0:
+                # Save before breaking, if a we didn't save last step
+                save(
+                    checkpointer=checkpointer,
+                    step_idx=step_idx - 1,
+                    model=model,
+                    optimizer=optimizer,
+                    tokens_seen=tokens_seen,
+                    new_tokens_seen=new_tokens_seen,
+                    pred_tokens_seen=pred_tokens_seen,
+                    new_pred_tokens_seen=new_pred_tokens_seen,
+                    mamba_config=mamba_config,
+                    tokenizer=tokenizer,
+                )
             break
         input = input.to(local_rank)
         label = label.to(local_rank)

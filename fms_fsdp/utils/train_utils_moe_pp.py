@@ -177,7 +177,7 @@ def train_moe_pp(
             # Update tok_stats_dict if not already done
             if tok_stats_dict is not None and not tok_stats_dict:
                 assert not tok_count_hook_dict.is_reduced, (
-                    f"{tok_count_hook_dict=}, {tok_count_hook_dict=}"
+                    f"{tok_count_hook_dict=}, {tok_stats_dict=}"
                 )
                 tok_count_hook_dict.reduce(dst=0, group=mesh["ep"].get_group())
                 update_tok_stats_dict(

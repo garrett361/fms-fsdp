@@ -126,12 +126,10 @@ def train_moe_pp(
         optimizer.zero_grad()
         if is_first:
             pp_schedule.step(input)
-            out_pp = None
         elif is_last:
-            out_pp = pp_schedule.step(target=label, losses=pp_losses_list)
+            pp_schedule.step(target=label, losses=pp_losses_list)
         else:
             pp_schedule.step()
-            out_pp = None
 
         if cfg.loss_free_balancing_lr:
             tok_count_hook_dict.all_reduce(group=mesh["ep"].group())

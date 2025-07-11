@@ -124,6 +124,7 @@ def train_moe(
             output = output.logits if hasattr(output, "logits") else output
             ce_loss = torch.nn.CrossEntropyLoss()
             loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
+            del output
         with bwd_timer:
             loss.backward()
 

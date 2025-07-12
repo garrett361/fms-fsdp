@@ -489,23 +489,30 @@ class InfiniteCPBatchingIter:
             n_tok_next_item = item[0]["input_ids"].numel()
             if n_tok_next_item > self.max_tokens:
                 continue
-            if self._batch:
-                current_max_tok_example = max(
-                    _round_up_to_zig_zag_padding(
-                        ex["input_ids"].numel(), self.cp_degree
-                    )
-                    for ex in self._batch
+            if self._should_yield_batch(n_tok_next_item):
+                self.cp_processed_batch = self._cp_collator(self._batch)
+                yield self._epoch_idxs, len(self._batch), self.cp_processed_batch
+                self._batch.clear()
+            self._batch.extend(item)
+
+    def _should_yield_batch(self, n_tok_next_item: int) -> bool:
+        if not self._batch:
+            return False
+
+        if self.naive_padding_free:
+            current_tok_in_batch = sum(b["input_ids"].numel() for b in self._batch)
+            tok_in_batch_with_new_input = current_tok_in_batch + n_tok_next_item
+        else:
+            current_max_tok_example = max(
+                _round_up_to_zig_zag_padding(
+                    ex["input_ids"].numel(), self.cp_degree
                 )
-                tok_in_new_input = _round_up_to_zig_zag_padding(
-                    n_tok_next_item, self.cp_degree
-                )
-                tok_in_batch_with_new_input = (len(self._batch) + 1) * max(
-                    current_max_tok_example, tok_in_new_input
-                )
-                if tok_in_batch_with_new_input > self.max_tokens:
-                    self.cp_processed_batch = self._cp_collator(self._batch)
-                    yield self._epoch_idxs, len(self._batch), self.cp_processed_batch
-                    self._batch.clear()
-                self._batch.extend(item)
-            else:
-                self._batch.extend(item)
+                for ex in self._batch
+            )
+            tok_in_new_input = _round_up_to_zig_zag_padding(
+                n_tok_next_item, self.cp_degree
+            )
+            tok_in_batch_with_new_input = (len(self._batch) + 1) * max(
+                current_max_tok_example, tok_in_new_input
+            )
+        return tok_in_batch_with_new_input > self.max_tokens

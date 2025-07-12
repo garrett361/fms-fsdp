@@ -124,11 +124,13 @@ def main(**kwargs):
         cp_degree = cfg.cp_degree or torch.cuda.device_count()
         if cp_degree == world_size:
             cp_mesh = get_1D_world_mesh(world_size)
+            dp_mesh = None
             dp_rank = 0
             cp_rank = cp_mesh.get_local_rank()
         else:
             two_d_mesh = get_2D_world_mesh(world_size, cp_degree)
             cp_mesh = two_d_mesh["inner"]
+            dp_mesh = two_d_mesh["outer"]
             dp_rank = two_d_mesh["outer"].get_local_rank()
             cp_rank = two_d_mesh["inner"].get_local_rank()
     else:
@@ -136,6 +138,11 @@ def main(**kwargs):
         cp_degree = 1
         cp_rank = 0
         dp_rank = rank
+        dp_mesh = dist.device_mesh.init_device_mesh(
+            "cuda",
+            world_size,
+            mesh_dim_names=("dp",),
+        )
     dp_degree = world_size // cp_degree
     print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
 
@@ -338,6 +345,7 @@ def main(**kwargs):
         local_rank,
         rank,
         cp_degree,
+        dp_mesh,
         train_loader,
         optimizer,
         scheduler,

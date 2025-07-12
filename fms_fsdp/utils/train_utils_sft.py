@@ -3,6 +3,7 @@ from dataclasses import asdict
 from functools import partial
 
 import torch
+import torch.distributed._functional_collectives as funcol
 
 try:
     import packaging.version
@@ -28,6 +29,7 @@ def train(
     local_rank,
     rank,
     cp_degree,
+    dp_mesh,
     train_loader,
     optimizer,
     scheduler,
@@ -100,7 +102,7 @@ def train(
     loop_start = time.time()
     train_loss = -1
 
-    for batch_idx, (epoch_idx_list, batch_size, batch) in enumerate(
+    for batch_idx, (data_stats, batch_size, batch) in enumerate(
         train_loader, start=start_step * cfg.grad_acc_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
@@ -252,6 +254,23 @@ def train(
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
             new_pred_tokens_seen += int(n_pred_tok_sum)
+
+            # Reduce the DatasetStats attrs, if needed:
+            if dp_mesh is not None:
+                dataset_epoch_idx = funcol.all_reduce(
+                    data_stats.epoch_idx, reduceOp="max", group=dp_mesh.get_group()
+                )
+                dataset_tokens_seen = funcol.all_reduce(
+                    data_stats.tokens_seen, reduceOp="sum", group=dp_mesh.get_group()
+                )
+                dataset_examples_seen = funcol.all_reduce(
+                    data_stats.examples_seen, reduceOp="sum", group=dp_mesh.get_group()
+                )
+            else:
+                dataset_epoch_idx = data_stats.epoch_idx
+                dataset_tokens_seen = data_stats.tokens_seen
+                dataset_examples_seen = data_stats.examples_seen
+
             if rank == 0:
                 total_tokens_seen = int(tokens_seen + new_tokens_seen)
                 total_pred_tokens_seen = int(pred_tokens_seen + new_pred_tokens_seen)
@@ -287,7 +306,6 @@ def train(
                 print("current token seen:", n_tok_sum)
                 print("current token seen with padding:", n_tok_sum_padded)
                 print(f"current tokens/step: {world_size * tok_per_gpu}")
-                print(f"{epoch_idx_list=}")
                 print("gradient norm:", current_gnorm)
                 if cfg.sft_loss_type == "sum":
                     print("gradient norm per pred tok:", current_gnorm_per_pred_tok)
@@ -307,6 +325,9 @@ def train(
                 print(f"remaining steps: {remaining_steps}")
                 print(f"reserved memory: {reserved_mem / 2**30:.2f} GiB")
                 print("tokens seen:", total_tokens_seen)
+                print(f"{dataset_epoch_idx=}")
+                print(f"{dataset_tokens_seen=}")
+                print(f"{dataset_examples_seen=}")
 
                 next_ckpt_step_idx = (
                     (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval

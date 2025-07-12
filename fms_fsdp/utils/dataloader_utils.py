@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import Iterator, Union
 
 import numpy as np
@@ -423,14 +424,21 @@ def get_infinite_iter(dataloader: DataLoader):
         epoch_idx += 1
 
 
+@dataclass
+class DatasetStats:
+    epoch_idx: list[int] = field(default_factory=list)
+    examples_seen: list[int] = field(default_factory=list)
+    tokens_seen: list[int] = field(default_factory=list)
+
+
 class InfiniteCPBatchingIter:
     """
     Inifinite data iterator which greedily packs full examples from `dataloader_list` up to the
     `max_token` limit, drawing per-dataset according to `weights`, and the splits the examples for
     context-parallel training. If `naive_padding_free=True`, the examples are all concatenated
     together, otherwise they are batched and padded. The iterator return a tuple of:
-    0) a list of the epoch_idx for each dataset
-    1) the number of examples packed in the batch
+    0) A DatatsetStats instance
+    1) The number of examples packed in the batch
     2) The cp-processed batch, a dict[str, Tensor] with `input_ids`, and `labels` keys in HF style.
     """
 
@@ -457,6 +465,18 @@ class InfiniteCPBatchingIter:
         self.naive_padding_free = naive_padding_free
         assert all(w > 0 for w in weights), f"{weights=}"
 
+        # Assumption: torch.cuda.device has been called
+        self._stats = DatasetStats(
+            epoch_idx=torch.zeros(
+                len(dataloader_list), dtype=torch.int64, device="cuda"
+            ),
+            examples_seen=torch.zeros(
+                len(dataloader_list), dtype=torch.int64, device="cuda"
+            ),
+            tokens_seen=torch.zeros(
+                len(dataloader_list), dtype=torch.int64, device="cuda"
+            ),
+        )
         self._probs = np.array(self.weights, dtype=np.dtype("float64"))
         self._probs /= self._probs.sum()
         self._generator = np.random.default_rng(self.seed)
@@ -464,7 +484,6 @@ class InfiniteCPBatchingIter:
             (idx, get_infinite_iter(dl)) for idx, dl in enumerate(self.dataloader_list)
         ]
         self._batch = []
-        self._epoch_idxs = [0 for _ in self.dataloader_list]
 
         self._cp_collator = CPDataCollator(
             cp_degree=cp_degree,
@@ -474,14 +493,13 @@ class InfiniteCPBatchingIter:
             naive_padding_free=naive_padding_free,
         )
 
-    def __iter__(self) -> Iterator[tuple[list[int], int, dict[str, torch.Tensor]]]:
+    def __iter__(self) -> Iterator[tuple[DatasetStats, int, dict[str, torch.Tensor]]]:
         while True:
             # Select a dataloader per the given weights
             iter_idx, rand_iter = self._generator.choice(
                 self._infinite_iters, p=self._probs
             )
             epoch_idx, item = next(rand_iter)
-            self._epoch_idxs[iter_idx] = epoch_idx
             assert isinstance(item, list), f"{item=}"
             assert len(item) == 1, (
                 f"Expected batch size 1 inputs, received {len(item)=}"
@@ -491,9 +509,13 @@ class InfiniteCPBatchingIter:
                 continue
             if self._should_yield_batch(n_tok_next_item):
                 self.cp_processed_batch = self._cp_collator(self._batch)
-                yield self._epoch_idxs, len(self._batch), self.cp_processed_batch
+                yield self._stats, len(self._batch), self.cp_processed_batch
                 self._batch.clear()
+
             self._batch.extend(item)
+            self._stats.epoch_idx[iter_idx] = epoch_idx
+            self._stats.examples_seen[iter_idx] += 1
+            self._stats.tokens_seen[iter_idx] += n_tok_next_item
 
     def _should_yield_batch(self, n_tok_next_item: int) -> bool:
         if not self._batch:
@@ -504,9 +526,7 @@ class InfiniteCPBatchingIter:
             tok_in_batch_with_new_input = current_tok_in_batch + n_tok_next_item
         else:
             current_max_tok_example = max(
-                _round_up_to_zig_zag_padding(
-                    ex["input_ids"].numel(), self.cp_degree
-                )
+                _round_up_to_zig_zag_padding(ex["input_ids"].numel(), self.cp_degree)
                 for ex in self._batch
             )
             tok_in_new_input = _round_up_to_zig_zag_padding(

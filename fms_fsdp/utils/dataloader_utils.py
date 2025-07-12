@@ -424,6 +424,16 @@ def get_infinite_iter(dataloader: DataLoader):
 
 
 class InfiniteCPBatchingIter:
+    """
+    Inifinite data iterator which greedily packs full examples from `dataloader_list` up to the
+    `max_token` limit, drawing per-dataset according to `weights`, and the splits the examples for
+    context-parallel training. If `naive_padding_free=True`, the examples are all concatenated
+    together, otherwise they are batched and padded. The iterator return a tuple of:
+    0) a list of the epoch_idx for each dataset
+    1) the number of examples packed in the batch
+    2) The cp-processed batch, a dict[str, Tensor] with `input_ids`, and `labels` keys in HF style.
+    """
+
     def __init__(
         self,
         dataloader_list: list[DataLoader],
@@ -461,10 +471,10 @@ class InfiniteCPBatchingIter:
             cp_rank=cp_rank,
             pad_id=pad_id,
             separator_id=separator_id,
-            naive_padding_free=naive_padding_free
+            naive_padding_free=naive_padding_free,
         )
 
-    def __iter__(self) -> Iterator[tuple[list[int], dict[str, torch.Tensor]]]:
+    def __iter__(self) -> Iterator[tuple[list[int], int, dict[str, torch.Tensor]]]:
         while True:
             # Select a dataloader per the given weights
             iter_idx, rand_iter = self._generator.choice(
@@ -492,7 +502,7 @@ class InfiniteCPBatchingIter:
                 )
                 if tok_in_batch_with_new_input > self.max_tokens:
                     self.cp_processed_batch = self._cp_collator(self._batch)
-                    yield self._epoch_idxs, self.cp_processed_batch
+                    yield self._epoch_idxs, len(self._batch), self.cp_processed_batch
                     self._batch.clear()
                 else:
                     self._batch.extend(item)

@@ -100,7 +100,7 @@ def train(
     loop_start = time.time()
     train_loss = -1
 
-    for batch_idx, (epoch_idx_list, batch) in enumerate(
+    for batch_idx, (epoch_idx_list, batch_size, batch) in enumerate(
         train_loader, start=start_step * cfg.grad_acc_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
@@ -199,7 +199,7 @@ def train(
         ddp_stats[2] += 1  # n_fwd_bwd_passes
         ddp_stats[3] += (input != 0).sum().item()  # n_tok_sum (don't include padding!)
         ddp_stats[4] += (label != -100).sum().item()  # n_pred_toks
-        ddp_stats[5] += label.shape[0]  # batch_size
+        ddp_stats[5] += batch_size  # batch_size
         ddp_stats[6] += input.numel()  # n_tok_sum_padded
         if not should_step:
             continue

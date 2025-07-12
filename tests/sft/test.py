@@ -268,7 +268,7 @@ class Test:
             naive_padding_free=naive_padding_free,
         )
         non_cp_batches = []
-        for rep_idx, (_, batch) in enumerate(data_iter):
+        for rep_idx, (_, _,  batch) in enumerate(data_iter):
             if rep_idx > max_reps:
                 break
             non_cp_batches.append(batch)
@@ -307,7 +307,7 @@ class Test:
         for batch, cp_batch_tuple in zip(non_cp_batches, zip(*cp_data_iters)):
             inputs, labels = batch["input_ids"], batch["labels"]
 
-            cp_batches = [b[1] for b in cp_batch_tuple]
+            cp_batches = [b[2] for b in cp_batch_tuple]
             cp_inputs = torch.cat([b["input_ids"] for b in cp_batches], dim=-1)
             cp_labels = torch.cat([b["labels"] for b in cp_batches], dim=-1)
 

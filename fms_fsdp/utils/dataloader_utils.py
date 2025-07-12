@@ -486,7 +486,9 @@ class InfiniteCPBatchingIter:
             assert len(item) == 1, (
                 f"Expected batch size 1 inputs, received {len(item)=}"
             )
-            input = item[0]["input_ids"]
+            n_tok_next_item = item[0]["input_ids"].numel()
+            if n_tok_next_item > self.max_tokens:
+                continue
             if self._batch:
                 current_max_tok_example = max(
                     _round_up_to_zig_zag_padding(
@@ -495,7 +497,7 @@ class InfiniteCPBatchingIter:
                     for ex in self._batch
                 )
                 tok_in_new_input = _round_up_to_zig_zag_padding(
-                    input.numel(), self.cp_degree
+                    n_tok_next_item, self.cp_degree
                 )
                 tok_in_batch_with_new_input = (len(self._batch) + 1) * max(
                     current_max_tok_example, tok_in_new_input
@@ -504,9 +506,6 @@ class InfiniteCPBatchingIter:
                     self.cp_processed_batch = self._cp_collator(self._batch)
                     yield self._epoch_idxs, len(self._batch), self.cp_processed_batch
                     self._batch.clear()
-                else:
-                    self._batch.extend(item)
-
+                self._batch.extend(item)
             else:
-                if input.numel() <= self.max_tokens:
-                    self._batch.extend(item)
+                self._batch.extend(item)

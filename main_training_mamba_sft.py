@@ -302,7 +302,7 @@ def main(**kwargs):
 
     # Skip previous batches
     if start_step > 0:
-        for step_idx, batch_size, _ in enumerate(train_loader):
+        for step_idx, *_ in enumerate(train_loader):
             if step_idx >= cfg.grad_acc_steps * start_step - 1:
                 break
 

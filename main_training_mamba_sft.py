@@ -74,7 +74,7 @@ def main(**kwargs):
         print(f"--> running with these configs {cfg}")
 
     # some setups
-    setup()
+    setup(cfg)
     torch.cuda.set_device(local_rank)
     torch.cuda.empty_cache()
     setup_environ_flags()

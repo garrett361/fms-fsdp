@@ -433,8 +433,8 @@ def save(
     )
 
 
-def setup():
-    dist.init_process_group("nccl", timeout=timedelta(seconds=60 * 60))
+def setup(cfg):
+    dist.init_process_group("nccl", timeout=timedelta(seconds=cfg.pg_timeout_s))
 
 
 def setup_environ_flags():

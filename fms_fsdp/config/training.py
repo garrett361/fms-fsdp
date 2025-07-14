@@ -92,3 +92,6 @@ class train_config:
     separator_id: int = -100
     pad_id: int = 0
     naive_padding_free: bool = False
+    pg_timeout_s: int = (
+        10 * 60
+    )  # 10 min; checkpointing is taking a long time for some reason. TODO: @goon - investigate

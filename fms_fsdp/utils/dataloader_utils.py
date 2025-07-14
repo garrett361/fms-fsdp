@@ -414,9 +414,10 @@ def get_infinite_iter(dataloader: DataLoader):
     """
     epoch_idx = 0
     sampler = dataloader.sampler
-    assert isinstance(sampler, DistributedSampler), f"{sampler=}"
+    should_set_epoch = isinstance(sampler, DistributedSampler)
     while True:
-        sampler.set_epoch(epoch_idx)
+        if should_set_epoch:
+            sampler.set_epoch(epoch_idx)
         for item in iter(dataloader):
             if item is not None:
                 yield epoch_idx, item
@@ -497,6 +498,9 @@ class InfiniteCPBatchingIter:
         )
 
     def __iter__(self) -> Iterator[tuple[DatasetStats, int, dict[str, torch.Tensor]]]:
+        return self
+
+    def __next__(self) -> tuple[DatasetStats, int, dict[str, torch.Tensor]]:
         while True:
             # Select a dataloader per the given weights
             iter_idx, rand_iter = self._generator.choice(
@@ -510,15 +514,17 @@ class InfiniteCPBatchingIter:
             n_tok_next_item = item[0]["input_ids"].numel()
             if n_tok_next_item > self.max_tokens:
                 continue
-            if self._should_yield_batch(n_tok_next_item):
+            if not self._should_yield_batch(n_tok_next_item):
+                self._batch.extend(item)
+            else:
                 self.cp_processed_batch = self._cp_collator(self._batch)
-                yield self._stats, len(self._batch), self.cp_processed_batch
+                batch_size = len(self._batch)
                 self._batch.clear()
-
-            self._batch.extend(item)
-            self._stats.epoch_idx[iter_idx] = epoch_idx
-            self._stats.examples_seen[iter_idx] += 1
-            self._stats.tokens_seen[iter_idx] += n_tok_next_item
+                self._batch.extend(item)
+                self._stats.epoch_idx[iter_idx] = epoch_idx
+                self._stats.examples_seen[iter_idx] += 1
+                self._stats.tokens_seen[iter_idx] += n_tok_next_item
+                return self._stats, batch_size, self.cp_processed_batch
 
     def _should_yield_batch(self, n_tok_next_item: int) -> bool:
         if not self._batch:
@@ -541,26 +547,3 @@ class InfiniteCPBatchingIter:
                 current_max_tok_example, tok_in_new_input
             )
         return tok_in_batch_with_new_input > self.max_tokens
-
-    def skip(self, n_batches: int) -> None:
-        """
-        Efficiently skip the first `n_batches` without paying for any of the I/O costs of
-        actually reading in the data.
-        """
-        batch_idx = 0
-        sampler_iter_list = [
-            self._get_sampler_iterator(dl) for dl in self.dataloader_list
-        ]
-        while batch_idx <= n_batches:
-            sampler_iter = self._generator.choice(sampler_iter_list, p=self._probs)
-            next(sampler_iter)
-            batch_idx += 1
-
-    def _get_sampler_iterator(self, dataloader: DataLoader):
-        epoch_idx = 0
-        sampler = dataloader.sampler
-        assert isinstance(sampler, DistributedSampler), f"{sampler=}"
-        while True:
-            sampler.set_epoch(epoch_idx)
-            yield from sampler
-            epoch_idx += 1

@@ -212,7 +212,7 @@ class Test:
                     assert torch.all(expected == seen_concat_no_padding)
                     assert torch.all(padding == (0 if field == "input_ids" else -100))
 
-    @pytest.mark.parametrize("naive_padding_free", [True, False])
+    @pytest.mark.parametrize("naive_padding_free", [False, True])
     @pytest.mark.parametrize("cp_degree", [1, 2, 4])
     @pytest.mark.parametrize("num_datasets", [1, 2, 3])
     def test_infinite_cp_batching_iter(
@@ -268,34 +268,17 @@ class Test:
             naive_padding_free=naive_padding_free,
         )
         non_cp_batches = []
-        for rep_idx, (_, _,  batch) in enumerate(data_iter):
+        for rep_idx, (*_, batch) in enumerate(data_iter):
             if rep_idx > max_reps:
                 break
             non_cp_batches.append(batch)
-            input, label = batch["input_ids"], batch["labels"]
-            assert input.numel() == label.numel()
-            assert input.numel() <= max_tokens, f"{input.numel()=}, {max_tokens=}"
+            inputs, labels = batch["input_ids"], batch["labels"]
+            assert inputs.numel() == labels.numel()
+            assert inputs.numel() <= max_tokens, f"{inputs.numel()=}, {max_tokens=}"
 
         # And then CP
         cp_data_iters = [None] * cp_degree
         for cp_rank in range(cp_degree):
-            sliced_pretok_dataset = pretok_dataset.select(
-                range(len(pretok_dataset) - idx)
-            )
-            sampler = DistributedSampler(
-                sliced_pretok_dataset,
-                num_replicas=1,
-                rank=0,
-                shuffle=True,
-                seed=self.seed,
-                drop_last=False,
-            )
-            train_dataloader = DataLoader(
-                sliced_pretok_dataset,
-                sampler=sampler,
-                collate_fn=PretokenizedCollator(),
-                batch_size=1,
-            )
             cp_data_iters[cp_rank] = data_iter = InfiniteCPBatchingIter(
                 dataloader_list=dataloader_list,
                 weights=weights,
@@ -304,6 +287,14 @@ class Test:
                 cp_rank=cp_rank,
                 naive_padding_free=naive_padding_free,
             )
+
+        # Collect all independent inputs and labels and put them in a list. Because CP length
+        # conditions can alter the batch formation, the best we can do is ensure the total order of
+        # examples is the same; individual batches may differ.
+        all_inputs = []
+        all_cp_inputs = []
+        all_labels = []
+        all_cp_labels = []
         for batch, cp_batch_tuple in zip(non_cp_batches, zip(*cp_data_iters)):
             inputs, labels = batch["input_ids"], batch["labels"]
 
@@ -312,7 +303,7 @@ class Test:
             cp_labels = torch.cat([b["labels"] for b in cp_batches], dim=-1)
 
             if naive_padding_free:
-                assert input.shape[0] == 1
+                assert inputs.shape[0] == 1
                 assert labels.shape[0] == 1
                 assert cp_inputs.shape[0] == 1
                 assert cp_labels.shape[0] == 1
@@ -322,15 +313,25 @@ class Test:
                 f"{cp_inputs.numel()=}, {max_tokens=}"
             )
 
-            # Should agree up to possible CP padding differences
-            num_padding_elements = (inputs == 0).sum(dim=-1).min()
-            if num_padding_elements:
-                inputs = inputs[:, :-num_padding_elements]
-                labels = labels[:, :-num_padding_elements]
-            num_cp_padding_elements = (cp_inputs == 0).sum(dim=-1).min()
-            if num_cp_padding_elements:
-                cp_inputs = cp_inputs[:, :-num_cp_padding_elements]
-                cp_labels = cp_labels[:, :-num_cp_padding_elements]
+            # Add inputs to list
+            for inp, lab in zip(inputs, labels):
+                non_padding_idxs = inp != 0
+                all_inputs.append(inp[non_padding_idxs])
+                all_labels.append(lab[non_padding_idxs])
+            for cp_inp, cp_lab in zip(cp_inputs, cp_labels):
+                non_padding_idxs = cp_inp != 0
+                all_cp_inputs.append(cp_inp[non_padding_idxs])
+                all_cp_labels.append(cp_lab[non_padding_idxs])
 
-            torch.testing.assert_close(inputs, cp_inputs)
-            torch.testing.assert_close(labels, cp_labels)
+        # Concatenate and compare the slices which exist from both:
+        all_inputs_cat = torch.cat(all_inputs, dim=-1)
+        all_cp_inputs_cat = torch.cat(all_cp_inputs, dim=-1)
+        torch.testing.assert_close(
+            all_inputs_cat[: all_cp_inputs_cat.numel()], all_cp_inputs_cat
+        )
+
+        all_labels_cat = torch.cat(all_labels, dim=-1)
+        all_cp_labels_cat = torch.cat(all_cp_labels, dim=-1)
+        torch.testing.assert_close(
+            all_labels_cat[: all_cp_labels_cat.numel()], all_cp_labels_cat
+        )

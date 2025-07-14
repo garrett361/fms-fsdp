@@ -414,10 +414,9 @@ def get_infinite_iter(dataloader: DataLoader):
     """
     epoch_idx = 0
     sampler = dataloader.sampler
-    should_set_epochs = isinstance(sampler, DistributedSampler)
+    assert isinstance(sampler, DistributedSampler), f"{sampler=}"
     while True:
-        if should_set_epochs:
-            sampler.set_epoch(epoch_idx)
+        sampler.set_epoch(epoch_idx)
         for item in iter(dataloader):
             if item is not None:
                 yield epoch_idx, item
@@ -536,3 +535,24 @@ class InfiniteCPBatchingIter:
                 current_max_tok_example, tok_in_new_input
             )
         return tok_in_batch_with_new_input > self.max_tokens
+
+    def skip(self, n_batches: int) -> None:
+        """
+        Efficiently skip the first `n_batches` without paying for any of the I/O costs of
+        actually reading in the data.
+        """
+        batch_idx = 0
+        sampler_iter_list = [self._get_sampler_iterator(dl) for dl in self.dataloader_list]
+        while batch_idx <= n_batches:
+            sampler_iter = self._generator.choice(sampler_iter_list, p=self._probs)
+            next(sampler_iter)
+            batch_idx += 1
+
+    def _get_sampler_iterator(self, dataloader: DataLoader):
+        epoch_idx = 0
+        sampler = dataloader.sampler
+        assert isinstance(sampler, DistributedSampler), f"{sampler=}"
+        while True:
+            sampler.set_epoch(epoch_idx)
+            yield from sampler
+            epoch_idx += 1

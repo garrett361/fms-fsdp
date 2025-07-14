@@ -304,9 +304,7 @@ def main(**kwargs):
     if start_step > 0:
         if not rank:
             print("Skipping previous data after restart!")
-        for step_idx, *_ in enumerate(train_loader, start=1):
-            if step_idx >= cfg.grad_acc_steps * start_step - 1:
-                break
+        train_loader.skip(n_batches=cfg.grad_acc_steps * start_step)
         if not rank:
             print("Skipping done!")
 

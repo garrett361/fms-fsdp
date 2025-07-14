@@ -436,6 +436,7 @@ class Checkpointer:
         step,
         model,
         is_compiled=False,
+        return_state_dict_only: bool = False,
         **kwargs,
     ):
         # Note: metadata kwargs cannot contain any of:
@@ -453,6 +454,9 @@ class Checkpointer:
                 model_state = model._orig_mod.state_dict()
             else:
                 model_state = model.state_dict()
+
+        if return_state_dict_only:
+            return model_state
         if self.rank == 0:
             metadata = kwargs
             metadata["step"] = step

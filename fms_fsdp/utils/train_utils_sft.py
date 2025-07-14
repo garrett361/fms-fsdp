@@ -412,7 +412,9 @@ def save(
         tokens_seen=tokens_seen + new_tokens_seen,
         pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
     )
-    _, model_state_dict_fms = checkpointer.save_single_file(step_idx, model)
+    model_state_dict_fms = checkpointer.save_single_file(
+        step_idx, model, return_state_dict_only=True
+    )
 
     hf_save_time = time.time()
     hf_output_dir = os.path.join(

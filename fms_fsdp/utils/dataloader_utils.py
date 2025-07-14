@@ -522,7 +522,9 @@ class InfiniteCPBatchingIter:
 
         if self.naive_padding_free:
             current_tok_in_batch = sum(b["input_ids"].numel() for b in self._batch)
-            tok_in_batch_with_new_input = current_tok_in_batch + n_tok_next_item
+            tok_in_batch_with_new_input = _round_up_to_zig_zag_padding(
+                current_tok_in_batch + n_tok_next_item, self.cp_degree
+            )
         else:
             current_max_tok_example = max(
                 _round_up_to_zig_zag_padding(ex["input_ids"].numel(), self.cp_degree)

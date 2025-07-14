@@ -266,6 +266,9 @@ def train(
                 dataset_examples_seen = funcol.all_reduce(
                     data_stats.examples_seen, reduceOp="sum", group=dp_mesh.get_group()
                 )
+                dataset_epoch_idx.wait()
+                dataset_tokens_seen.wait()
+                dataset_examples_seen.wait()
             else:
                 dataset_epoch_idx = data_stats.epoch_idx
                 dataset_tokens_seen = data_stats.tokens_seen

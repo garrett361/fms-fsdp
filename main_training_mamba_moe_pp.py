@@ -105,6 +105,7 @@ def main(**kwargs):
     )
 
     pp_degree = world_size // cfg.ep_degree
+    assert pp_degree > 1, f"{pp_degree=} must be larger than 1."
     mesh = init_device_mesh(
         "cuda", (pp_degree, cfg.ep_degree), mesh_dim_names=("pp", "ep")
     )
@@ -376,7 +377,6 @@ def main(**kwargs):
         start_step,
         tokens_seen,
     )
-
 
     dist.barrier()
     dist.destroy_process_group()

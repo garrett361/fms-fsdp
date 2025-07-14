@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Iterator, Union
+from typing import Iterator, Optional, Union
 
 import numpy as np
 import torch
@@ -452,6 +452,7 @@ class InfiniteCPBatchingIter:
         separator_id: int = -100,
         seed: int = 42,
         naive_padding_free: bool = False,
+        device: Optional[Union[str, torch.device]] = None,
     ) -> None:
         self.dataloader_list = dataloader_list
         self.weights = weights
@@ -464,16 +465,19 @@ class InfiniteCPBatchingIter:
         self.naive_padding_free = naive_padding_free
         assert all(w > 0 for w in weights), f"{weights=}"
 
-        # Assumption: torch.cuda.device has been called
+        if device is None:
+            if torch.cuda.is_available():
+                # Assumption: torch.cuda.device has been called
+                device = "cuda"
         self._stats = DatasetStats(
             epoch_idx=torch.zeros(
-                len(dataloader_list), dtype=torch.int64, device="cuda"
+                len(dataloader_list), dtype=torch.int64, device=device
             ),
             examples_seen=torch.zeros(
-                len(dataloader_list), dtype=torch.int64, device="cuda"
+                len(dataloader_list), dtype=torch.int64, device=device
             ),
             tokens_seen=torch.zeros(
-                len(dataloader_list), dtype=torch.int64, device="cuda"
+                len(dataloader_list), dtype=torch.int64, device=device
             ),
         )
         self._probs = np.array(self.weights, dtype=np.dtype("float64"))
@@ -544,7 +548,9 @@ class InfiniteCPBatchingIter:
         actually reading in the data.
         """
         batch_idx = 0
-        sampler_iter_list = [self._get_sampler_iterator(dl) for dl in self.dataloader_list]
+        sampler_iter_list = [
+            self._get_sampler_iterator(dl) for dl in self.dataloader_list
+        ]
         while batch_idx <= n_batches:
             sampler_iter = self._generator.choice(sampler_iter_list, p=self._probs)
             next(sampler_iter)

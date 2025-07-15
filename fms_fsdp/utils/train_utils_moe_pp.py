@@ -2,9 +2,11 @@ import os
 from collections import defaultdict
 from dataclasses import asdict
 from functools import partial
+from typing import Optional
 
 import torch
 from torch import distributed as dist
+from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.tensor import DTensor
 
 try:
@@ -93,7 +95,7 @@ def train_moe_pp(
 
     if cfg.tok_count_hooks or cfg.loss_free_balancing_lr:
         tok_count_hook_dict = attach_tok_count_hooks(model)
-        tok_stats_dict = defaultdict(int)
+        tok_stats_dict = defaultdict(int) if rank == 0 else None
     else:
         tok_count_hook_dict = None
         tok_stats_dict = None
@@ -136,9 +138,7 @@ def train_moe_pp(
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
             )
-            update_tok_stats_dict(
-                tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
-            )
+            update_tok_stats_dict(tok_count_hook_dict, mesh, tok_stats_dict)
             tok_count_hook_dict.reset()
 
         if cfg.skip_clip:
@@ -175,17 +175,12 @@ def train_moe_pp(
             new_tokens_seen = (batch_idx - start_step) * total_tok_per_step
 
             # Update tok_stats_dict if not already done.
-            if tok_stats_dict is not None and not tok_stats_dict:
-                # NOTE: @goon - tok_count_hook_dict may also be empty due to no MoE layers on some
-                # ranks.  Need to rework the logic here.
-                if tok_count_hook_dict:
-                    assert not tok_count_hook_dict.is_reduced, (
-                        f"{tok_count_hook_dict=}, {tok_stats_dict=}"
-                    )
-                    tok_count_hook_dict.reduce(dst=0, group=mesh["ep"].get_group())
-                    update_tok_stats_dict(
-                        tok_count_hook_dict, tok_stats_dict, cfg.ep_degree, world_size
-                    )
+            if cfg.tok_count_hooks and not cfg.loss_free_balancing_lr:
+                assert not tok_count_hook_dict.is_reduced, (
+                    f"{tok_count_hook_dict=}, {tok_stats_dict=}"
+                )
+                tok_count_hook_dict.all_reduce(group=mesh["ep"].get_group())
+                update_tok_stats_dict(tok_count_hook_dict, mesh, tok_stats_dict)
 
             if block_mag_hook_dict is not None:
                 block_mag_hook_dict.reduce(dst=0, op=dist.ReduceOp.AVG)
@@ -250,23 +245,12 @@ def train_moe_pp(
                         "overall throughput (token per gpu per sec)": overall_throughput,
                     }
                     if tok_stats_dict is not None:
-                        max_tok_count = 0
-                        max_tok_fqn = None
-                        min_tok_count = float("inf")
-                        min_tok_fqn = None
-                        for key, val in tok_stats_dict.items():
-                            vals_to_track[f"hooks/tok_count/{key}"] = val
-                            if "ep_rank" not in key and val > max_tok_count:
-                                max_tok_count = val
-                                max_tok_fqn = key
-                            if "ep_rank" not in key and val < min_tok_count:
-                                min_tok_count = val
-                                min_tok_fqn = key
-
+                        for k, v in tok_stats_dict.items():
+                            # Prefix with `hook/tok/`so create new wandb section and not overwhelm
+                            # the main Chart section.
+                            vals_to_track[f"hook/tok/{k}"] = v
                         if cfg.sanity_prints:
-                            print(f"min_tok_count ({min_tok_fqn}):", min_tok_count)
                             print(f"{tok_stats_dict=}")
-                            print(f"max_tok_count ({max_tok_fqn}):", max_tok_count)
                     if block_mag_hook_dict is not None:
                         for key, val in block_mag_hook_dict.items():
                             vals_to_track[f"hooks/act_mag/{key}"] = val.value.item()
@@ -282,6 +266,7 @@ def train_moe_pp(
 
             if tok_count_hook_dict:
                 tok_count_hook_dict.reset()
+            if tok_stats_dict:
                 tok_stats_dict.clear()
             if block_mag_hook_dict:
                 block_mag_hook_dict.reset()
@@ -442,15 +427,36 @@ class CUDATimer:
 
 
 def update_tok_stats_dict(
-    tok_count_hook_dict, tok_stats_dict, ep_degree: int, world_size: int
+    tok_count_hook_dict,
+    mesh: DeviceMesh,
+    tok_stats_dict: Optional[dict[str, int]] = None,
 ) -> None:
-    for fqn, counts in tok_count_hook_dict.items():
-        n_routed_experts = counts.value.numel()
-        exp_per_rank = n_routed_experts // ep_degree
-        dp_factor = world_size // ep_degree
-        for exp_idx, tok_count in enumerate(counts.value.tolist()):
-            tok_stats_dict[f"{fqn}.exp.{exp_idx}"] += tok_count
-            # Really computing the avg per gpu when there's a non-trivial dp_factor.
-            # TODO: @goon -  per-gpu?
-            ep_rank = exp_idx // exp_per_rank
-            tok_stats_dict[f"ep_rank.{ep_rank}"] += tok_count // dp_factor
+    assert tok_count_hook_dict.is_reduced
+    world_size = mesh.size()
+    ep_degree = mesh["ep"].size()
+    ep_rank = mesh["ep"].get_local_rank()
+    pp_degree = mesh["pp"].size()
+    pp_rank = mesh["pp"].get_local_rank()
+    # Already reduced the tok stats, so only need ep rank zero to act within each ep group.
+    if ep_rank == 0:
+        stats_dict_py = {
+            fqn: counts.value.tolist() for fqn, counts in tok_count_hook_dict.items()
+        }
+        object_gather_list = [None for _ in range(pp_degree)] if not pp_rank else None
+        dist.gather_object(
+            stats_dict_py,
+            object_gather_list=object_gather_list,
+            dst=0,
+            group=mesh["pp"].get_group(),
+        )
+        if not pp_rank:
+            for obj_pp_rank, d in enumerate(object_gather_list):
+                for fqn, count_list in d.items():
+                    num_exps = len(count_list)
+                    exps_per_rank = num_exps // ep_degree
+                    for exp_idx, count in enumerate(count_list):
+                        count_ep_rank = exp_idx // exps_per_rank
+                        tok_stats_dict[f"{fqn}.exp_{exp_idx}"] += count
+                        tok_stats_dict[f"(pp,ep)=({obj_pp_rank},{count_ep_rank})"] += (
+                            count
+                        )

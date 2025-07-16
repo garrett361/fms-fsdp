@@ -84,7 +84,7 @@ class train_config:
     explicit_bwd_prefetch: bool = False
     # Option to avoid fsdp act-ckpt on the
     act_ckpt_mixer_only: bool = True
-    tok_count_hooks: bool = False
+    report_tok_counts: bool = False
     block_mag_hooks: bool = False
     # loss_free moe balancing
     loss_free_balancing_lr: Optional[float] = None

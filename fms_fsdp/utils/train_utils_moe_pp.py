@@ -93,11 +93,13 @@ def train_moe_pp(
 
     model.train()
 
-    if cfg.tok_count_hooks or cfg.loss_free_balancing_lr:
+    if cfg.report_tok_counts or cfg.loss_free_balancing_lr:
         tok_count_hook_dict = attach_tok_count_hooks(model)
-        tok_stats_dict = defaultdict(int) if rank == 0 else None
     else:
         tok_count_hook_dict = None
+    if cfg.report_tok_counts:
+        tok_stats_dict = defaultdict(int) if rank == 0 else None
+    else:
         tok_stats_dict = None
 
     if cfg.block_mag_hooks:
@@ -138,7 +140,8 @@ def train_moe_pp(
             apply_loss_free_moe_balancing(
                 cfg.loss_free_balancing_lr, model, tok_count_hook_dict
             )
-            update_tok_stats_dict(tok_count_hook_dict, mesh, tok_stats_dict)
+            if cfg.report_tok_counts:
+                update_tok_stats_dict(tok_count_hook_dict, mesh, tok_stats_dict)
             tok_count_hook_dict.reset()
 
         if cfg.skip_clip:
@@ -175,7 +178,7 @@ def train_moe_pp(
             new_tokens_seen = (batch_idx - start_step) * total_tok_per_step
 
             # Update tok_stats_dict if not already done.
-            if cfg.tok_count_hooks and not cfg.loss_free_balancing_lr:
+            if cfg.report_tok_counts and not cfg.loss_free_balancing_lr:
                 assert not tok_count_hook_dict.is_reduced, (
                     f"{tok_count_hook_dict=}, {tok_stats_dict=}"
                 )
@@ -244,7 +247,7 @@ def train_moe_pp(
                         "current throughput (token per gpu per sec)": current_throughput,
                         "overall throughput (token per gpu per sec)": overall_throughput,
                     }
-                    if tok_stats_dict is not None:
+                    if tok_stats_dict:
                         for k, v in tok_stats_dict.items():
                             # Prefix with `hook/tok/`so create new wandb section and not overwhelm
                             # the main Chart section.
@@ -432,7 +435,6 @@ def update_tok_stats_dict(
     tok_stats_dict: Optional[dict[str, int]] = None,
 ) -> None:
     assert tok_count_hook_dict.is_reduced
-    world_size = mesh.size()
     ep_degree = mesh["ep"].size()
     ep_rank = mesh["ep"].get_local_rank()
     pp_degree = mesh["pp"].size()

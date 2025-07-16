@@ -87,7 +87,7 @@ def train_moe(
 
     model.train()
 
-    if cfg.tok_count_hooks or cfg.loss_free_balancing_lr:
+    if cfg.report_tok_counts or cfg.loss_free_balancing_lr:
         tok_count_hook_dict = attach_tok_count_hooks(model)
         tok_stats_dict = defaultdict(int)
     else:

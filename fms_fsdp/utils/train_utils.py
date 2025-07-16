@@ -1,6 +1,7 @@
 import os
 from dataclasses import asdict
 from functools import partial
+from typing import Optional
 
 try:
     import packaging.version
@@ -15,6 +16,7 @@ import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
+from fms_fsdp.utils.checkpointing_utils import save_as_single_hf_safetensors_file
 
 
 def train(
@@ -30,6 +32,7 @@ def train(
     start_step,
     tokens_seen,
     cp_degree: int = 1,
+    tokenizer: Optional = None,
 ):
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -59,7 +62,7 @@ def train(
                         "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                     )
                 wandb.config = asdict(cfg)
-                print(f"--> wandb is enabled!", flush=True)
+                print("--> wandb is enabled!", flush=True)
 
         if cfg.tracker == "aim":
             try:
@@ -92,7 +95,7 @@ def train(
         output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
-        loss = loss + .0001 * torch.logsumexp(output, dim=-1).pow(2).mean()
+        loss = loss + 0.0001 * torch.logsumexp(output, dim=-1).pow(2).mean()
         loss.backward()
 
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
@@ -176,12 +179,15 @@ def train(
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if batch_idx % cfg.checkpoint_interval == 0 or batch_idx == cfg.num_steps:
-            checkpointer.save(
-                batch_idx,
-                model,
-                optimizer,
-                None,
-                tokens_seen=tokens_seen + new_tokens_seen,
+            save(
+                checkpointer=checkpointer,
+                step_idx=batch_idx,
+                model=model,
+                optimizer=optimizer,
+                tokens_seen=tokens_seen,
+                new_tokens_seen=new_tokens_seen,
+                tokenizer=tokenizer,
+                cfg=cfg,
             )
 
     return train_loss
@@ -275,4 +281,44 @@ def get_profiler(cfg, rank):
         profile_memory=True,
         with_stack=False,
         record_shapes=True,
+    )
+
+
+def save(
+    checkpointer,
+    step_idx: int,
+    model,
+    optimizer,
+    tokens_seen: int,
+    new_tokens_seen: int,
+    pred_tokens_seen: int,
+    new_pred_tokens_seen: int,
+    tokenizer,
+    cfg,
+) -> None:
+    checkpointer.save(
+        step_idx,
+        model,
+        optimizer,
+        None,
+        tokens_seen=tokens_seen + new_tokens_seen,
+        pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
+    )
+    model_state_dict_fms = checkpointer.get_full_state_dict(model)
+
+    hf_save_time = time.time()
+    hf_output_dir = os.path.join(
+        checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
+    )
+    # Load the hf config from the load path, which is assumed to point to a hf style dir
+    save_as_single_hf_safetensors_file(
+        hf_config=AutoConfig.from_pretrained(cfg.ckpt_load_path),
+        mamba_state_dict=model_state_dict_fms,
+        output_dir=hf_output_dir,
+        tokenizer=tokenizer,
+        precision="fp32",
+    )
+    checkpointer.report(
+        f"HF checkpoint saved in {hf_output_dir}",
+        hf_save_time=time.time() - hf_save_time,
     )

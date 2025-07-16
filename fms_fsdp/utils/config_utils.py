@@ -182,7 +182,7 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
-    elif model_variant == "granite.8b":
+    elif model_variant == "granite":
         model_config = {
             "d_model": 4096,
             "d_intermediate": 14336,

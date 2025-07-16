@@ -14,6 +14,7 @@ from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import CustomPolicy
 from torch.optim.lr_scheduler import LambdaLR
+from transformers import AutoTokenizer, AutoConfig
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -138,6 +139,8 @@ def main(**kwargs):
     # get data loader
     if rank == 0:
         print("Constructing datasets...")
+
+    tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     if not cfg.use_dummy_dataset:
         train_loader = get_data_loader(cfg, rank, world_size, dp_degree)
     else:
@@ -253,7 +256,7 @@ def main(**kwargs):
         schedule = lambda x: (x - start_step) / warmup_interval if x - start_step < warmup_interval else max(0.0, 1 - (x - start_step - warmup_interval) / total_decay_steps)
     else:
         schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
-        
+
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
@@ -276,6 +279,7 @@ def main(**kwargs):
         start_step,
         tokens_seen,
         cp_degree,
+        tokenizer,
     )
 
     dist.barrier()

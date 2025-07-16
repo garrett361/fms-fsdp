@@ -1,9 +1,12 @@
 import os
+import re
 import shutil
 import time
 from pathlib import Path
+from typing import Optional
 
 import torch
+from safetensors.torch import save_file
 from torch.distributed._shard.checkpoint import (
     FileSystemReader,
     FileSystemWriter,
@@ -15,9 +18,11 @@ from torch.distributed.checkpoint.default_planner import (
     DefaultSavePlanner,
 )
 from torch.distributed.checkpoint.optimizer import load_sharded_optimizer_state_dict
-from torch.distributed.fsdp import FullStateDictConfig
+from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import StateDictType
+from transformers import AutoConfig, AutoModelForCausalLM
+from transformers.models.granitemoehybrid import GraniteMoeHybridConfig
+from transformers.utils import SAFE_WEIGHTS_NAME
 
 
 def get_latest(targdir, qualifier=lambda x: True, key=os.path.getctime):
@@ -200,6 +205,7 @@ class Checkpointer:
         Returns model, optimizer, dataloader, current step, and current tokens seen.
         """
         is_resuming = False
+        hf_config: Optional[AutoConfig] = None
         if self._validate_ckp_path(self.ckp_path) is not None:
             path = self.ckp_path
             is_resuming = True
@@ -208,20 +214,118 @@ class Checkpointer:
             self.report(
                 f"No valid checkpoint detected at {path}, starting from scratch."
             )
-            return model, optimizer, dataloader, 0, 0, False
+            return model, optimizer, dataloader, 0, 0, False, hf_config
         else:
             self.report(f"Prior checkpoint {load_path} detected.")
             model_load_time = time.time()
-            if os.path.isfile(load_path):
-                checkpoint_data = torch.load(load_path, map_location="cpu")
-                if is_compiled:
-                    model._orig_mod.load_state_dict(
-                        checkpoint_data.get("model_state"), strict=strict
+            load_path_obj = Path(load_path)
+            if load_path_obj.is_dir() and (load_path_obj / "config.json").exists():
+                hf_ckpt_dir = load_path_obj
+            elif (
+                load_path_obj.is_file()
+                and (load_path_obj.parent / "config.json").exists()
+            ):
+                hf_ckpt_dir = load_path_obj.parent
+            else:
+                hf_ckpt_dir = None
+
+            if load_path_obj.is_file() or hf_ckpt_dir is not None:
+                if hf_ckpt_dir is not None:
+                    self.report(f"Loading and converting HF ckpt from {hf_ckpt_dir}.")
+
+                    hf_model = AutoModelForCausalLM.from_pretrained(hf_ckpt_dir)
+                    hf_config = hf_model.config
+                    checkpoint_data = get_ssm_state_dict_from_hf_model(hf_model)[
+                        "model_state"
+                    ]
+                    # NOTE: @goon - Open instruct adds a padding token to the tokenizer and adjusts
+                    # the vocab size of the embeddings and lm head weights of SFT models. This makes
+                    # the vocab larger than that of the fms-fsdp model, due to the addition of
+                    # zeros.
+                    expected_vocab_size = model.config.vocab_size
+
+                    embedding_key = [k for k in checkpoint_data if "embedding" in k]
+                    assert len(embedding_key) == 1, f"{embedding_key=}"
+                    embedding_key = embedding_key[0]
+                    embedding_weight = checkpoint_data[embedding_key]
+                    embedding_vocab_size = embedding_weight.shape[0]
+
+                    lm_head_key = [k for k in checkpoint_data if "lm_head.weight" in k]
+                    assert len(lm_head_key) == 1, f"{lm_head_key=}"
+                    lm_head_key = lm_head_key[0]
+                    lm_head_weight = checkpoint_data[lm_head_key]
+                    lm_head_vocab_size = lm_head_weight.shape[0]
+
+                    assert lm_head_vocab_size == embedding_vocab_size, (
+                        f"{lm_head_vocab_size=}, {embedding_vocab_size=}"
                     )
+
+                    assert lm_head_vocab_size >= expected_vocab_size, (
+                        f"{lm_head_vocab_size=}, {expected_vocab_size=}"
+                    )
+
+                    if lm_head_vocab_size > expected_vocab_size:
+                        extra_vocab_size = lm_head_vocab_size - expected_vocab_size
+                        self.report(
+                            f"Pruning {extra_vocab_size} trivial vocab elements from loaded checkpoint."
+                        )
+                        # Verify the extra entries are zeros
+                        lm_head_weight, lm_head_extras = (
+                            lm_head_weight[:-extra_vocab_size],
+                            lm_head_weight[-extra_vocab_size:],
+                        )
+                        embedding_weight, embedding_extras = (
+                            embedding_weight[:-extra_vocab_size],
+                            embedding_weight[-extra_vocab_size:],
+                        )
+                        # Expect the added embeddings and lm head entries to all be the same
+                        # NOTE: @goon - this is apparently failing. Manual inspection shows that the
+                        # padding tokens (embedding_extras[0] and lm_head_extras[0]) are getting
+                        # some training, while the other extra entries are all the same, as
+                        # expected. Unclear why this is happening. TODO: @goon - figure out.
+                        self.report(f"{lm_head_extras=}")
+                        self.report(f"{embedding_extras=}")
+                        embedding_mean_diff = (
+                            (
+                                embedding_extras
+                                - embedding_extras[:1].repeat(
+                                    embedding_extras.shape[0], 1
+                                )
+                            )
+                            .abs()
+                            .mean()
+                        )
+                        lm_head_mean_diff = (
+                            (
+                                lm_head_extras
+                                - lm_head_extras[:1].repeat(lm_head_extras.shape[0], 1)
+                            )
+                            .abs()
+                            .mean()
+                        )
+                        self.report(f"{embedding_mean_diff=}")
+                        self.report(f"{lm_head_mean_diff=}")
+
+                        # torch.testing.assert_close(
+                        #     embedding_extras,
+                        #     embedding_extras[:1].repeat(embedding_extras.shape[0], 1),
+                        # )
+                        # torch.testing.assert_close(
+                        #     lm_head_extras,
+                        #     lm_head_extras[:1].repeat(lm_head_extras.shape[0], 1),
+                        # )
+
+                        checkpoint_data[lm_head_key] = lm_head_weight
+                        checkpoint_data[embedding_key] = embedding_weight
+
                 else:
-                    model.load_state_dict(
-                        checkpoint_data.get("model_state"), strict=strict
-                    )
+                    checkpoint_data = torch.load(load_path, map_location="cpu")[
+                        "model_state"
+                    ]
+                if is_compiled:
+                    model._orig_mod.load_state_dict(checkpoint_data, strict=strict)
+                else:
+                    model.load_state_dict(checkpoint_data, strict=strict)
                 if self.model_auto_placement:
                     model.to("cuda")
                 else:
@@ -230,7 +334,7 @@ class Checkpointer:
                     f"Checkpoint {load_path} is a single-file checkpoint containing only a model. Optimizer and dataloader are from scratch.",
                     model_load_time=time.time() - model_load_time,
                 )
-                return model, optimizer, dataloader, 0, 0, is_resuming
+                return model, optimizer, dataloader, 0, 0, 0, is_resuming, hf_config
             else:
                 # Load model
                 with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
@@ -278,7 +382,7 @@ class Checkpointer:
                     self.report(dataset_load_time=time.time() - data_load_time)
                 else:
                     self.report("Skipping dataset load, no dataloader provided.")
-                return model, optimizer, dataloader, step, ntok, is_resuming
+                return model, optimizer, dataloader, step, ntok, is_resuming, hf_cfg
 
     def save(
         self,
@@ -314,3 +418,153 @@ class Checkpointer:
         )
 
         return self._cleanup()
+
+    def get_full_state_dict(
+        self,
+        model,
+        is_compiled=False,
+    ):
+        # Note: metadata kwargs cannot contain any of:
+        # (step, model)
+        with FSDP.state_dict_type(
+            model,
+            StateDictType.FULL_STATE_DICT,
+            FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
+        ):
+            if is_compiled:
+                model_state = model._orig_mod.state_dict()
+            else:
+                model_state = model.state_dict()
+        return model_state
+
+
+def get_ssm_state_dict_from_hf_model(model, in_place: bool = False):
+    original_sd = model.state_dict()
+    state_dict = {}
+
+    for orig_k in list(original_sd.keys()):
+        k = orig_k.replace("embed_tokens", "embedding")
+        k = k.replace("mamba", "mixer")
+        k = k.replace("model.norm", "model.norm_f")
+        k = re.sub(r"(\d+)\.input_layernorm\.", r"\1.norm.", k)
+        k = re.sub(r"(\d+)\.post_attention_layernorm\.", r"\1.norm2.", k)
+        k = k.replace("shared_mlp.input_linear", "mlp.fc1")
+        k = k.replace("shared_mlp.output_linear", "mlp.fc2")
+        k = k.replace("self_attn.o_proj", "mixer.out_proj")
+        if k != orig_k:
+            state_dict[k.replace("model", "backbone")] = original_sd.pop(orig_k)
+    for i in range(len(model.model.layers)):
+        if f"model.layers.{i}.self_attn.q_proj.weight" in original_sd:
+            q = original_sd.pop(f"model.layers.{i}.self_attn.q_proj.weight")
+            k = original_sd.pop(f"model.layers.{i}.self_attn.k_proj.weight")
+            v = original_sd.pop(f"model.layers.{i}.self_attn.v_proj.weight")
+            state_dict[f"backbone.layers.{i}.mixer.in_proj.weight"] = torch.cat(
+                [q, k, v], dim=0
+            )
+    state_dict["lm_head.weight"] = original_sd.pop("lm_head.weight")
+    assert len(original_sd) == 0, original_sd.keys()
+    # [Mamba and HF MLP Differences] Tricky: the MLP code differs between mamba and HF w/r/t how the first linear
+    # weights are used. They use different definitions of what chunk forms the gate. Morally:
+    # Mamba:
+    #     y = self.fc1(x)
+    #     y, gate = y.chunk(2, dim=-1)
+    #     y = y * self.activation(gate)
+    # HF:
+    #     y = self.fc1(x)
+    #     gate, y = y.chunk(2, dim=-1)
+    #     y = y * self.activation(gate)
+
+    # Reorder the weights. If in-place=True, the weights of the original model will be corrupted.
+    for k, v in state_dict.items():
+        if "mlp.fc1" in k:
+            if in_place:
+                idx = v.shape[0] // 2
+                v[:idx], v[idx:] = v[idx:], v[:idx]
+            else:
+                state_dict[k] = torch.cat(list(reversed(v.chunk(2, dim=0))), dim=0)
+
+    return {"model_state": state_dict}
+
+
+def get_hf_state_dict_from_ssm_state_dict(
+    original_sd: dict[str, torch.Tensor], in_place: bool = False
+) -> dict[str, torch.Tensor]:
+    state_dict = {}
+
+    for orig_k, param in original_sd.items():
+        k = orig_k.replace("backbone", "model")
+
+        # for embeddings
+        k = k.replace("embedding", "embed_tokens")
+
+        # for mixer
+        k = k.replace("mixer", "mamba")
+
+        # for final layernorm
+        k = k.replace("model.norm_f", "model.norm")
+
+        # for block layernorm
+        k = re.sub(r"(\d+)\.norm\.", r"\1.input_layernorm.", k)
+        k = re.sub(r"(\d+)\.norm2\.", r"\1.post_attention_layernorm.", k)
+
+        # for mlp
+        k = k.replace("mlp.fc1", "shared_mlp.input_linear")
+        k = k.replace("mlp.fc2", "shared_mlp.output_linear")
+
+        if ("in_proj" in k and orig_k.replace("in_proj", "conv1d") in original_sd) or (
+            "out_proj" in k and orig_k.replace("out_proj", "conv1d") in original_sd
+        ):
+            # then this must be a mamba
+            pass
+        else:
+            # for attn
+            # - because mixer was replaced to mamba above
+            k = k.replace("mamba.out_proj", "self_attn.o_proj")
+            if "mamba.in_proj" in k:
+                m, n = param.shape
+                d = (m - n) // 2
+                param, param2, param3 = torch.split(param, [n, d, d], dim=0)
+                k2 = k.replace("mamba.in_proj", "self_attn.k_proj")
+                state_dict[k2] = param2
+                k2 = k.replace("mamba.in_proj", "self_attn.v_proj")
+                state_dict[k2] = param3
+                k = k.replace("mamba.in_proj", "self_attn.q_proj")
+
+        state_dict[k] = param
+
+    # Reorder the first MLP weights. See [Mamba and HF MLP Differences]
+    for k, v in state_dict.items():
+        if "shared_mlp.input_linear" in k:
+            if in_place:
+                idx = v.shape[0] // 2
+                v[:idx], v[idx:] = v[idx:], v[:idx]
+            else:
+                state_dict[k] = torch.cat(list(reversed(v.chunk(2, dim=0))), dim=0)
+
+    return state_dict
+
+
+def save_as_single_hf_safetensors_file(
+    hf_config: GraniteMoeHybridConfig,
+    mamba_state_dict: dict[str, torch.Tensor],
+    output_dir: str,
+    tokenizer,
+    precision: str = "fp32",
+) -> None:
+    hf_config.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    # FIXME: allow other parameters to pass in
+    mamba_state_dict_hf = get_hf_state_dict_from_ssm_state_dict(mamba_state_dict)
+
+    # Save new model to pytorch_dump_path
+    dtype = (
+        torch.float32
+        if precision == "fp32"
+        else (torch.bfloat16 if precision == "bf16" else torch.float16)
+    )
+
+    save_file(
+        tensors={k: v.to(dtype) for k, v in mamba_state_dict_hf.items()},
+        filename=os.path.join(output_dir, SAFE_WEIGHTS_NAME),
+        metadata={"format": "pt"},
+    )

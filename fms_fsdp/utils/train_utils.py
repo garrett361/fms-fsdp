@@ -129,13 +129,8 @@ def train(
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
-            new_tokens_seen = (
-                (batch_idx - start_step)
-                * world_size
-                * cfg.batch_size
-                * cfg.seq_length
-                // cp_degree
-            )
+            tok_per_gpu = cfg.batch_size * cfg.seq_length // cp_degree
+            new_tokens_seen = (batch_idx - start_step) * world_size * tok_per_gpu
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
@@ -143,12 +138,8 @@ def train(
                 current_gnorm = g_norm.item()
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (batch_idx - start_step)
-                current_throughput = int(
-                    cfg.batch_size * cfg.seq_length / cp_degree / current_step_time
-                )
-                overall_throughput = int(
-                    cfg.batch_size * cfg.seq_length / cp_degree / overall_step_time
-                )
+                current_throughput = int(tok_per_gpu / current_step_time)
+                overall_throughput = int(tok_per_gpu / overall_step_time)
                 reserved_mem = torch.cuda.max_memory_reserved(
                     device=torch.cuda.current_device()
                 )
@@ -171,7 +162,7 @@ def train(
                     "overall token per day:",
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
-                print(f"Total tok/step: {world_size * cfg.batch_size * cfg.seq_length}")
+                print(f"Total tok/step: {world_size * tok_per_gpu}")
                 remaining_steps = cfg.num_steps - batch_idx + 1
                 remaining_secs = remaining_steps * current_step_time
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")

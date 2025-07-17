@@ -3,15 +3,7 @@ import os
 import torch
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.mamba2 import Mamba2
-from mamba_ssm.modules.mha import MHA
-from mamba_ssm.modules.mlp import GatedMLP
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-from transformers.models.granitemoehybrid.modeling_granitemoehybrid import (
-    GraniteMoeHybridAttention,
-    GraniteMoeHybridMambaLayer,
-    GraniteMoeHybridMLP,
-)
 
 from fms_fsdp.utils.checkpointing_utils import (
     get_hf_state_dict_from_ssm_state_dict,
@@ -81,11 +73,8 @@ def test_convert_and_load_hf() -> None:
             get_hf_state_dict_from_ssm_state_dict(model.state_dict()), strict=True
         )
 
-        # And check agreement a final time
+        # And check agreement a final time.
         hf_logits_again = hf_model(inputs).logits
-        torch.testing.assert_close(
-            logits.max(dim=-1).indices, hf_logits_again.max(dim=-1).indices
-        )
-        avg_diff = (logits - hf_logits_again).abs().mean() / logits.abs().mean()
+        # Should be perfect agreement with initial outputs
+        torch.testing.assert_close(hf_logits, hf_logits_again)
         assert avg_diff < tol, f"{avg_diff=}"
-

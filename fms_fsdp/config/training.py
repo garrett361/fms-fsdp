@@ -53,6 +53,7 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
     seed: int = 2023
+    z_loss: float = 1e-4
 
     # continued training spec
     resuming_dataset: bool = False
@@ -89,4 +90,4 @@ class train_config:
     cp: bool = False
     cp_mamba_impl: str = "allgather"  # "allgather" or "serial"
     cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
-    cp_over_world: bool = False
+    cp_degree: Optional[int] = None

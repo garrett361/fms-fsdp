@@ -1,9 +1,6 @@
 import os
 from dataclasses import asdict
 from functools import partial
-from typing import Optional
-
-from transformers import AutoConfig
 
 try:
     import packaging.version
@@ -35,7 +32,7 @@ def train(
     tokens_seen,
     cp_degree,
     tokenizer,
-    hf_config
+    hf_config,
 ):
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -57,6 +54,7 @@ def train(
                         dir=tracker_dir,
                         resume="allow",
                         id=run_id,
+                        config=asdict(cfg),
                         # mode='offline',
                         settings=wandb.Settings(init_timeout=3600),
                     )
@@ -64,7 +62,6 @@ def train(
                     raise ValueError(
                         "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                     )
-                wandb.config = asdict(cfg)
                 print("--> wandb is enabled!", flush=True)
 
         if cfg.tracker == "aim":
@@ -98,7 +95,8 @@ def train(
         output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
-        loss = loss + 0.0001 * torch.logsumexp(output, dim=-1).pow(2).mean()
+        if cfg.z_loss >= 0:
+            loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
         loss.backward()
 
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
@@ -160,6 +158,18 @@ def train(
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
                 print(f"Total tok/step: {world_size * cfg.batch_size * cfg.seq_length}")
+                remaining_steps = cfg.num_steps - batch_idx + 1
+                remaining_secs = remaining_steps * current_step_time
+                print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
+
+                next_ckpt_batch_idx = (
+                    (batch_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval
+                ) * cfg.checkpoint_interval
+                steps_until_ckpt = next_ckpt_batch_idx - batch_idx
+                secs_until_ckpt = steps_until_ckpt * current_step_time
+                print(
+                    f"Approx. time to next ckpt: {timedelta(seconds=secs_until_ckpt)}"
+                )
                 if cfg.tracker and batch_idx > start_step + 1:
                     vals_to_track = {
                         "learning rate": current_lr,
@@ -190,7 +200,8 @@ def train(
                 tokens_seen=tokens_seen,
                 new_tokens_seen=new_tokens_seen,
                 tokenizer=tokenizer,
-                hf_config=hf_config
+                hf_config=hf_config,
+                rank=rank,
             )
 
     return train_loss
@@ -298,6 +309,7 @@ def save(
     new_pred_tokens_seen: int,
     tokenizer,
     hf_config,
+    rank,
 ) -> None:
     checkpointer.save(
         step_idx,
@@ -313,15 +325,15 @@ def save(
     hf_output_dir = os.path.join(
         checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
     )
-    # Load the hf config from the load path, which is assumed to point to a hf style dir
-    save_as_single_hf_safetensors_file(
-        hf_config=hf_config,
-        mamba_state_dict=model_state_dict_fms,
-        output_dir=hf_output_dir,
-        tokenizer=tokenizer,
-        precision="fp32",
-    )
-    checkpointer.report(
-        f"HF checkpoint saved in {hf_output_dir}",
-        hf_save_time=time.time() - hf_save_time,
-    )
+    if rank == 0:
+        save_as_single_hf_safetensors_file(
+            hf_config=hf_config,
+            mamba_state_dict=model_state_dict_fms,
+            output_dir=hf_output_dir,
+            tokenizer=tokenizer,
+            precision="fp32",
+        )
+        checkpointer.report(
+            f"HF checkpoint saved in {hf_output_dir}",
+            hf_save_time=time.time() - hf_save_time,
+        )

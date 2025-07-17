@@ -54,6 +54,7 @@ def main(**kwargs):
     os.environ["TRITON_CACHE_DIR"] = os.path.join(
         Path.home(), ".triton", "cache", str(local_rank)
     )
+    dist.barrier()
 
     # get policy. NOTE: @goon - overriding {wrapping_policy, param_init_fn} below
     block = Block
@@ -78,34 +79,36 @@ def main(**kwargs):
         mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
         return mesh
 
-    def get_2D_world_mesh(world_size: int) -> DeviceMesh:
-        num_gpu_per_node = torch.cuda.device_count()
-        assert world_size % num_gpu_per_node == 0
+    def get_2D_world_mesh(world_size: int, inner_size: int) -> DeviceMesh:
+        assert world_size % inner_size == 0
         mesh = dist.device_mesh.init_device_mesh(
             "cuda",
-            (world_size // num_gpu_per_node, num_gpu_per_node),
-            mesh_dim_names=("inter_node", "intra_node"),
+            (world_size // inner_size, inner_size),
+            mesh_dim_names=("outer", "inner"),
         )
         return mesh
 
-    requires_2d_mesh = (cfg.sharding_strategy == "hsdp") or (
-        cfg.cp and not cfg.cp_over_world
-    )
-    if requires_2d_mesh:
-        mesh = get_2D_world_mesh(world_size)
-        fsdp_mesh = mesh
-        cp_mesh = mesh["intra_node"] if cfg.cp else None
-    else:
-        mesh = get_1D_world_mesh(world_size)
-        fsdp_mesh = mesh
-        cp_mesh = mesh if cfg.cp else None
-
+    # NOTE: @goon - for some reason, just creating a single 1D or 2D mesh and using slices of that
+    # as appropriate seems to give much less stable behavior than making separate CP and FSDP
+    # meshes.
     if cfg.cp:
-        cp_degree = world_size if cfg.cp_over_world else torch.cuda.device_count()
+        cp_degree = cfg.cp_degree or torch.cuda.device_count()
+        cp_mesh = (
+            get_1D_world_mesh(world_size)
+            if cp_degree == world_size
+            else get_2D_world_mesh(world_size, cp_degree)["inner"]
+        )
     else:
+        cp_mesh = None
         cp_degree = 1
-
     dp_degree = world_size // cp_degree
+
+    if cfg.sharding_strategy == "fsdp":
+        fsdp_mesh = get_1D_world_mesh(world_size)
+    elif cfg.sharding_strategy == "hsdp":
+        fsdp_mesh = get_2D_world_mesh(world_size, torch.cuda.device_count())
+    else:
+        fsdp_mesh = None
 
     # get model
     config_data = get_model_config(cfg.model_variant)
@@ -296,7 +299,7 @@ def main(**kwargs):
         tokens_seen,
         cp_degree,
         tokenizer,
-        hf_config
+        hf_config,
     )
 
     dist.barrier()

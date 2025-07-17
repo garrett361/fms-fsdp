@@ -221,6 +221,12 @@ def main(**kwargs):
         "Expected ckpt_load_path to be a HF dir"
     )
     hf_config = AutoConfig.from_pretrained(cfg.ckpt_load_path)
+    if hf_config.embedding_multiplier != 1.0:
+        raise NotImplementedError
+    if hf_config.residual_multiplier != 1.0:
+        raise NotImplementedError
+
+
     model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
         model,
         optimizer,

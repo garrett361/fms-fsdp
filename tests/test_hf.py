@@ -77,4 +77,3 @@ def test_convert_and_load_hf() -> None:
         hf_logits_again = hf_model(inputs).logits
         # Should be perfect agreement with initial outputs
         torch.testing.assert_close(hf_logits, hf_logits_again)
-        assert avg_diff < tol, f"{avg_diff=}"

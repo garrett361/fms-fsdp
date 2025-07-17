@@ -113,6 +113,8 @@ def main(**kwargs):
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
+    if not rank:
+        print(f"Constructing {cfg.model_variant=} model")
 
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):
@@ -224,7 +226,7 @@ def main(**kwargs):
         optimizer,
         None,
         path=cfg.ckpt_load_path,
-        strict=False,
+        strict=True,
     )
     if not is_resuming:
         start_step = 0

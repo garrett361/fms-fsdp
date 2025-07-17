@@ -205,7 +205,6 @@ class Checkpointer:
         Returns model, optimizer, dataloader, current step, and current tokens seen.
         """
         is_resuming = False
-        hf_config: Optional[AutoConfig] = None
         if self._validate_ckp_path(self.ckp_path) is not None:
             path = self.ckp_path
             is_resuming = True
@@ -214,7 +213,7 @@ class Checkpointer:
             self.report(
                 f"No valid checkpoint detected at {path}, starting from scratch."
             )
-            return model, optimizer, dataloader, 0, 0, False, hf_config
+            return model, optimizer, dataloader, 0, 0, False
         else:
             self.report(f"Prior checkpoint {load_path} detected.")
             model_load_time = time.time()
@@ -334,7 +333,7 @@ class Checkpointer:
                     f"Checkpoint {load_path} is a single-file checkpoint containing only a model. Optimizer and dataloader are from scratch.",
                     model_load_time=time.time() - model_load_time,
                 )
-                return model, optimizer, dataloader, 0, 0, 0, is_resuming, hf_config
+                return model, optimizer, dataloader, 0, 0, is_resuming
             else:
                 # Load model
                 with FSDP.state_dict_type(model, StateDictType.SHARDED_STATE_DICT):
@@ -382,7 +381,7 @@ class Checkpointer:
                     self.report(dataset_load_time=time.time() - data_load_time)
                 else:
                     self.report("Skipping dataset load, no dataloader provided.")
-                return model, optimizer, dataloader, step, ntok, is_resuming, hf_cfg
+                return model, optimizer, dataloader, step, ntok, is_resuming
 
     def save(
         self,

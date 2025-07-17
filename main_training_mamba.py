@@ -127,7 +127,10 @@ def main(**kwargs):
         print(f"{cp_mesh=}")
         print(f"{fsdp_mesh=}")
 
+    dist.barrier()
+    # Barrier for cleaner printing
     print(f"Rank Assignments: {rank=}, {cp_rank=}, {dp_rank=}")
+    dist.barrier()
 
     # get model
     config_data = get_model_config(cfg.model_variant)

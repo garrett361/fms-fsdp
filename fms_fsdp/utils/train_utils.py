@@ -90,10 +90,10 @@ def train(
         input = input.to(local_rank)
         label = label.to(local_rank)
 
-        # TODO: @goon - DELETE
-        input = label = torch.arange(64, dtype=torch.int32, device="cuda")[None]
-        # TODO: @goon - DELETE
-        print(f"[{rank=}]: {input=}, {label=}, {input.max()=}")
+        # # TODO: @goon - DELETE
+        # input = label = torch.arange(64, dtype=torch.int32, device="cuda")[None]
+        # # TODO: @goon - DELETE
+        # print(f"[{rank=}]: {input=}, {label=}, {input.max()=}")
 
         optimizer.zero_grad()
         output = model(input)

@@ -3,7 +3,6 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Optional
 
 import torch
 from safetensors.torch import save_file
@@ -20,7 +19,7 @@ from torch.distributed.checkpoint.default_planner import (
 from torch.distributed.checkpoint.optimizer import load_sharded_optimizer_state_dict
 from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM
 from transformers.models.granitemoehybrid import GraniteMoeHybridConfig
 from transformers.utils import SAFE_WEIGHTS_NAME
 
@@ -233,90 +232,9 @@ class Checkpointer:
                     self.report(f"Loading and converting HF ckpt from {hf_ckpt_dir}.")
 
                     hf_model = AutoModelForCausalLM.from_pretrained(hf_ckpt_dir)
-                    hf_config = hf_model.config
                     checkpoint_data = get_ssm_state_dict_from_hf_model(hf_model)[
                         "model_state"
                     ]
-                    # NOTE: @goon - Open instruct adds a padding token to the tokenizer and adjusts
-                    # the vocab size of the embeddings and lm head weights of SFT models. This makes
-                    # the vocab larger than that of the fms-fsdp model, due to the addition of
-                    # zeros.
-                    expected_vocab_size = model.config.vocab_size
-
-                    embedding_key = [k for k in checkpoint_data if "embedding" in k]
-                    assert len(embedding_key) == 1, f"{embedding_key=}"
-                    embedding_key = embedding_key[0]
-                    embedding_weight = checkpoint_data[embedding_key]
-                    embedding_vocab_size = embedding_weight.shape[0]
-
-                    lm_head_key = [k for k in checkpoint_data if "lm_head.weight" in k]
-                    assert len(lm_head_key) == 1, f"{lm_head_key=}"
-                    lm_head_key = lm_head_key[0]
-                    lm_head_weight = checkpoint_data[lm_head_key]
-                    lm_head_vocab_size = lm_head_weight.shape[0]
-
-                    assert lm_head_vocab_size == embedding_vocab_size, (
-                        f"{lm_head_vocab_size=}, {embedding_vocab_size=}"
-                    )
-
-                    assert lm_head_vocab_size >= expected_vocab_size, (
-                        f"{lm_head_vocab_size=}, {expected_vocab_size=}"
-                    )
-
-                    if lm_head_vocab_size > expected_vocab_size:
-                        extra_vocab_size = lm_head_vocab_size - expected_vocab_size
-                        self.report(
-                            f"Pruning {extra_vocab_size} trivial vocab elements from loaded checkpoint."
-                        )
-                        # Verify the extra entries are zeros
-                        lm_head_weight, lm_head_extras = (
-                            lm_head_weight[:-extra_vocab_size],
-                            lm_head_weight[-extra_vocab_size:],
-                        )
-                        embedding_weight, embedding_extras = (
-                            embedding_weight[:-extra_vocab_size],
-                            embedding_weight[-extra_vocab_size:],
-                        )
-                        # Expect the added embeddings and lm head entries to all be the same
-                        # NOTE: @goon - this is apparently failing. Manual inspection shows that the
-                        # padding tokens (embedding_extras[0] and lm_head_extras[0]) are getting
-                        # some training, while the other extra entries are all the same, as
-                        # expected. Unclear why this is happening. TODO: @goon - figure out.
-                        self.report(f"{lm_head_extras=}")
-                        self.report(f"{embedding_extras=}")
-                        embedding_mean_diff = (
-                            (
-                                embedding_extras
-                                - embedding_extras[:1].repeat(
-                                    embedding_extras.shape[0], 1
-                                )
-                            )
-                            .abs()
-                            .mean()
-                        )
-                        lm_head_mean_diff = (
-                            (
-                                lm_head_extras
-                                - lm_head_extras[:1].repeat(lm_head_extras.shape[0], 1)
-                            )
-                            .abs()
-                            .mean()
-                        )
-                        self.report(f"{embedding_mean_diff=}")
-                        self.report(f"{lm_head_mean_diff=}")
-
-                        # torch.testing.assert_close(
-                        #     embedding_extras,
-                        #     embedding_extras[:1].repeat(embedding_extras.shape[0], 1),
-                        # )
-                        # torch.testing.assert_close(
-                        #     lm_head_extras,
-                        #     lm_head_extras[:1].repeat(lm_head_extras.shape[0], 1),
-                        # )
-
-                        checkpoint_data[lm_head_key] = lm_head_weight
-                        checkpoint_data[embedding_key] = embedding_weight
-
                 else:
                     checkpoint_data = torch.load(load_path, map_location="cpu")[
                         "model_state"

@@ -169,7 +169,13 @@ def main(**kwargs):
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size, dp_degree)
+        train_loader = get_data_loader(
+            cfg,
+            dp_rank=dp_rank,
+            dp_degree=dp_degree,
+            cp_rank=cp_rank,
+            cp_degree=cp_degree,
+        )
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:

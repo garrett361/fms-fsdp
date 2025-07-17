@@ -60,7 +60,7 @@ def get_dummy_loader(cfg, rank, world_size):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, rank, world_size, dp_degree):
+def get_data_loader(cfg, dp_rank, dp_degree, cp_rank, cp_degree):
     """
     Pytorch dataloader for stateful, distributed, and rescalable language model training.
     Assumes underlying data is sequences of integer values.
@@ -75,14 +75,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree):
         Number of distributed workers. Used for handling dataset sharding logic.
     """
 
-    do_cp = False
-    if dp_degree != world_size:
-        do_cp = True
-        cp_worldsize = world_size // dp_degree
-        cp_rank = rank % cp_worldsize
-        world_size = dp_degree
-        rank = rank // cp_worldsize
-
+    do_cp = cp_degree != 1
     fim_training = cfg.psm_rate + cfg.spm_rate > 0
     if fim_training:
         assert cfg.bos_token is None, "No BOS in FIM training. Did you mean fim_pre?"
@@ -105,8 +98,8 @@ def get_data_loader(cfg, rank, world_size, dp_degree):
     # Base reader layer
     data = StreamingDocDataset(
         cfg.data_path,
-        rank,
-        world_size,
+        dp_rank,
+        dp_degree,
         filehandler,
         cfg.eos_token,
         bos_token=cfg.bos_token,
@@ -129,7 +122,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree):
         cfg.eos_token,
         datasets=datasets,
         weights=weights,
-        verbose=(rank == 0),
+        verbose=(dp_rank == 0),
     )
     # Wrap above dataset in packing logic to form constant-length lines.
     data = BufferDataset(
@@ -166,7 +159,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree):
     # Apply CP chunking if using CP
     if do_cp:
         def chunk(x):
-            return x[(cp_rank*x.size(0))//cp_worldsize : ((cp_rank+1)*x.size(0))//cp_worldsize]
+            return x[(cp_rank*x.size(0))//cp_degree : ((cp_rank+1)*x.size(0))//cp_degree]
         data = PreprocessDataset(data, lambda x: (chunk(x[0]), chunk(x[1])))
 
     # Enable auto-saving

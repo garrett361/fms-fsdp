@@ -85,15 +85,15 @@ def train(
     loop_start = time.time()
     train_loss = -1
     for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        # TODO: @goon - DELETE
-        print(f"[{rank=}]: {input=}, {label=}, {input.max()=}")
         if batch_idx > cfg.num_steps:
             break
         input = input.to(local_rank)
         label = label.to(local_rank)
 
         # TODO: @goon - DELETE
-        input = label = torch.arange(64, dtype=torch.int32, device="cuda")
+        input = label = torch.arange(64, dtype=torch.int32, device="cuda")[None]
+        # TODO: @goon - DELETE
+        print(f"[{rank=}]: {input=}, {label=}, {input.max()=}")
 
         optimizer.zero_grad()
         output = model(input)

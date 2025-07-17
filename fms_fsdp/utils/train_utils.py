@@ -91,9 +91,13 @@ def train(
         label = label.to(local_rank)
 
         if cfg.sanity_print_toks:
+            print(f"[{rank=}, {batch_idx=}]:  {input=}")
+            print(f"[{rank=}, {batch_idx=}]:  {input.shape=}")
+            print(f"[{rank=}, {batch_idx=}]:  {label=}")
+            print(f"[{rank=}, {batch_idx=}]:  {label.shape=}")
             toks_list = input.cpu().tolist()
             for toks in toks_list:
-                print(f"[{rank=}]:  {tokenizer.decode(toks)}")
+                print(f"[{rank=}, {batch_idx=}]:  {tokenizer.decode(toks)}")
         # # TODO: @goon - DELETE
         # input = label = torch.arange(64, dtype=torch.int32, device="cuda")[None]
         # # TODO: @goon - DELETE

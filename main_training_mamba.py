@@ -79,12 +79,12 @@ def main(**kwargs):
         mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
         return mesh
 
-    def get_2D_world_mesh(world_size: int, inner_size: int) -> DeviceMesh:
+    def get_2D_world_mesh(world_size: int, inner_size: int, prefix: str) -> DeviceMesh:
         assert world_size % inner_size == 0
         mesh = dist.device_mesh.init_device_mesh(
             "cuda",
             (world_size // inner_size, inner_size),
-            mesh_dim_names=("outer", "inner"),
+            mesh_dim_names=(prefix + "outer", prefix + "inner"),
         )
         return mesh
 
@@ -93,22 +93,36 @@ def main(**kwargs):
     # meshes.
     if cfg.cp:
         cp_degree = cfg.cp_degree or torch.cuda.device_count()
-        cp_mesh = (
-            get_1D_world_mesh(world_size)
-            if cp_degree == world_size
-            else get_2D_world_mesh(world_size, cp_degree)["inner"]
-        )
+        if cp_degree == world_size:
+            cp_mesh = get_1D_world_mesh(world_size, prefix="cp_")
+        else:
+            cp_mesh_2d = get_2D_world_mesh(world_size, cp_degree, prefix="cp_")
+            cp_rank = cp_mesh_2d["cp_inner"].get_local_rank()
+            dp_rank = cp_mesh_2d["dp_outer"].get_local_rank()
+            cp_mesh = cp_mesh_2d["cp_inner"]
     else:
         cp_mesh = None
         cp_degree = 1
+        cp_rank = 0
+        dp_degree = world_size
+        cp_rank = rank
     dp_degree = world_size // cp_degree
 
     if cfg.sharding_strategy == "fsdp":
-        fsdp_mesh = get_1D_world_mesh(world_size)
+        fsdp_mesh = get_1D_world_mesh(world_size, prefix="fsdp_")
     elif cfg.sharding_strategy == "hsdp":
-        fsdp_mesh = get_2D_world_mesh(world_size, torch.cuda.device_count())
+        fsdp_mesh = get_2D_world_mesh(
+            world_size, torch.cuda.device_count(), prefix="fsdp_"
+        )
     else:
         fsdp_mesh = None
+        dp_rank = 0
+
+    if not rank:
+        print(f"{cp_mesh=}")
+        print(f"{fsdp_mesh=}")
+
+    print(f"Rank Assignments: {rank=}, {cp_rank=}, {dp_rank=}")
 
     # get model
     config_data = get_model_config(cfg.model_variant)
@@ -225,7 +239,6 @@ def main(**kwargs):
         raise NotImplementedError
     if hf_config.residual_multiplier != 1.0:
         raise NotImplementedError
-
 
     model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
         model,

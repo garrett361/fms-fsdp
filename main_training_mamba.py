@@ -14,7 +14,7 @@ from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import CustomPolicy
 from torch.optim.lr_scheduler import LambdaLR
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoConfig, AutoTokenizer
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
@@ -187,8 +187,8 @@ def main(**kwargs):
     params_with_decay = []
     params_without_decay = []
     for name, param in model.named_parameters():
-        suff = name.split('.')[-1]
-        if 'A_log' in suff or 'D' in suff or 'dt_bias' in suff:
+        suff = name.split(".")[-1]
+        if "A_log" in suff or "D" in suff or "dt_bias" in suff:
             params_without_decay.append(param)
         else:
             params_with_decay.append(param)
@@ -200,24 +200,27 @@ def main(**kwargs):
             },
             {
                 "params": params_without_decay,
-                "weight_decay": 0.,
+                "weight_decay": 0.0,
             },
         ],
-        betas = (0.9, 0.95),
-        lr = cfg.learning_rate,
+        betas=(0.9, 0.95),
+        lr=cfg.learning_rate,
     )
 
     # optionally load from checkpoint (when continue pretraining)
     checkpointer = Checkpointer(
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
+
+    assert (Path(cfg.ckpt_load_path) / "config.json").exists(), (
+        "Expected ckpt_load_path to be a HF dir"
+    )
+    hf_config = AutoConfig.from_pretrained(cfg.ckpt_load_path)
     model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
         model,
         optimizer,
         None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
-        if not os.path.isfile(cfg.ckpt_load_path)
-        else cfg.ckpt_load_path,
+        path=cfg.ckpt_load_path,
         strict=False,
     )
     if not is_resuming:
@@ -232,7 +235,11 @@ def main(**kwargs):
     # linear decay for annealing
     if cfg.training_stage == "annealing":
         warmup_interval = 1000
-        schedule = lambda x: x / warmup_interval if x < warmup_interval else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+        schedule = (
+            lambda x: x / warmup_interval
+            if x < warmup_interval
+            else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+        )
     elif cfg.training_stage == "cosine":
         # cosine decay
         schedule = lambda x: min(
@@ -249,14 +256,23 @@ def main(**kwargs):
         linear_steps = 25000
         start_lr = 2e-4
         end_lr = 2e-4
-        schedule = lambda x: (start_lr + (end_lr - start_lr) * min(x - start_step, linear_steps) / linear_steps) / cfg.learning_rate
+        schedule = (
+            lambda x: (
+                start_lr
+                + (end_lr - start_lr) * min(x - start_step, linear_steps) / linear_steps
+            )
+            / cfg.learning_rate
+        )
     elif cfg.training_stage == "annealing_with_specified_decay_steps":
         warmup_interval = 2000
         total_decay_steps = 25000
-        schedule = lambda x: (x - start_step) / warmup_interval if x - start_step < warmup_interval else max(0.0, 1 - (x - start_step - warmup_interval) / total_decay_steps)
+        schedule = (
+            lambda x: (x - start_step) / warmup_interval
+            if x - start_step < warmup_interval
+            else max(0.0, 1 - (x - start_step - warmup_interval) / total_decay_steps)
+        )
     else:
         schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
-
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
@@ -280,6 +296,7 @@ def main(**kwargs):
         tokens_seen,
         cp_degree,
         tokenizer,
+        hf_config
     )
 
     dist.barrier()

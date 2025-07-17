@@ -3,6 +3,8 @@ from dataclasses import asdict
 from functools import partial
 from typing import Optional
 
+from transformers import AutoConfig
+
 try:
     import packaging.version
 except ImportError:
@@ -31,8 +33,9 @@ def train(
     checkpointer,
     start_step,
     tokens_seen,
-    cp_degree: int = 1,
-    tokenizer: Optional = None,
+    cp_degree,
+    tokenizer,
+    hf_config
 ):
     if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
@@ -187,7 +190,7 @@ def train(
                 tokens_seen=tokens_seen,
                 new_tokens_seen=new_tokens_seen,
                 tokenizer=tokenizer,
-                cfg=cfg,
+                hf_config=hf_config
             )
 
     return train_loss
@@ -294,7 +297,7 @@ def save(
     pred_tokens_seen: int,
     new_pred_tokens_seen: int,
     tokenizer,
-    cfg,
+    hf_config,
 ) -> None:
     checkpointer.save(
         step_idx,
@@ -312,7 +315,7 @@ def save(
     )
     # Load the hf config from the load path, which is assumed to point to a hf style dir
     save_as_single_hf_safetensors_file(
-        hf_config=AutoConfig.from_pretrained(cfg.ckpt_load_path),
+        hf_config=hf_config,
         mamba_state_dict=model_state_dict_fms,
         output_dir=hf_output_dir,
         tokenizer=tokenizer,

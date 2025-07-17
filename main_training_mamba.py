@@ -102,7 +102,7 @@ def main(**kwargs):
             dp_rank = 0
         else:
             cp_mesh_2d = get_2D_world_mesh(world_size, cp_degree, prefix="cp_")
-            dp_rank = cp_mesh_2d["dp_outer"].get_local_rank()
+            dp_rank = cp_mesh_2d["cp_outer"].get_local_rank()
             cp_mesh = cp_mesh_2d["cp_inner"]
         cp_rank = cp_mesh.get_local_rank()
     else:

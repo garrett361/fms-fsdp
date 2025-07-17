@@ -331,7 +331,7 @@ class Checkpointer:
             metadata["step"] = step
             torch.save(metadata, os.path.join(save_name, "metadata.pth"))
         self.report(
-            f"Checkpoint saved in {save_name}", model_save_time=time.time() - save_time
+            f"fms-fsdp checkpoint saved in {save_name}", model_save_time=time.time() - save_time
         )
 
         return self._cleanup()

@@ -79,6 +79,7 @@ def train(
                 run["hparams"] = asdict(cfg)
 
     model.train()
+
     ddp_stats = torch.zeros(3).to(local_rank)
 
     start = time.time()
@@ -92,16 +93,16 @@ def train(
 
         if cfg.sanity_print_toks:
             print(f"[{rank=}, {batch_idx=}]:  {input=}")
+            print(f"[{rank=}, {batch_idx=}]:  {input.max()=}")
+            print(f"[{rank=}, {batch_idx=}]:  {input.min()=}")
             print(f"[{rank=}, {batch_idx=}]:  {input.shape=}")
             print(f"[{rank=}, {batch_idx=}]:  {label=}")
+            print(f"[{rank=}, {batch_idx=}]:  {label.max()=}")
+            print(f"[{rank=}, {batch_idx=}]:  {label.min()=}")
             print(f"[{rank=}, {batch_idx=}]:  {label.shape=}")
             toks_list = input.cpu().tolist()
             for toks in toks_list:
                 print(f"[{rank=}, {batch_idx=}]:  {tokenizer.decode(toks)}")
-        # # TODO: @goon - DELETE
-        # input = label = torch.arange(64, dtype=torch.int32, device="cuda")[None]
-        # # TODO: @goon - DELETE
-        # print(f"[{rank=}]: {input=}, {label=}, {input.max()=}")
 
         optimizer.zero_grad()
         output = model(input)
@@ -318,19 +319,18 @@ def save(
     optimizer,
     tokens_seen: int,
     new_tokens_seen: int,
-    pred_tokens_seen: int,
-    new_pred_tokens_seen: int,
     tokenizer,
     hf_config,
     rank,
 ) -> None:
+    if not rank:
+        print("Saving fms-fsdp checkpoint...")
     checkpointer.save(
         step_idx,
         model,
         optimizer,
         None,
         tokens_seen=tokens_seen + new_tokens_seen,
-        pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
     )
     model_state_dict_fms = checkpointer.get_full_state_dict(model)
 
@@ -338,7 +338,11 @@ def save(
     hf_output_dir = os.path.join(
         checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
     )
-    if rank == 0:
+    if not rank:
+        print("Saving HF checkpoint...")
+    if rank != 0:
+        dist.barrier()
+    else:
         save_as_single_hf_safetensors_file(
             hf_config=hf_config,
             mamba_state_dict=model_state_dict_fms,
@@ -350,3 +354,4 @@ def save(
             f"HF checkpoint saved in {hf_output_dir}",
             hf_save_time=time.time() - hf_save_time,
         )
+        dist.barrier()

@@ -124,19 +124,17 @@ def main(**kwargs):
         dp_rank = 0
 
     if not rank:
-        print(f"{cp_mesh=}")
         print(f"{fsdp_mesh=}")
 
-    dist.barrier()
-    # Barrier for cleaner printing
-    print(f"Rank Assignments: {rank=}, {cp_rank=}, {dp_rank=}")
-    dist.barrier()
+    print(
+        f"Rank/Mesh Assignments:\n\t{rank=}\n\t{cp_rank=}\n\t{dp_rank=}\n\t{cp_mesh=}"
+    )
 
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
     if not rank:
-        print(f"Constructing {cfg.model_variant=} model")
+        print(f"Constructing {cfg.model_variant=} model.\n\t{mamba_config=}")
 
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):

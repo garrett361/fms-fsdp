@@ -140,11 +140,13 @@ def train(
                 overall_step_time = elapsed_time / (batch_idx - start_step)
                 current_throughput = int(tok_per_gpu / current_step_time)
                 overall_throughput = int(tok_per_gpu / overall_step_time)
-                reserved_mem = torch.cuda.max_memory_reserved(
-                    device=torch.cuda.current_device()
+                reserved_mem = (
+                    torch.cuda.max_memory_reserved(device=torch.cuda.current_device())
+                    / 2**30
                 )
-                allocated_mem = torch.cuda.max_memory_allocated(
-                    device=torch.cuda.current_device()
+                allocated_mem = (
+                    torch.cuda.max_memory_allocated(device=torch.cuda.current_device())
+                    / 2**30
                 )
 
                 print("step:", batch_idx)
@@ -152,8 +154,8 @@ def train(
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
                 print("gradient norm:", current_gnorm)
-                print("reserved memory:", reserved_mem)
-                print("allocated memory:", allocated_mem)
+                print("reserved memory (GiB):", reserved_mem)
+                print("allocated memory (GiB):", allocated_mem)
                 print("current step time:", current_step_time)
                 print("overall step time:", overall_step_time)
                 print("current token per gpu per sec:", current_throughput)
@@ -183,8 +185,8 @@ def train(
                         "token seen": total_tokens_seen,
                         "current throughput (token per gpu per sec)": current_throughput,
                         "overall throughput (token per gpu per sec)": overall_throughput,
-                        "gpu reserved memory": reserved_mem,
-                        "gpu allocated memory": allocated_mem,
+                        "gpu reserved memory GiB": reserved_mem,
+                        "gpu allocated memory GiB": allocated_mem,
                     }
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log

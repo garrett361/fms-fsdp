@@ -15,7 +15,7 @@ import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
-from fms_fsdp.utils.checkpointing_utils import save_as_single_hf_safetensors_file
+from fms_fsdp.utils.checkpointing_utils import save_hf_model
 
 
 def train(
@@ -336,7 +336,7 @@ def save(
     if rank != 0:
         dist.barrier()
     else:
-        save_as_single_hf_safetensors_file(
+        save_hf_model(
             hf_config=hf_config,
             mamba_state_dict=model_state_dict_fms,
             output_dir=hf_output_dir,

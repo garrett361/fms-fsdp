@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 
 import torch
-from safetensors.torch import save_file
 from torch.distributed._shard.checkpoint import (
     FileSystemReader,
     FileSystemWriter,
@@ -21,7 +20,6 @@ from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from transformers import AutoModelForCausalLM
 from transformers.models.granitemoehybrid import GraniteMoeHybridConfig
-from transformers.utils import SAFE_WEIGHTS_NAME
 
 
 def get_latest(targdir, qualifier=lambda x: True, key=os.path.getctime):
@@ -331,7 +329,8 @@ class Checkpointer:
             metadata["step"] = step
             torch.save(metadata, os.path.join(save_name, "metadata.pth"))
         self.report(
-            f"fms-fsdp checkpoint saved in {save_name}", model_save_time=time.time() - save_time
+            f"fms-fsdp checkpoint saved in {save_name}",
+            model_save_time=time.time() - save_time,
         )
 
         return self._cleanup()
@@ -461,7 +460,7 @@ def get_hf_state_dict_from_ssm_state_dict(
     return state_dict
 
 
-def save_as_single_hf_safetensors_file(
+def save_hf_model(
     hf_config: GraniteMoeHybridConfig,
     mamba_state_dict: dict[str, torch.Tensor],
     output_dir: str,
@@ -479,9 +478,7 @@ def save_as_single_hf_safetensors_file(
         if precision == "fp32"
         else (torch.bfloat16 if precision == "bf16" else torch.float16)
     )
-
-    save_file(
-        tensors={k: v.to(dtype) for k, v in mamba_state_dict_hf.items()},
-        filename=os.path.join(output_dir, SAFE_WEIGHTS_NAME),
-        metadata={"format": "pt"},
-    )
+    hf_model = AutoModelForCausalLM.from_config(hf_config)
+    hf_model.load_state_dict(mamba_state_dict_hf, strict=True)
+    hf_model.to(dtype)
+    hf_model.save_pretrained(output_dir, safe_serialization=True)

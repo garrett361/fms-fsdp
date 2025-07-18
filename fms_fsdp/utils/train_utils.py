@@ -123,7 +123,7 @@ def train(
         if profiler:
             profiler.step()
 
-        if batch_idx % cfg.report_interval == 0 or batch_idx == start_step + 1:
+        if batch_idx % cfg.report_interval == 0 or batch_idx == cfg.num_steps:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[2]
             g_norm = ddp_stats[1] / ddp_stats[2]

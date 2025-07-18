@@ -43,6 +43,10 @@ def main(**kwargs):
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
 
+    if cfg.sharding_strategy == "hsdp" and world_size == torch.cuda.device_count():
+        print("World size = GPU/Node: switching from hsdp -> fsdp")
+        cfg.sharding_strategy = "fsdp"
+
     if rank == 0:
         print(f"--> running with these configs {cfg}")
 

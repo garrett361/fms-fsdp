@@ -90,5 +90,6 @@ class train_config:
     # context parallel
     cp: bool = False
     cp_mamba_impl: str = "allgather"  # "allgather" or "serial"
+    cp_mamba_recompute: bool = False
     cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
     cp_degree: Optional[int] = None

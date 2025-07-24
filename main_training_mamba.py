@@ -247,10 +247,15 @@ def main(**kwargs):
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
 
-    assert (Path(cfg.ckpt_load_path) / "config.json").exists(), (
-        "Expected ckpt_load_path to be a HF dir"
-    )
-    hf_config = AutoConfig.from_pretrained(cfg.ckpt_load_path)
+    if cfg.hf_cfg_path is not None:
+        hf_cfg_path = cfg.hf_cfg_path
+    elif (Path(cfg.ckpt_load_path) / "config.json").exists():
+        hf_cfg_path = cfg.ckpt_load_path
+    else:
+        raise ValueError(
+            "Please either provide a hf_cfg_path or point the ckpt_load_path to a HF ckpt dir"
+        )
+    hf_config = AutoConfig.from_pretrained(hf_cfg_path)
     if hf_config.embedding_multiplier != 1.0:
         raise NotImplementedError
     if hf_config.residual_multiplier != 1.0:

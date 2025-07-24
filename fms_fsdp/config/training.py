@@ -94,5 +94,8 @@ class train_config:
     cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
     cp_degree: Optional[int] = None
 
+    # HF ckpt
+    hf_cfg_path: Optional[str] = None
+
     # debug
     skip_ckpt: bool = False

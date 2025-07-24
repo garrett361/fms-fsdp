@@ -93,3 +93,6 @@ class train_config:
     cp_mamba_recompute: bool = False
     cp_attn_impl: str = "zigzag"  # "zigzag" or "ring"
     cp_degree: Optional[int] = None
+
+    # debug
+    skip_ckpt: bool = False

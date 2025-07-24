@@ -114,7 +114,7 @@ def main(**kwargs):
         cp_degree = 1
         cp_rank = 0
         dp_degree = world_size
-        cp_rank = rank
+        cp_rank = dp_rank = rank
     dp_degree = world_size // cp_degree
 
     if cfg.sharding_strategy == "fsdp":
@@ -125,7 +125,6 @@ def main(**kwargs):
         )
     else:
         fsdp_mesh = None
-        dp_rank = 0
 
     if not rank:
         print(f"{fsdp_mesh=}")

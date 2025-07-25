@@ -179,7 +179,12 @@ def main(**kwargs):
             cp_degree=cp_degree,
         )
     else:
-        train_loader = get_dummy_loader(cfg, rank, world_size)
+        train_loader = get_dummy_loader(
+            cfg,
+            rank,
+            world_size,
+            cp_degree=cp_degree,
+        )
     if rank == 0:
         print("Datasets constructed!")
 

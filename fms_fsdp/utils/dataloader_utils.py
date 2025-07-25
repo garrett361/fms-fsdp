@@ -36,7 +36,7 @@ def causal_lm(data_seq, prompt_len=1):
     return data_seq, t
 
 
-def get_dummy_loader(cfg, rank, world_size):
+def get_dummy_loader(cfg, rank, world_size, cp_degree: int):
     """
     A simple dummy dataloader yielding incrementing vocab indices in an infinite loop
     """
@@ -56,7 +56,7 @@ def get_dummy_loader(cfg, rank, world_size):
                 yield out, out
                 self.i += self.l
 
-    data = SteadyCounter(cfg.seq_length, cfg.vocab_size)
+    data = SteadyCounter(cfg.seq_length // cp_degree, cfg.vocab_size)
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 

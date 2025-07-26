@@ -153,7 +153,7 @@ def train(
                     / 2**30
                 )
 
-                print("step:", batch_idx)
+                print("\nstep:", batch_idx)
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)

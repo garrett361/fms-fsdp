@@ -254,7 +254,7 @@ def get_mixed_precision_policy(cfg, rank):
     return mixed_precision_policy
 
 
-def get_policies(cfg, rank, block):
+def get_policies(cfg, rank, block, mlp):
     """Get policies for mixed precision, wrapping, sharding, ac and param init function."""
 
     # mixed precision
@@ -276,7 +276,9 @@ def get_policies(cfg, rank, block):
         print(f"Sharding strategy = {cfg.sharding_strategy}")
 
     # ac handler
-    apply_selective_ac = partial(apply_fsdp_checkpointing, block=block)
+    apply_selective_ac = partial(
+        apply_fsdp_checkpointing, block=mlp if cfg.ac_mlp_only else block
+    )
 
     # param init function
     if cfg.low_cpu_fsdp:

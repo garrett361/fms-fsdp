@@ -9,6 +9,7 @@ import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
+from mamba_ssm.modules.mlp import GatedMLP
 from torch import distributed as dist
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -68,7 +69,7 @@ def main(**kwargs):
         sharding_strategy_policy,
         apply_selective_ac,
         _,  # NOTE: @goon - We'll override param_init_fn for mamba below
-    ) = get_policies(cfg, rank, block)
+    ) = get_policies(cfg, rank, block, mlp=GatedMLP)
     if cfg.low_cpu_fsdp:
         # NOTE: @goon - the params will be junk after using this. Only intended to be used in
         # conjunction with loading proper weights from a checkpoint.

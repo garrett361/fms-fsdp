@@ -100,3 +100,4 @@ class train_config:
 
     # debug
     skip_ckpt: bool = False
+    preload_buffer_size: int = 1000

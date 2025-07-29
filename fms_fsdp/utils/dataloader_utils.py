@@ -133,7 +133,7 @@ def get_data_loader(cfg, dp_rank, dp_degree, cp_rank, cp_degree):
         pack_hard=True,
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
-    data = PreloadBufferDataset(data, 1000)
+    data = PreloadBufferDataset(data, cfg.preload_buffer_size)
     # Slice and rearrange docs to force long-context retrieval
     if cfg.slice_rate > 0:
         data = DocSliceDataset(

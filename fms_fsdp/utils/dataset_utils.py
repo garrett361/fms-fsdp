@@ -4,6 +4,7 @@ import math
 import os
 import random
 import time
+from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Callable, List, Optional, Set, Union
 
@@ -14,6 +15,49 @@ import torch.utils.data as data
 from transformers import AutoTokenizer  # type: ignore
 
 from fms_fsdp.utils.checkpointing_utils import get_latest
+
+# GLOBAL STATS for report_data_stats=True
+_TOK_STATS_DICT = defaultdict(int)
+_TOK_STATS_DICT["min"] = float("inf")
+_TOK_STATS_DICT["max"] = 0
+# Distributions by document and token count
+_DOC_DIST = defaultdict(int)
+_TOK_DIST = defaultdict(int)
+
+
+def print_tok_stats() -> None:
+    samples = _TOK_STATS_DICT["samples"]
+    mean_len = _TOK_STATS_DICT["len_sum"] / samples
+    mean_squared_len = _TOK_STATS_DICT["len_squared_sum"] / samples
+    std = (mean_squared_len - mean_len**2) ** 0.5
+    doc_dist = {k: v / samples for k, v in sorted(_DOC_DIST.items())}
+    tok_dist = {
+        k: v / _TOK_STATS_DICT["len_sum"] for k, v in sorted(_TOK_DIST.items())
+    }
+    print(
+        f"Data Stats (based on {samples} samples, {_TOK_STATS_DICT['len_sum']:.2e} toks):"
+        f"\n\tMean seq len: {mean_len}"
+        f"\n\tSTD seq len: {std}"
+        f"\n\tMax seq len: {_TOK_STATS_DICT['max']}"
+        f"\n\tMin seq len: {_TOK_STATS_DICT['min']}"
+    )
+    last_seq_len = 0
+    print("\nDistribution by document:")
+    for curr_seq_len, frac in doc_dist.items():
+        print(f"\t{last_seq_len} < seq_len <= {curr_seq_len}: {frac:.2%}")
+        last_seq_len = curr_seq_len
+    last_seq_len = 0
+    print("\nDistribution by token count:")
+    for curr_seq_len, frac in tok_dist.items():
+        print(f"\t{last_seq_len} < seq_len <= {curr_seq_len}: {frac:.2%}")
+        last_seq_len = curr_seq_len
+
+
+def _get_next_power_of_2(num: int) -> int:
+    out = 1
+    while out < num:
+        out *= 2
+    return out
 
 
 """
@@ -1112,13 +1156,15 @@ class StreamingDocDataset(_StatefulDataset):
         max_consecutive_chunks: int = 256,
         verbose: bool = False,
         filter_exp: int = 2,
+        print_data_stats_interval: int = 0,
+        cp_rank: int = 0,
     ):
         super().__init__(datapath, rank, worldsize)
         self.seed = seed
         self.datapath = datapath
         self.filehandler = filehandler
         self.min_length = min_length
-        assert max_chunksize > 0, f"Max chunksize must be a nonzero positive integer"
+        assert max_chunksize > 0, "Max chunksize must be a nonzero positive integer"
         self.chunksize = max_chunksize
         self.eos = delimiter_token
         self.bos = bos_token
@@ -1129,6 +1175,8 @@ class StreamingDocDataset(_StatefulDataset):
         self.docset: List[
             Any
         ] = []  # map of doc indices to (shardid, min docid, max docid)
+        self.print_data_stats_interval = print_data_stats_interval
+        self.cp_rank = cp_rank
 
         # Position
         self.docset_index = 0
@@ -1376,8 +1424,12 @@ class StreamingDocDataset(_StatefulDataset):
                 docid = doclcg + mindoc
                 doc = self.filehandler.get(reader, docid, self.drop)
                 doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
-                keep_chance = (doclen/self.min_length)**self.filter_exp
-                if len(doc) > 0 and torch.rand(1, generator=self.g).item() < keep_chance:
+                if len(doc) > 0 and (
+                    doclen >= self.min_length
+                    or torch.rand(1, generator=self.g).item()
+                    < (doclen / self.min_length) ** self.filter_exp
+                ):
+                    self._maybe_record_and_print_stats(doclen)
                     n_chunks = math.ceil(doclen / self.chunksize)
                     for j in range(n_chunks):
                         if i == 0 and j < residual_chunks:
@@ -1405,8 +1457,12 @@ class StreamingDocDataset(_StatefulDataset):
             path, reader = self._get_reader(path, newpath, reader)
             doc = self.filehandler.get(reader, docid, self.drop)
             doclen = len(doc) + 1 if self.bos is None else len(doc) + 2
-            keep_chance = (doclen/self.min_length)**self.filter_exp
-            if len(doc) > 0 and torch.rand(1, generator=self.g).item() < keep_chance:
+            if len(doc) > 0 and (
+                doclen >= self.min_length
+                or torch.rand(1, generator=self.g).item()
+                < (doclen / self.min_length) ** self.filter_exp
+            ):
+                self._maybe_record_and_print_stats(doclen)
                 n_chunks = math.ceil(doclen / self.chunksize)
                 for j in range(residual_chunks):
                     self.chunk_index = j
@@ -1436,6 +1492,25 @@ class StreamingDocDataset(_StatefulDataset):
         if self.g_state is not None:
             self.g.set_state(self.g_state)
         return out
+
+    def _maybe_record_and_print_stats(self, doclen: int) -> None:
+        if self.print_data_stats_interval > 0:
+            _TOK_STATS_DICT["samples"] += 1
+            _TOK_STATS_DICT["len_sum"] += doclen
+            _TOK_STATS_DICT["len_squared_sum"] += doclen**2
+            _TOK_STATS_DICT["max"] = max(_TOK_STATS_DICT["max"], doclen)
+            _TOK_STATS_DICT["min"] = min(_TOK_STATS_DICT["min"], doclen)
+            bucket = _get_next_power_of_2(doclen)
+            _DOC_DIST[bucket] += 1
+            _TOK_DIST[bucket] += doclen
+
+            new_print_idx = _TOK_STATS_DICT["samples"] // self.print_data_stats_interval
+            if (
+                new_print_idx > _TOK_STATS_DICT["print_idx"]
+                and self.rank == self.cp_rank == 0
+            ):
+                _TOK_STATS_DICT["print_idx"] = new_print_idx
+                print_tok_stats()
 
 
 class ScalableShardDataset(_WrapperDataset):

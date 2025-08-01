@@ -60,7 +60,9 @@ def get_dummy_loader(cfg, rank, world_size, cp_degree: int):
     return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
 
 
-def get_data_loader(cfg, dp_rank, dp_degree, cp_rank, cp_degree):
+def get_data_loader(
+    cfg, dp_rank, dp_degree, cp_rank, cp_degree
+) -> torch.utils.data.DataLoader:
     """
     Pytorch dataloader for stateful, distributed, and rescalable language model training.
     Assumes underlying data is sequences of integer values.
@@ -108,6 +110,8 @@ def get_data_loader(cfg, dp_rank, dp_degree, cp_rank, cp_degree):
         seed=cfg.seed,
         filter_exp=cfg.filter_exp,
         max_consecutive_chunks=ceil(cfg.doc_breakpoint/1024),
+        print_data_stats_interval=cfg.print_data_stats_interval,
+        cp_rank=cp_rank
     )
     # Add rescaling/resharding
     data = ScalableShardDataset(

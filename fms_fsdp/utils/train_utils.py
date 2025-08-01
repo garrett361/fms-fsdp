@@ -109,7 +109,7 @@ def train(
         output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
-        if cfg.z_loss >= 0:
+        if cfg.z_loss > 0:
             loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
         loss.backward()
 

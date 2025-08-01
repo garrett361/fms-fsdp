@@ -378,7 +378,9 @@ def train(
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if step_idx % cfg.checkpoint_interval == 0:
+        if not cfg.skip_ckpt and (
+            step_idx % cfg.checkpoint_interval == 0 or step_idx == cfg.num_steps
+        ):
             save(
                 checkpointer=checkpointer,
                 step_idx=step_idx,

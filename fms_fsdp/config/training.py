@@ -95,3 +95,6 @@ class train_config:
     pg_timeout_s: int = (
         10 * 60
     )  # 10 min; checkpointing is taking a long time for some reason. TODO: @goon - investigate
+
+    # debug
+    skip_ckpt: bool = False

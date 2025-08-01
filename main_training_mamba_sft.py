@@ -164,6 +164,7 @@ def main(**kwargs):
                 cp_mesh=cp_mesh if cfg.cp else None,
                 cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
                 cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
+                cp_mamba_recompute=cfg.cp_mamba_recompute if cfg.cp else None,
             )
     else:
         model = MambaLMHeadModel(

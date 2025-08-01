@@ -205,7 +205,9 @@ class Checkpointer:
         if self._validate_ckp_path(self.ckp_path) is not None:
             path = self.ckp_path
             is_resuming = True
-        load_path = self._validate_ckp_path(path)
+        load_path = self._validate_ckp_path(path) or self._validate_ckp_path(
+            os.path.join(path, "checkpoints/")
+        )
         if load_path is None:
             self.report(
                 f"No valid checkpoint detected at {path}, starting from scratch."

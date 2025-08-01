@@ -194,6 +194,7 @@ def main(**kwargs):
 
     with rank_zero_first(rank):
         # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
+        # See tests/sft/tokenize_dataset.py 
         dataset_paths = [p.strip() for p in cfg.datasets.split(",")]
         train_dataset_list = [load_from_disk(p) for p in dataset_paths]
         if not rank:

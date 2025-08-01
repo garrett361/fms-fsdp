@@ -39,7 +39,7 @@ if __name__ == "__main__":
     else:
         train_dataset = load_dataset(
             "parquet",
-            data_path=args.data_path,
+            data_dir=args.data_path,
             num_proc=args.num_proc_load,
         )["train"]
     print("MAP DATA")

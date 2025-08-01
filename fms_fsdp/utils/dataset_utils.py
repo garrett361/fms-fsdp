@@ -13,7 +13,7 @@ import torch
 import torch.utils.data as data
 from transformers import AutoTokenizer  # type: ignore
 
-from fms_fsdp.utils.checkpointing_utils import get_latest
+from fms_fsdp.utils.checkpointing_utils_sft import get_latest
 
 
 """

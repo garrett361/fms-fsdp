@@ -17,7 +17,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.wrap import CustomPolicy
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, DistributedSampler
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
@@ -195,7 +195,7 @@ def main(**kwargs):
 
     with rank_zero_first(rank):
         # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
-        # See tests/sft/tokenize_dataset.py 
+        # See tests/sft/tokenize_dataset.py
         dataset_paths = [p.strip() for p in cfg.datasets.split(",")]
         train_dataset_list = [load_from_disk(p) for p in dataset_paths]
         if not rank:
@@ -280,6 +280,20 @@ def main(**kwargs):
         cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
     )
 
+    if cfg.hf_cfg_path is not None:
+        hf_cfg_path = cfg.hf_cfg_path
+    elif (Path(cfg.ckpt_load_path) / "config.json").exists():
+        hf_cfg_path = cfg.ckpt_load_path
+    else:
+        raise ValueError(
+            "Please either provide a hf_cfg_path or point the ckpt_load_path to a HF ckpt dir"
+        )
+    hf_config = AutoConfig.from_pretrained(hf_cfg_path)
+    if getattr(hf_config, "embedding_multiplier", 1.0) != 1.0:
+        raise NotImplementedError
+    if getattr(hf_config, "residual_multiplier", 1.0) != 1.0:
+        raise NotImplementedError
+
     ckpt_load_path = Path(cfg.ckpt_load_path)
     is_hf_ckpt_path = (ckpt_load_path / "config.json").exists()
     if ckpt_load_path.is_file() or is_hf_ckpt_path:
@@ -292,7 +306,8 @@ def main(**kwargs):
             model,
             optimizer,
             None,
-            path=ckpt_load_path_str,
+            hf_config,
+            path=cfg.ckpt_load_path,
             strict=True,
         )
     )
@@ -360,6 +375,7 @@ def main(**kwargs):
         start_step,
         tokens_seen,
         pred_tokens_seen,
+        hf_config,
     )
 
     dist.barrier()

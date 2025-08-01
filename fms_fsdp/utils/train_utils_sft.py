@@ -18,7 +18,7 @@ import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
-from fms_fsdp.utils.checkpointing_utils_sft import save_as_single_hf_safetensors_file
+from fms_fsdp.utils.checkpointing_sft_utils import save_hf_model
 
 
 def train(
@@ -38,6 +38,7 @@ def train(
     start_step,
     tokens_seen,
     pred_tokens_seen,
+    hf_config,
 ):
     if cfg.sft_loss_type not in ("sum", "mean"):
         raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
@@ -109,7 +110,7 @@ def train(
         step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
         should_step = batch_idx % cfg.grad_acc_steps == 0
         if step_idx > cfg.num_steps:
-            if (step_idx - 1) % cfg.checkpoint_interval != 0:
+            if not cfg.skip_ckpt and (step_idx - 1) % cfg.checkpoint_interval != 0:
                 # Save before breaking, if a we didn't save last step
                 save(
                     checkpointer=checkpointer,
@@ -378,64 +379,23 @@ def train(
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if not cfg.skip_ckpt and (
-            step_idx % cfg.checkpoint_interval == 0 or step_idx == cfg.num_steps
-        ):
+        if not cfg.skip_ckpt and step_idx % cfg.checkpoint_interval == 0:
             save(
                 checkpointer=checkpointer,
-                step_idx=step_idx,
+                step_idx=batch_idx,
                 model=model,
                 optimizer=optimizer,
                 tokens_seen=tokens_seen,
                 new_tokens_seen=new_tokens_seen,
                 pred_tokens_seen=pred_tokens_seen,
                 new_pred_tokens_seen=new_pred_tokens_seen,
-                mamba_config=mamba_config,
                 tokenizer=tokenizer,
+                hf_config=hf_config,
+                rank=rank,
+                is_compiled=cfg.use_torch_compile,
             )
 
     return train_loss
-
-
-def save(
-    checkpointer,
-    step_idx: int,
-    model,
-    optimizer,
-    tokens_seen: int,
-    new_tokens_seen: int,
-    pred_tokens_seen: int,
-    new_pred_tokens_seen: int,
-    mamba_config,
-    tokenizer,
-) -> None:
-    checkpointer.save(
-        step_idx,
-        model,
-        optimizer,
-        None,
-        tokens_seen=tokens_seen + new_tokens_seen,
-        pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
-    )
-    model_state_dict_fms = checkpointer.save_single_file(
-        step_idx, model, return_state_dict_only=True
-    )
-
-    hf_save_time = time.time()
-    hf_output_dir = os.path.join(
-        checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
-    )
-    save_as_single_hf_safetensors_file(
-        mamba_cfg=mamba_config,
-        mamba_state_dict=model_state_dict_fms,
-        output_dir=hf_output_dir,
-        tokenizer=tokenizer,
-        precision="fp32",
-    )
-    checkpointer.report(
-        f"HF checkpoint saved in {hf_output_dir}",
-        hf_save_time=time.time() - hf_save_time,
-    )
 
 
 def setup(cfg):
@@ -527,3 +487,54 @@ def get_profiler(cfg, rank):
         with_stack=False,
         record_shapes=True,
     )
+
+
+def save(
+    checkpointer,
+    step_idx: int,
+    model,
+    optimizer,
+    tokens_seen: int,
+    new_tokens_seen: int,
+    pred_tokens_seen: int,
+    new_pred_tokens_seen: int,
+    tokenizer,
+    hf_config,
+    rank,
+    is_compiled: bool = False,
+) -> None:
+    if not rank:
+        print("Saving fms-fsdp checkpoint...")
+    checkpointer.save(
+        step_idx,
+        model,
+        optimizer,
+        None,
+        tokens_seen=tokens_seen + new_tokens_seen,
+        pred_tokens_seen=pred_tokens_seen + new_pred_tokens_seen,
+    )
+    model_state_dict_fms = checkpointer.get_full_state_dict(
+        model, is_compiled=is_compiled
+    )
+
+    hf_save_time = time.time()
+    hf_output_dir = os.path.join(
+        checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
+    )
+    if not rank:
+        print("Saving HF checkpoint...")
+    if rank != 0:
+        dist.barrier()
+    else:
+        save_hf_model(
+            hf_config=hf_config,
+            mamba_state_dict=model_state_dict_fms,
+            output_dir=hf_output_dir,
+            tokenizer=tokenizer,
+            precision="fp32",
+        )
+        checkpointer.report(
+            f"HF checkpoint saved in {hf_output_dir}",
+            hf_save_time=time.time() - hf_save_time,
+        )
+        dist.barrier()

@@ -2,12 +2,11 @@ import os
 import re
 import shutil
 import time
-from dataclasses import asdict
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict
 
 import torch
-from safetensors.torch import save_file
+import torch.nn as nn
 from torch.distributed._shard.checkpoint import (
     FileSystemReader,
     FileSystemWriter,
@@ -21,9 +20,9 @@ from torch.distributed.checkpoint.default_planner import (
 from torch.distributed.checkpoint.optimizer import load_sharded_optimizer_state_dict
 from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from transformers import MambaConfig
+from transformers import AutoModelForCausalLM
 from transformers.models.bamba import BambaConfig
-from transformers.utils import SAFE_WEIGHTS_NAME
+from transformers.models.granitemoehybrid import GraniteMoeHybridConfig
 
 
 def get_latest(targdir, qualifier=lambda x: True, key=os.path.getctime):
@@ -196,6 +195,7 @@ class Checkpointer:
         model,
         optimizer,
         dataloader,
+        hf_config,
         path="",
         reset_stepcount=False,
         strict=True,
@@ -215,7 +215,9 @@ class Checkpointer:
             path = self.ckp_path
             is_resuming = True
         # Then check the user-supplied path next
-        load_path = self._validate_ckp_path(path)
+        load_path = self._validate_ckp_path(path) or self._validate_ckp_path(
+            os.path.join(path, "checkpoints/")
+        )
         if load_path is None:
             raise ValueError(
                 f"No valid checkpoint detected at {path}; SFT requires a non-trivial starting ckpt."
@@ -240,9 +242,9 @@ class Checkpointer:
                     from transformers import AutoModelForCausalLM
 
                     hf_model = AutoModelForCausalLM.from_pretrained(hf_ckpt_dir)
-                    checkpoint_data = convert_state_dict_to_mamba_ssm(hf_model)[
-                        "model_state"
-                    ]
+                    checkpoint_data = get_fms_state_dict_from_hf_model(
+                        hf_config, hf_model
+                    )
                     # NOTE: @goon - Open instruct adds a padding token to the tokenizer and adjusts
                     # the vocab size of the embeddings and lm head weights of SFT models. This makes
                     # the vocab larger than that of the fms-fsdp model, due to the addition of
@@ -466,190 +468,276 @@ class Checkpointer:
 
         return self._cleanup(), model_state
 
-
-def convert_ssm_config_to_hf_config(
-    config_ssm: Dict,
-    **kwargs,
-) -> BambaConfig:
-    """Convert a config from mamba_ssm to a BambaConfig from here."""
-    hf_config: BambaConfig = BambaConfig(**kwargs)
-
-    hf_config.architectures = ["BambaForCausalLM"]
-
-    # Set important values from config and recalculate other resulting entries
-    hf_config.hidden_size = config_ssm["d_model"]
-    hf_config.intermediate_size = config_ssm["d_intermediate"]
-    hf_config.mamba_n_heads = (
-        hf_config.hidden_size * hf_config.mamba_expand
-    ) // hf_config.mamba_d_head
-    hf_config.num_hidden_layers = config_ssm["n_layer"]
-    hf_config.tie_word_embeddings = config_ssm["tie_embeddings"]
-
-    # currently this script assumes config_ssm belongs to v2
-    if config_ssm["ssm_cfg"].get("layer") != "Mamba2":
-        raise ValueError("Conversion script only supports Mamba2")
-
-    # Set attention values
-    attn_cfg = config_ssm.get("attn_cfg")
-    if attn_cfg:
-        assert attn_cfg["causal"], "Only support non-causal attention."
-        assert not attn_cfg["qkv_proj_bias"], "Only support no qkv bias."
-        assert not attn_cfg["out_proj_bias"], "Only support no out bias."
-        hf_config.attn_rotary_emb = attn_cfg["rotary_emb_dim"]
-        hf_config.num_attention_heads = attn_cfg["num_heads"]
-        hf_config.num_key_value_heads = attn_cfg["num_heads_kv"]
-        hf_config.rope_theta = attn_cfg["rotary_emb_base"]
-
-    attention_layer_indices = config_ssm.get("attn_layer_idx")
-    if attention_layer_indices:
-        hf_config.attn_layer_indices = attention_layer_indices
-
-    # Padded vocab size, mostly of 16 but 32 is also very common in different models
-    vocab_size = config_ssm["vocab_size"]
-    pad_vocab_size_multiple = config_ssm["pad_vocab_size_multiple"]
-    if (vocab_size % pad_vocab_size_multiple) != 0:
-        vocab_size += pad_vocab_size_multiple - (vocab_size % pad_vocab_size_multiple)
-    hf_config.vocab_size = vocab_size
-
-    return hf_config
-
-
-def convert_state_dict_to_mamba_ssm(model):
-    original_sd = model.state_dict()
-    state_dict = {}
-
-    for orig_k in list(original_sd.keys()):
-        # k = orig_k.replace("model", "backbone")
-        k = orig_k.replace("embed_tokens", "embedding")
-        k = k.replace("mamba", "mixer")
-        k = k.replace("final_layernorm", "norm_f")
-        k = re.sub(r"(\d+)\.input_layernorm\.", r"\1.norm.", k)
-        k = re.sub(r"(\d+)\.pre_ff_layernorm\.", r"\1.norm2.", k)
-        k = k.replace("feed_forward.down_proj", "mlp.fc2")
-        k = k.replace("self_attn.o_proj", "mixer.out_proj")
-        if k != orig_k:
-            state_dict[k.replace("model", "backbone")] = original_sd.pop(orig_k)
-    for i in range(len(model.model.layers)):
-        w1 = original_sd.pop(f"model.layers.{i}.feed_forward.up_proj.weight")
-        w2 = original_sd.pop(f"model.layers.{i}.feed_forward.gate_proj.weight")
-        state_dict[f"backbone.layers.{i}.mlp.fc1.weight"] = torch.cat([w1, w2], dim=0)
-        if f"model.layers.{i}.self_attn.q_proj.weight" in original_sd:
-            q = original_sd.pop(f"model.layers.{i}.self_attn.q_proj.weight")
-            k = original_sd.pop(f"model.layers.{i}.self_attn.k_proj.weight")
-            v = original_sd.pop(f"model.layers.{i}.self_attn.v_proj.weight")
-            state_dict[f"backbone.layers.{i}.mixer.in_proj.weight"] = torch.cat(
-                [q, k, v], dim=0
-            )
-    state_dict["lm_head.weight"] = original_sd.pop("lm_head.weight")
-    assert len(original_sd) == 0, original_sd.keys()
-    return {"model_state": state_dict}
-
-
-def save_single_safetensor(
-    state_dict: Dict,
-    save_directory: str,
-    metadata: Dict,
-):
-    save_file(
-        state_dict,
-        os.path.join(save_directory, SAFE_WEIGHTS_NAME),
-        metadata,
-    )
-
-
-def convert_state_dict_from_mamba_ssm(original_sd: Dict) -> Dict[str, torch.Tensor]:
-    state_dict = {}
-
-    for orig_k, param in original_sd.items():
-        k = orig_k.replace("backbone", "model")
-
-        # for embeddings
-        k = k.replace("embedding", "embed_tokens")
-
-        # for mixer
-        k = k.replace("mixer", "mamba")
-
-        # for final layernorm
-        k = k.replace("norm_f", "final_layernorm")
-
-        # for block layernorm
-        k = re.sub(r"(\d+)\.norm\.", r"\1.input_layernorm.", k)
-        k = re.sub(r"(\d+)\.norm2\.", r"\1.pre_ff_layernorm.", k)
-
-        # for mlp
-        k = k.replace("mlp.fc2", "feed_forward.down_proj")
-
-        if "mlp.fc1" in k:
-            param, param2 = torch.chunk(param, 2, dim=0)
-            k2 = k.replace("mlp.fc1", "feed_forward.gate_proj")
-            state_dict[k2] = param2
-            k = k.replace("mlp.fc1", "feed_forward.up_proj")
-
-        if ("in_proj" in k and orig_k.replace("in_proj", "conv1d") in original_sd) or (
-            "out_proj" in k and orig_k.replace("out_proj", "conv1d") in original_sd
+    def get_full_state_dict(
+        self,
+        model,
+        is_compiled=False,
+    ):
+        # Note: metadata kwargs cannot contain any of:
+        # (step, model)
+        with FSDP.state_dict_type(
+            model,
+            StateDictType.FULL_STATE_DICT,
+            FullStateDictConfig(offload_to_cpu=True, rank0_only=True),
         ):
-            # then this must be a mamba
-            pass
-        else:
-            # for attn
-            # - because mixer was replaced to mamba above
-            k = k.replace("mamba.out_proj", "self_attn.o_proj")
-            if "mamba.in_proj" in k:
-                m, n = param.shape
-                d = (m - n) // 2
-                param, param2, param3 = torch.split(param, [n, d, d], dim=0)
-                k2 = k.replace("mamba.in_proj", "self_attn.k_proj")
-                state_dict[k2] = param2
-                k2 = k.replace("mamba.in_proj", "self_attn.v_proj")
-                state_dict[k2] = param3
-                k = k.replace("mamba.in_proj", "self_attn.q_proj")
-
-        state_dict[k] = param
-
-    return state_dict
+            if is_compiled:
+                model_state = model._orig_mod.state_dict()
+            else:
+                model_state = model.state_dict()
+        return model_state
 
 
-def save_as_single_hf_safetensors_file(
-    mamba_cfg: MambaConfig,
-    mamba_state_dict: dict[str, torch.Tensor],
+class FMSHFConvertor(ABC):
+    @staticmethod
+    @abstractmethod
+    def get_fms_state_dict_from_hf_model(
+        model: nn.Module,
+    ) -> dict[str, torch.Tensor]: ...
+
+    @staticmethod
+    @abstractmethod
+    def convert_fms_to_hf_state_dict(
+        state_dict: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]: ...
+
+
+class FMSGraniteConvertor(FMSHFConvertor):
+    @staticmethod
+    def get_fms_state_dict_from_hf_model(
+        model: nn.Module,
+    ) -> dict[str, torch.Tensor]:
+        original_sd = model.state_dict()
+        state_dict = {}
+
+        for orig_k in list(original_sd.keys()):
+            k = orig_k.replace("embed_tokens", "embedding")
+            k = k.replace("mamba", "mixer")
+            k = k.replace("model.norm", "model.norm_f")
+            k = re.sub(r"(\d+)\.input_layernorm\.", r"\1.norm.", k)
+            k = re.sub(r"(\d+)\.post_attention_layernorm\.", r"\1.norm2.", k)
+            k = k.replace("shared_mlp.input_linear", "mlp.fc1")
+            k = k.replace("shared_mlp.output_linear", "mlp.fc2")
+            k = k.replace("self_attn.o_proj", "mixer.out_proj")
+            if k != orig_k:
+                state_dict[k.replace("model", "backbone")] = original_sd.pop(orig_k)
+        for i in range(len(model.model.layers)):
+            if f"model.layers.{i}.self_attn.q_proj.weight" in original_sd:
+                q = original_sd.pop(f"model.layers.{i}.self_attn.q_proj.weight")
+                k = original_sd.pop(f"model.layers.{i}.self_attn.k_proj.weight")
+                v = original_sd.pop(f"model.layers.{i}.self_attn.v_proj.weight")
+                state_dict[f"backbone.layers.{i}.mixer.in_proj.weight"] = torch.cat(
+                    [q, k, v], dim=0
+                )
+        state_dict["lm_head.weight"] = original_sd.pop("lm_head.weight")
+        assert len(original_sd) == 0, original_sd.keys()
+        # [Mamba and HF MLP Differences] Tricky: the MLP code differs between mamba and HF w/r/t how the first linear
+        # weights are used. They use different definitions of what chunk forms the gate. Morally:
+        # Mamba:
+        #     y = self.fc1(x)
+        #     y, gate = y.chunk(2, dim=-1)
+        #     y = y * self.activation(gate)
+        # HF:
+        #     y = self.fc1(x)
+        #     gate, y = y.chunk(2, dim=-1)
+        #     y = y * self.activation(gate)
+
+        # Reorder the weights. If in-place=True, the weights of the original model will be corrupted.
+        for k, v in state_dict.items():
+            if "mlp.fc1" in k:
+                state_dict[k] = torch.cat(list(reversed(v.chunk(2, dim=0))), dim=0)
+
+        return state_dict
+
+    @staticmethod
+    def convert_fms_to_hf_state_dict(
+        state_dict: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
+        hf_state_dict = {}
+
+        for orig_k, param in state_dict.items():
+            k = orig_k.replace("backbone", "model")
+
+            # for embeddings
+            k = k.replace("embedding", "embed_tokens")
+
+            # for mixer
+            k = k.replace("mixer", "mamba")
+
+            # for final layernorm
+            k = k.replace("model.norm_f", "model.norm")
+
+            # for block layernorm
+            k = re.sub(r"(\d+)\.norm\.", r"\1.input_layernorm.", k)
+            k = re.sub(r"(\d+)\.norm2\.", r"\1.post_attention_layernorm.", k)
+
+            # for mlp
+            k = k.replace("mlp.fc1", "shared_mlp.input_linear")
+            k = k.replace("mlp.fc2", "shared_mlp.output_linear")
+
+            if (
+                "in_proj" in k and orig_k.replace("in_proj", "conv1d") in state_dict
+            ) or (
+                "out_proj" in k and orig_k.replace("out_proj", "conv1d") in state_dict
+            ):
+                # then this must be a mamba
+                pass
+            else:
+                # for attn
+                # - because mixer was replaced to mamba above
+                k = k.replace("mamba.out_proj", "self_attn.o_proj")
+                if "mamba.in_proj" in k:
+                    m, n = param.shape
+                    d = (m - n) // 2
+                    param, param2, param3 = torch.split(param, [n, d, d], dim=0)
+                    k2 = k.replace("mamba.in_proj", "self_attn.k_proj")
+                    hf_state_dict[k2] = param2
+                    k2 = k.replace("mamba.in_proj", "self_attn.v_proj")
+                    hf_state_dict[k2] = param3
+                    k = k.replace("mamba.in_proj", "self_attn.q_proj")
+
+            hf_state_dict[k] = param
+
+        # Reorder the first MLP weights. See [Mamba and HF MLP Differences]
+        for k, v in hf_state_dict.items():
+            if "shared_mlp.input_linear" in k:
+                hf_state_dict[k] = torch.cat(list(reversed(v.chunk(2, dim=0))), dim=0)
+
+        return hf_state_dict
+
+
+class FMSBambaConvertor(FMSHFConvertor):
+    @staticmethod
+    def get_fms_state_dict_from_hf_model(
+        model: nn.Module,
+    ) -> dict[str, torch.Tensor]:
+        original_sd = model.state_dict()
+        state_dict = {}
+
+        for orig_k in list(original_sd.keys()):
+            # k = orig_k.replace("model", "backbone")
+            k = orig_k.replace("embed_tokens", "embedding")
+            k = k.replace("mamba", "mixer")
+            k = k.replace("final_layernorm", "norm_f")
+            k = re.sub(r"(\d+)\.input_layernorm\.", r"\1.norm.", k)
+            k = re.sub(r"(\d+)\.pre_ff_layernorm\.", r"\1.norm2.", k)
+            k = k.replace("feed_forward.down_proj", "mlp.fc2")
+            k = k.replace("self_attn.o_proj", "mixer.out_proj")
+            if k != orig_k:
+                state_dict[k.replace("model", "backbone")] = original_sd.pop(orig_k)
+        for i in range(len(model.model.layers)):
+            w1 = original_sd.pop(f"model.layers.{i}.feed_forward.up_proj.weight")
+            w2 = original_sd.pop(f"model.layers.{i}.feed_forward.gate_proj.weight")
+            state_dict[f"backbone.layers.{i}.mlp.fc1.weight"] = torch.cat(
+                [w1, w2], dim=0
+            )
+            if f"model.layers.{i}.self_attn.q_proj.weight" in original_sd:
+                q = original_sd.pop(f"model.layers.{i}.self_attn.q_proj.weight")
+                k = original_sd.pop(f"model.layers.{i}.self_attn.k_proj.weight")
+                v = original_sd.pop(f"model.layers.{i}.self_attn.v_proj.weight")
+                state_dict[f"backbone.layers.{i}.mixer.in_proj.weight"] = torch.cat(
+                    [q, k, v], dim=0
+                )
+        state_dict["lm_head.weight"] = original_sd.pop("lm_head.weight")
+        assert len(original_sd) == 0, original_sd.keys()
+        return state_dict
+
+    @staticmethod
+    def convert_fms_to_hf_state_dict(
+        state_dict: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
+        hf_state_dict = {}
+
+        for orig_k, param in state_dict.items():
+            k = orig_k.replace("backbone", "model")
+
+            # for embeddings
+            k = k.replace("embedding", "embed_tokens")
+
+            # for mixer
+            k = k.replace("mixer", "mamba")
+
+            # for final layernorm
+            k = k.replace("norm_f", "final_layernorm")
+
+            # for block layernorm
+            k = re.sub(r"(\d+)\.norm\.", r"\1.input_layernorm.", k)
+            k = re.sub(r"(\d+)\.norm2\.", r"\1.pre_ff_layernorm.", k)
+
+            # for mlp
+            k = k.replace("mlp.fc2", "feed_forward.down_proj")
+
+            if "mlp.fc1" in k:
+                param, param2 = torch.chunk(param, 2, dim=0)
+                k2 = k.replace("mlp.fc1", "feed_forward.gate_proj")
+                hf_state_dict[k2] = param2
+                k = k.replace("mlp.fc1", "feed_forward.up_proj")
+
+            if (
+                "in_proj" in k and orig_k.replace("in_proj", "conv1d") in state_dict
+            ) or (
+                "out_proj" in k and orig_k.replace("out_proj", "conv1d") in state_dict
+            ):
+                # then this must be a mamba
+                pass
+            else:
+                # for attn
+                # - because mixer was replaced to mamba above
+                k = k.replace("mamba.out_proj", "self_attn.o_proj")
+                if "mamba.in_proj" in k:
+                    m, n = param.shape
+                    d = (m - n) // 2
+                    param, param2, param3 = torch.split(param, [n, d, d], dim=0)
+                    k2 = k.replace("mamba.in_proj", "self_attn.k_proj")
+                    hf_state_dict[k2] = param2
+                    k2 = k.replace("mamba.in_proj", "self_attn.v_proj")
+                    hf_state_dict[k2] = param3
+                    k = k.replace("mamba.in_proj", "self_attn.q_proj")
+
+            hf_state_dict[k] = param
+
+        return hf_state_dict
+
+
+def convert_fms_to_hf_state_dict(
+    hf_config, fms_state_dict: dict[str, torch.Tensor]
+) -> dict[str, torch.Tensor]:
+    if isinstance(hf_config, BambaConfig):
+        hf_state_dict = FMSBambaConvertor.convert_fms_to_hf_state_dict(fms_state_dict)
+    elif isinstance(hf_config, GraniteMoeHybridConfig):
+        hf_state_dict = FMSGraniteConvertor.convert_fms_to_hf_state_dict(fms_state_dict)
+    else:
+        raise TypeError(
+            f"{hf_config=} expected to be a BambaConfig or GraniteMoeHybridConfig instance"
+        )
+    return hf_state_dict
+
+
+def get_fms_state_dict_from_hf_model(
+    hf_config, hf_model: nn.Module
+) -> dict[str, torch.Tensor]:
+    if isinstance(hf_config, BambaConfig):
+        fms_state_dict = FMSBambaConvertor.get_fms_state_dict_from_hf_model(hf_model)
+    elif isinstance(hf_config, GraniteMoeHybridConfig):
+        fms_state_dict = FMSGraniteConvertor.get_fms_state_dict_from_hf_model(hf_model)
+    else:
+        raise TypeError(
+            f"{hf_config=} expected to be a BambaConfig or GraniteMoeHybridConfig instance"
+        )
+    return fms_state_dict
+
+
+def save_hf_model(
+    hf_config: BambaConfig | GraniteMoeHybridConfig,
+    fms_state_dict: dict[str, torch.Tensor],
     output_dir: str,
     tokenizer,
     precision: str = "fp32",
 ) -> None:
-    token_ids = {}
-    for key in [
-        "bos_token_id",
-        "eos_token_id",
-        "pad_token_id",
-    ]:
-        id = getattr(tokenizer, key, None)
-        if id:
-            token_ids[key] = id
-    tokenizer.save_pretrained(output_dir)
-
-    # there are some configs unsettable by mamba_ssn config, so
-    # if there are changes from the defaults, have to pass them into
-    # the function
-    unsettables = {
-        "mamba_d_head": 64,
-        "mamba_d_state": 128,
-        "mamba_n_groups": 1,
-        "rms_norm_eps": 1e-5,
-    }
-
-    # Load and save config based on name
-    config = asdict(mamba_cfg)
-
-    # convert the config
-    hf_config = convert_ssm_config_to_hf_config(
-        config_ssm=config,
-        **token_ids,
-        **unsettables,
-    )
     hf_config.save_pretrained(output_dir)
-
+    tokenizer.save_pretrained(output_dir)
     # FIXME: allow other parameters to pass in
-    mamba_state_dict_hf = convert_state_dict_from_mamba_ssm(mamba_state_dict)
+
+    hf_state_dict = convert_fms_to_hf_state_dict(hf_config, fms_state_dict)
 
     # Save new model to pytorch_dump_path
     dtype = (
@@ -657,9 +745,7 @@ def save_as_single_hf_safetensors_file(
         if precision == "fp32"
         else (torch.bfloat16 if precision == "bf16" else torch.float16)
     )
-
-    save_single_safetensor(
-        {k: v.to(dtype) for k, v in mamba_state_dict_hf.items()},
-        output_dir,
-        metadata={"format": "pt"},
-    )
+    hf_model = AutoModelForCausalLM.from_config(hf_config)
+    hf_model.load_state_dict(hf_state_dict, strict=True)
+    hf_model.to(dtype)
+    hf_model.save_pretrained(output_dir, safe_serialization=True)

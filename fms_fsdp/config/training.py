@@ -97,5 +97,8 @@ class train_config:
         10 * 60
     )  # 10 min; checkpointing is taking a long time for some reason. TODO: @goon - investigate
 
+    # HF ckpt
+    hf_cfg_path: Optional[str] = None
+
     # debug
     skip_ckpt: bool = False

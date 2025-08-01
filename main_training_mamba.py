@@ -9,6 +9,7 @@ import torch.optim as optim
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
+from mamba_ssm.modules.mamba2 import Mamba2
 from mamba_ssm.modules.mlp import GatedMLP
 from torch import distributed as dist
 from torch.distributed.device_mesh import DeviceMesh
@@ -218,6 +219,14 @@ def main(**kwargs):
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
 
+    if cfg.freeze_mamba_layers:
+        for name, module in model.named_modules():
+            if isinstance(module, Mamba2):
+                if not rank:
+                    print(f"Freezing module {name}")
+                for p in module.parameters():
+                    p.requires_grad = False
+
     # Optimizer
     # optimizer = optim.AdamW(
     #     model.parameters(),
@@ -262,9 +271,9 @@ def main(**kwargs):
             "Please either provide a hf_cfg_path or point the ckpt_load_path to a HF ckpt dir"
         )
     hf_config = AutoConfig.from_pretrained(hf_cfg_path)
-    if getattr(hf_config,"embedding_multiplier", 1.0) != 1.0:
+    if getattr(hf_config, "embedding_multiplier", 1.0) != 1.0:
         raise NotImplementedError
-    if getattr(hf_config,"residual_multiplier", 1.0) != 1.0:
+    if getattr(hf_config, "residual_multiplier", 1.0) != 1.0:
         raise NotImplementedError
 
     model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(

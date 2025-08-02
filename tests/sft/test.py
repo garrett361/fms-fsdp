@@ -6,14 +6,15 @@ from datasets import Dataset
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer
 
-from fms_fsdp.utils.dataloader_utils import (
+from fms_fsdp.utils.dataloader_utils_sft import (
+    CHAT_TEMPLATES,
     ChatTokenizerCollator,
     ChatTokenizerCollatorCPCollator,
     InfiniteCPBatchingIter,
     PretokenizedCollator,
+    encode_sft_example,
     get_infinite_iter,
 )
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
 
 DATA = {
     0: {

@@ -21,12 +21,12 @@ from transformers import AutoConfig, AutoTokenizer
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
-from fms_fsdp.utils.config_utils import get_model_config, update_config
-from fms_fsdp.utils.dataloader_utils import (
+from fms_fsdp.utils.config_utils_sft import get_model_config, update_config
+from fms_fsdp.utils.dataloader_utils_sft import (
+    CHAT_TEMPLATES,
     InfiniteCPBatchingIter,
     PretokenizedCollator,
 )
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES
 from fms_fsdp.utils.train_utils_sft import (
     get_policies,
     get_profiler,
@@ -156,6 +156,8 @@ def main(**kwargs):
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
+    if not rank:
+        print(f"{mamba_config=}")
 
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):

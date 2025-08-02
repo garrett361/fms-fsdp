@@ -4,7 +4,7 @@ import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
+from fms_fsdp.utils.dataloader_utils_sft import CHAT_TEMPLATES, encode_sft_example
 
 tokenizer = AutoTokenizer.from_pretrained("ibm-fms/Bamba-9B")
 tokenizer.chat_template = CHAT_TEMPLATES["tulu"]

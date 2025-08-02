@@ -5,187 +5,208 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
-from fms_fsdp.utils.dataset_utils import (
-    ArrowHandler,
-    AutoHandler,
-    BufferDataset,
-    CheckpointDataset,
-    ParquetHandler,
-    PreloadBufferDataset,
-    PreprocessDataset,
-    SamplingDataset,
-    ScalableShardDataset,
-    StreamingDocDataset,
-    encode_sft_example,
-)
+### From open-instruct
 
-_handler_map = {
-    "arrow": ArrowHandler,
-    "hf_parquet": ParquetHandler,
-    "auto": AutoHandler,
+# Chat templates
+# flake8: noqa
+# note we added `{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}`
+# because we want the template to not output eos_token if `add_generation_prompt=True`
+CHAT_TEMPLATES = {
+    "simple_concat_with_space": (
+        "{% for message in messages %}"
+        "{{ ' ' if not loop.first else '' }}"
+        "{{ message['content'] }}"
+        "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
+        "{% endfor %}"
+    ),
+    "simple_concat_with_new_line": (
+        "{% for message in messages %}"
+        "{{ '\n' if not loop.first else '' }}"
+        "{{ message['content'] }}"
+        "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
+        "{% endfor %}"
+    ),
+    "simple_chat": (
+        "{% for message in messages %}"
+        "{{ '\n\n' if not loop.first else '' }}"
+        "{{ message['role'].capitalize() + ': ' + message['content'] }}"
+        "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
+        "{% endfor %}"
+    ),
+    "assistant_message_only": (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'assistant' %}"
+        "{{ message['content'] }}"
+        "{% endif %}"
+        "{% endfor %}"
+    ),
+    "zephyr": (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'user' %}"
+        "{{ '<|user|>\n' + message['content'] + eos_token + '\n' }}"
+        "{% elif message['role'] == 'system' %}"
+        "{{ '<|system|>\n' + message['content'] + eos_token + '\n' }}"
+        "{% elif message['role'] == 'assistant' %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token + '\n' }}"
+        "{% endif %}"
+        "{% if loop.last and add_generation_prompt %}"
+        "{{ '<|assistant|>\n' }}"
+        "{% endif %}"
+        "{% endfor %}"
+    ),
+    "tulu": (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'system' %}"
+        "{{ '<|system|>\n' + message['content'] + '\n' }}"
+        "{% elif message['role'] == 'user' %}"
+        "{{ '<|user|>\n' + message['content'] + '\n' }}"
+        "{% elif message['role'] == 'assistant' %}"
+        "{% if not loop.last %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token + '\n' }}"
+        "{% else %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token }}"
+        "{% endif %}"
+        "{% endif %}"
+        "{% if loop.last and add_generation_prompt %}"
+        "{{ '<|assistant|>\n' }}"
+        "{% endif %}"
+        "{% endfor %}"
+    ),
+    "granite": (
+        "{% for message in messages %}"
+        "{% if message['role'] == 'assistant' %}"
+        "{% if not loop.last %}"
+        "{{ '<|assistant|>\n' + message['content'] + eos_token + '\n' }}"
+        "{% else %}"
+        "{{ '<|assistant|>\n' + message['content'] + eos_token }}"
+        "{% endif %}"
+        "{% else %}"
+        "{{ '<|' + message['role'] + '|>\n' + message['content'] + '\n' }}"
+        "{% endif %}"
+        "{% if loop.last and add_generation_prompt %}"
+        "{{ '<|assistant|>\n' }}"
+        "{% endif %}"
+        "{% endfor %}"
+    ),
+    "granite2": (
+        "{%- if messages[0]['role'] == 'system' %}"
+        "{%- set system_message = messages[0]['content'] %}"
+        "{%- set loop_messages = messages[1:] %}"
+        "{%- else %}"
+        "{%- set system_message = '' %}"
+        "{%- set loop_messages = messages %}"
+        "{%- endif %}"
+        "{%- if system_message|length > 0 %}"
+        "{{ '<|start_of_role|>system<|end_of_role|>' + system_message + eos_token + '\n' }}"
+        "{%- endif %}"
+        "{%- if tools %}"
+        "{{ '<|start_of_role|>tools<|end_of_role|>' }}"
+        "{{ tools | tojson(indent=4) }}"
+        "{{ eos_token + '\n' }}"
+        "{%- endif %}"
+        "{%- if documents %}"
+        "{{ '<|start_of_role|>documents<|end_of_role|>' }}"
+        "{%- for document in documents %}"
+        "{{ 'Document ' + loop.index0|string + '\n' }}"
+        "{{ document['text'] }}"
+        "{%- if not loop.last %}"
+        "{{ '\n\n' }}"
+        "{%- endif %}"
+        "{%- endfor %}"
+        "{{ eos_token + '\n' }}"
+        "{%- endif %}"
+        "{%- for message in loop_messages %}"
+        "{{ '<|start_of_role|>' + message['role'] + '<|end_of_role|>' + message['content'] + eos_token + '\n' }}"
+        "{%- if loop.last and add_generation_prompt %}"
+        "{{ '<|start_of_role|>assistant' }}"
+        "{%- if controls %}"
+        "{{ ' ' + controls|tojson() }}"
+        "{%- endif %}"
+        "{{ '<|end_of_role|>' }}"
+        "{%- endif %}"
+        "{%- endfor %}"
+    ),
 }
+# flake8: noqa
 
 
-def causal_lm(data_seq, prompt_len=1):
+def encode_sft_example(example, tokenizer, max_seq_length):
     """
-    Perform causal language modeling by right-shifting the input sequence.
-    Sets first prompt_len tokens to be ignored by the loss.
+    This function encodes a single example into a format that can be used for sft training.
+    Here, we assume each example has a 'messages' field. Each message in it is a dict with 'role' and 'content' fields.
+    We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
     """
-    data_seq = torch.tensor(data_seq, dtype=torch.int)
-    t = data_seq.clone()[1:]
-    data_seq = data_seq[:-1]
-    t[:prompt_len] = -100
-    return data_seq, t
-
-
-def get_dummy_loader(cfg, rank, world_size):
-    """
-    A simple dummy dataloader yielding incrementing vocab indices in an infinite loop
-    """
-
-    class SteadyCounter(torch.utils.data.IterableDataset):
-        # Spit out incremental counts of constant length l, modulo vocab size v
-        def __init__(self, l, v):
-            self.i = 0
-            self.l = l
-            self.v = v
-
-        def __iter__(self):
-            while True:
-                out = torch.IntTensor(
-                    [x % self.v for x in range(self.i, self.i + self.l)]
-                )
-                yield out, out
-                self.i += self.l
-
-    data = SteadyCounter(cfg.seq_length, cfg.vocab_size)
-    return torch.utils.data.DataLoader(data, batch_size=cfg.batch_size)
-
-
-def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
-    """
-    Pytorch dataloader for stateful, distributed, and rescalable causal language model (CLM) training.
-    Assumes underlying data is sequences of integer values.
-    ...
-    Args
-    ----
-    cfg : dataclass
-        Training config containing seq len, dataset, dataset weight, datapath, etc. arguments
-    rank : int
-        Rank of current distributed worker. Used for handling dataset sharding logic.
-    world_size : int
-        Number of distributed workers. Used for handling dataset sharding logic.
-    postprocess : List[Callable]
-        Any task-specific postprocessing to apply before handing over data. Steps will apply in
-        the order provided by the user. For CLM training, use postprocess=[causal_lm].
-    """
-
-    do_cp = False
-    if dp_degree != world_size:
-        do_cp = True
-        cp_worldsize = world_size // dp_degree
-        cp_rank = rank % cp_worldsize
-        world_size = dp_degree
-        rank = rank // cp_worldsize
-
-    datasets, weights, cols = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name)
-
-    # Base streaming dataset. Returns doc chunks in sequence.
-    # Implements dataset sampling and rescalability.
-    droplist = [
-        int(x.strip()) for x in cfg.strip_tokens.split(",") if len(x.strip()) > 0
-    ]
-    droplist = droplist + [cfg.bos_token, cfg.eos_token, cfg.bol_token, cfg.eol_token]
-    assert cfg.file_type in _handler_map, (
-        f"File type {cfg.file_type} is not recognized ({list(_handler_map.keys())})"
+    messages = example["messages"]
+    if len(messages) == 0:
+        raise ValueError("messages field is empty.")
+    input_ids = tokenizer.apply_chat_template(
+        conversation=messages,
+        tokenize=True,
+        return_tensors="pt",
+        padding=False,
+        truncation=True,
+        max_length=max_seq_length,
+        add_generation_prompt=False,
     )
-    if cfg.file_type == "hf_parquet" or cfg.file_type == "auto":
-        filehandler = _handler_map[cfg.file_type](cfg.tokenizer_path, cols)
-    else:
-        filehandler = _handler_map[cfg.file_type](cols)
-    # Base reader layer
-    data = StreamingDocDataset(
-        cfg.data_path,
-        rank,
-        world_size,
-        filehandler,
-        cfg.eos_token,
-        bos_token=cfg.bos_token,
-        strip_tokens=set(droplist),
-        min_length=3,
-        seed=cfg.seed,
-    )
-    # Add rescaling/resharding
-    data = ScalableShardDataset(
-        data,
-        cfg.eos_token,
-        n_logical_shards=cfg.logical_shards,
-    )
-    # Add multi-dataset handling
-    data = SamplingDataset(
-        cfg.data_path,
-        data,
-        cfg.eos_token,
-        datasets=datasets,
-        weights=weights,
-        verbose=(rank == 0),
-    )
-    # Wrap above dataset in packing logic to form constant-length lines.
-    data = BufferDataset(
-        data,
-        cfg.seq_length if causal_lm not in postprocess else cfg.seq_length + 1,
-        bos_token=cfg.bol_token,
-        eos_token=cfg.eol_token,
-        pack_hard=True,
-    )
-    # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
-    data = PreloadBufferDataset(data, 10000)
-
-    # Apply desired postprocessing steps in sequence
-    data = PreprocessDataset(data, torch.IntTensor)
-    for p in postprocess:
-        data = PreprocessDataset(data, p)
-
-    # Apply CP chunking if using CP
-    if do_cp:
-
-        def chunk(x):
-            return x[
-                (cp_rank * x.size(0)) // cp_worldsize : ((cp_rank + 1) * x.size(0))
-                // cp_worldsize
-            ]
-
-        data = PreprocessDataset(data, lambda x: (chunk(x[0]), chunk(x[1])))
-
-    # Enable auto-saving
-    data = CheckpointDataset(
-        data,
-        cfg.ckpt_load_path if cfg.resuming_dataset else cfg.ckpt_save_path,
-        cfg.checkpoint_interval,
-        cfg.batch_size * cfg.grad_acc_steps,
-        cfg.ckpt_save_path,
-    )
-    return torch.utils.data.DataLoader(
-        data, num_workers=cfg.num_workers, batch_size=cfg.batch_size
-    )
-
-
-def parse_data_args(datas, weights, cols):
-    # Convert csv inputs into corresponding lists of values
-    def splitstrip(x):
-        if isinstance(x, str):
-            return [item.strip() for item in x.split(",")]
-        elif isinstance(x, (list, tuple)):
-            return list(x)
-        elif isinstance(x, (int, float, complex)):
-            return [x]
-        else:
-            raise ValueError(f"arg input {x} cannot be parsed.")
-
-    datas = splitstrip(datas)
-    weights = [float(x) for x in splitstrip(weights)]
-    cols = splitstrip(cols)
-    return datas, weights, cols
+    labels = input_ids.clone()
+    # mask the non-assistant part for avoiding loss
+    for message_idx, message in enumerate(messages):
+        if message["role"] != "assistant":
+            # we calculate the start index of this non-assistant message
+            if message_idx == 0:
+                message_start_idx = 0
+            else:
+                message_start_idx = tokenizer.apply_chat_template(
+                    conversation=messages[
+                        :message_idx
+                    ],  # here marks the end of the previous messages
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=False,
+                ).shape[1]
+            # next, we calculate the end index of this non-assistant message
+            if (
+                message_idx < len(messages) - 1
+                and messages[message_idx + 1]["role"] == "assistant"
+            ):
+                # for intermediate messages that follow with an assistant message, we need to
+                # set `add_generation_prompt=True` to avoid the assistant generation prefix being included in the loss
+                # (e.g., `<|assistant|>`)
+                message_end_idx = tokenizer.apply_chat_template(
+                    conversation=messages[: message_idx + 1],
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=True,
+                ).shape[1]
+            else:
+                # for the last message or the message that doesn't follow with an assistant message,
+                # we don't need to add the assistant generation prefix
+                message_end_idx = tokenizer.apply_chat_template(
+                    conversation=messages[: message_idx + 1],
+                    tokenize=True,
+                    return_tensors="pt",
+                    padding=False,
+                    truncation=True,
+                    max_length=max_seq_length,
+                    add_generation_prompt=False,
+                ).shape[1]
+            # set the label to -100 for the non-assistant part
+            labels[:, message_start_idx:message_end_idx] = -100
+            if max_seq_length and message_end_idx >= max_seq_length:
+                break
+    attention_mask = torch.ones_like(input_ids)
+    return {
+        "input_ids": input_ids.flatten(),
+        "labels": labels.flatten(),
+        "n_labels_toks": (labels != -100).sum().item(),
+        # "attention_mask": attention_mask.flatten(),
+    }
 
 
 class ChatTokenizerCollator:

@@ -6,7 +6,7 @@ from pathlib import Path
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from fms_fsdp.utils.dataset_utils import CHAT_TEMPLATES, encode_sft_example
+from fms_fsdp.utils.dataloader_utils_sft import CHAT_TEMPLATES, encode_sft_example
 
 if __name__ == "__main__":
     cpu_count = multiprocessing.cpu_count()

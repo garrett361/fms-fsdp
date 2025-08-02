@@ -18,7 +18,7 @@ import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
 from fms_fsdp.policies import *
-from fms_fsdp.utils.checkpointing_sft_utils import save_hf_model
+from fms_fsdp.utils.checkpointing_utils_sft import save_hf_model
 
 
 def train(

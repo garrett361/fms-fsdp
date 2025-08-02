@@ -19,12 +19,6 @@ class train_config:
     weights: str = "7725,500,550,28,17,22,25,8,100,500,175,250,100"
     seq_length: int = 4096
     vocab_size: int = 32000
-    bos_token: Optional[int] = None
-    eos_token: int = 0
-    bol_token: Optional[int] = None
-    eol_token: Optional[int] = None
-    strip_tokens: str = ""
-    logical_shards: int = 1024
     num_workers: int = 1
 
     # fsdp policies
@@ -47,9 +41,6 @@ class train_config:
     adam_beta_0: float = 0.9
     adam_beta_1: float = 0.95
 
-    # continued training spec
-    resuming_dataset: bool = False
-
     # profiling
     use_profiler: bool = False
     profiler_rank0_only: bool = True
@@ -64,19 +55,6 @@ class train_config:
 
     # compile
     use_torch_compile: bool = True
-
-    # speculator training
-    tp_size: int = 8
-    model_arch: str = "embedllama"
-    model_path: str = "/path/to/model/"
-    n_speculator_heads: int = 3
-    speculator_width: int = 4096
-    speculator_tie_weights: bool = True
-    speculator_scale_input: bool = True
-    stage2_start_step: int = 15000
-    stage2_prompt_length: int = 64
-    stage2_batch_size: int = 96
-    stage2_seq_length: int = 256
 
     # context parallel
     cp: bool = False

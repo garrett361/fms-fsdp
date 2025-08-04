@@ -95,6 +95,7 @@ class train_config:
     cp_degree: Optional[int] = None
     ac_mlp_only: bool = False
     freeze_mamba_layers: bool = False
+    pin_memory: bool = True
 
     # HF ckpt
     hf_cfg_path: Optional[str] = None

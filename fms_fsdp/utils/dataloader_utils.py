@@ -175,7 +175,10 @@ def get_data_loader(
         cfg.ckpt_save_path,
     )
     return torch.utils.data.DataLoader(
-        data, num_workers=cfg.num_workers, batch_size=cfg.batch_size
+        data,
+        num_workers=cfg.num_workers,
+        batch_size=cfg.batch_size,
+        pin_memory=cfg.pin_memory,
     )
 
 

@@ -74,6 +74,7 @@ class train_config:
     pg_timeout_s: int = (
         10 * 60
     )  # 10 min; checkpointing is taking a long time for some reason. TODO: @goon - investigate
+    pin_memory: bool = True
 
     # HF ckpt
     hf_cfg_path: Optional[str] = None

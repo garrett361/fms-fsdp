@@ -223,6 +223,7 @@ def main(**kwargs):
                 collate_fn=PretokenizedCollator(),
                 batch_size=1,
                 num_workers=cfg.num_workers,
+                pin_memory=cfg.pin_memory,
             )
             for td, sampler in zip(train_dataset_list, samplers)
         ]

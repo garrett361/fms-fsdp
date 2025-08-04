@@ -264,15 +264,20 @@ def train(
                 dataset_tokens_seen = funcol.all_reduce(
                     data_stats.tokens_seen, reduceOp="sum", group=dp_mesh.get_group()
                 )
+                dataset_pred_tokens_seen = funcol.all_reduce(
+                    data_stats.pred_tokens_seen, reduceOp="sum", group=dp_mesh.get_group()
+                )
                 dataset_examples_seen = funcol.all_reduce(
                     data_stats.examples_seen, reduceOp="sum", group=dp_mesh.get_group()
                 )
                 dataset_epoch_idx.wait()
                 dataset_tokens_seen.wait()
+                dataset_pred_tokens_seen.wait()
                 dataset_examples_seen.wait()
             else:
                 dataset_epoch_idx = data_stats.epoch_idx
                 dataset_tokens_seen = data_stats.tokens_seen
+                dataset_pred_tokens_seen = data_stats.pred_tokens_seen
                 dataset_examples_seen = data_stats.examples_seen
 
             if rank == 0:
@@ -331,6 +336,7 @@ def train(
                 print("tokens seen:", total_tokens_seen)
                 print(f"{dataset_epoch_idx=}")
                 print(f"{dataset_tokens_seen=}")
+                print(f"{dataset_pred_tokens_seen=}")
                 print(f"{dataset_examples_seen=}")
 
                 next_ckpt_step_idx = (

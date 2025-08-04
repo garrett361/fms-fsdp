@@ -450,6 +450,7 @@ class DatasetStats:
     epoch_idx: list[int] = field(default_factory=list)
     examples_seen: list[int] = field(default_factory=list)
     tokens_seen: list[int] = field(default_factory=list)
+    pred_tokens_seen: list[int] = field(default_factory=list)
 
 
 class InfiniteCPBatchingIter:
@@ -501,6 +502,9 @@ class InfiniteCPBatchingIter:
             tokens_seen=torch.zeros(
                 len(dataloader_list), dtype=torch.int64, device=device
             ),
+            pred_tokens_seen=torch.zeros(
+                len(dataloader_list), dtype=torch.int64, device=device
+            ),
         )
         self._probs = np.array(self.weights, dtype=np.dtype("float64"))
         self._probs /= self._probs.sum()
@@ -533,6 +537,7 @@ class InfiniteCPBatchingIter:
                 f"Expected batch size 1 inputs, received {len(item)=}"
             )
             n_tok_next_item = item[0]["input_ids"].numel()
+            n_pred_tok_next_item = (item[0]["labels"] != self.separator_id).sum()
             if n_tok_next_item > self.max_tokens:
                 continue
             if not self._should_yield_batch(n_tok_next_item):
@@ -545,6 +550,7 @@ class InfiniteCPBatchingIter:
                 self._stats.epoch_idx[iter_idx] = epoch_idx
                 self._stats.examples_seen[iter_idx] += 1
                 self._stats.tokens_seen[iter_idx] += n_tok_next_item
+                self._stats.pred_tokens_seen[iter_idx] += n_pred_tok_next_item
                 return self._stats, batch_size, self.cp_processed_batch
 
     def _should_yield_batch(self, n_tok_next_item: int) -> bool:

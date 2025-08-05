@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from warnings import warn
 import pathlib
 from typing import Iterator, Optional, Union
 
@@ -554,6 +555,11 @@ class InfiniteCPBatchingIter:
             n_tok_next_item = item[0]["input_ids"].numel()
             n_pred_tok_next_item = (item[0]["labels"] != self.separator_id).sum()
             if n_tok_next_item > self.max_tokens:
+                if not self.cp_rank:
+                    warn(
+                        f"Skipping data example with {n_tok_next_item} tokens > {self.max_tokens=} ",
+                        stacklevel=1,
+                    )
                 continue
             self._stats.epoch_idx[iter_idx] = epoch_idx
             self._stats.examples_seen[iter_idx] += 1

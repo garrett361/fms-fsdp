@@ -200,6 +200,7 @@ def main(**kwargs):
         # See tests/sft/tokenize_dataset.py
         dataset_paths = [p.strip() for p in cfg.datasets.split(",")]
         train_dataset_list = [load_from_disk(p) for p in dataset_paths]
+        dataset_lens = [len(d) for d in train_dataset_list]
         if not rank:
             print(
                 f"Train datasets loaded with {sum(len(td) for td in train_dataset_list)} total examples"
@@ -380,6 +381,7 @@ def main(**kwargs):
         tokens_seen,
         pred_tokens_seen,
         hf_config,
+        dataset_lens,
     )
 
     dist.barrier()

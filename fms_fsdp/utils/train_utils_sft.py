@@ -39,6 +39,7 @@ def train(
     tokens_seen,
     pred_tokens_seen,
     hf_config,
+    dataset_lens: list[int],
 ):
     if cfg.sft_loss_type not in ("sum", "mean"):
         raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
@@ -98,6 +99,9 @@ def train(
     # 5: batch_size: for testing get_infinite_cp_batching_iter perf
     # 6: n_toks_padded: total sequence length (counting padding)
     ddp_stats = torch.zeros(7).to(local_rank)
+    dataset_lens_t = torch.tensor(
+        dataset_lens, dtype=torch.int64, device=f"cuda:{local_rank}"
+    )
 
     start = time.time()
     loop_start = time.time()
@@ -265,7 +269,9 @@ def train(
                     data_stats.tokens_seen, reduceOp="sum", group=dp_mesh.get_group()
                 )
                 dataset_pred_tokens_seen = funcol.all_reduce(
-                    data_stats.pred_tokens_seen, reduceOp="sum", group=dp_mesh.get_group()
+                    data_stats.pred_tokens_seen,
+                    reduceOp="sum",
+                    group=dp_mesh.get_group(),
                 )
                 dataset_examples_seen = funcol.all_reduce(
                     data_stats.examples_seen, reduceOp="sum", group=dp_mesh.get_group()
@@ -338,6 +344,21 @@ def train(
                 print(f"{dataset_tokens_seen=}")
                 print(f"{dataset_pred_tokens_seen=}")
                 print(f"{dataset_examples_seen=}")
+
+                fraction_dataset_seen = dataset_examples_seen / dataset_lens_t
+                print(f"{fraction_dataset_seen=}")
+                print(
+                    f"Expected epochs per dataset: {fraction_dataset_seen * cfg.num_steps / step_idx}"
+                )
+                print(
+                    f"Expected tok per dataset: {dataset_tokens_seen * cfg.num_steps / step_idx}"
+                )
+                print(
+                    f"Expected pred tok per dataset: {dataset_pred_tokens_seen * cfg.num_steps / step_idx}"
+                )
+                print(
+                    f"Expected examples per dataset: {dataset_examples_seen * cfg.num_steps / step_idx}"
+                )
 
                 next_ckpt_step_idx = (
                     (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval

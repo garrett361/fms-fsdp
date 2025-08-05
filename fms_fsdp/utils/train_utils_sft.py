@@ -534,7 +534,7 @@ def save(
     else:
         save_hf_model(
             hf_config=hf_config,
-            mamba_state_dict=model_state_dict_fms,
+            fms_state_dict=model_state_dict_fms,
             output_dir=hf_output_dir,
             tokenizer=tokenizer,
             precision="fp32",

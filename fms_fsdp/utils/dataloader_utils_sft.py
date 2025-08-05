@@ -555,6 +555,10 @@ class InfiniteCPBatchingIter:
             n_pred_tok_next_item = (item[0]["labels"] != self.separator_id).sum()
             if n_tok_next_item > self.max_tokens:
                 continue
+            self._stats.epoch_idx[iter_idx] = epoch_idx
+            self._stats.examples_seen[iter_idx] += 1
+            self._stats.tokens_seen[iter_idx] += n_tok_next_item
+            self._stats.pred_tokens_seen[iter_idx] += n_pred_tok_next_item
             if not self._should_yield_batch(n_tok_next_item):
                 self._batch.extend(item)
             else:
@@ -562,10 +566,6 @@ class InfiniteCPBatchingIter:
                 batch_size = len(self._batch)
                 self._batch.clear()
                 self._batch.extend(item)
-                self._stats.epoch_idx[iter_idx] = epoch_idx
-                self._stats.examples_seen[iter_idx] += 1
-                self._stats.tokens_seen[iter_idx] += n_tok_next_item
-                self._stats.pred_tokens_seen[iter_idx] += n_pred_tok_next_item
                 return self._stats, batch_size, self.cp_processed_batch
 
     def _should_yield_batch(self, n_tok_next_item: int) -> bool:

@@ -7,12 +7,12 @@ from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer
 
 from fms_fsdp.utils.dataloader_utils_sft import (
-    CHAT_TEMPLATES,
     ChatTokenizerCollator,
     ChatTokenizerCollatorCPCollator,
     InfiniteCPBatchingIter,
     PretokenizedCollator,
     encode_sft_example,
+    get_chat_template,
     get_infinite_iter,
 )
 
@@ -75,7 +75,7 @@ DATA = {
 
 
 TOKENIZER = AutoTokenizer.from_pretrained("ibm-fms/Bamba-9B")
-TOKENIZER.chat_template = CHAT_TEMPLATES["tulu"]
+TOKENIZER.chat_template = get_chat_template("tulu")
 BIG_MAX_SEQ_LEN = 2**30
 
 

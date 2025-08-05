@@ -4,10 +4,10 @@ import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from fms_fsdp.utils.dataloader_utils_sft import CHAT_TEMPLATES, encode_sft_example
+from fms_fsdp.utils.dataloader_utils_sft import get_chat_template, encode_sft_example
 
 tokenizer = AutoTokenizer.from_pretrained("ibm-fms/Bamba-9B")
-tokenizer.chat_template = CHAT_TEMPLATES["tulu"]
+tokenizer.chat_template = get_chat_template("tulu")
 
 print("LOAD")
 train_dataset = load_dataset(

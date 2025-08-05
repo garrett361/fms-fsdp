@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import pathlib
 from typing import Iterator, Optional, Union
 
 import numpy as np
@@ -128,6 +129,20 @@ CHAT_TEMPLATES = {
     ),
 }
 # flake8: noqa
+
+
+def get_chat_template(name_or_path: str) -> str:
+    if name_or_path in CHAT_TEMPLATES:
+        return CHAT_TEMPLATES[name_or_path]
+    path = pathlib.Path(name_or_path)
+    if path.exists():
+        with open(path) as f:
+            chat_template = f.read()
+        return chat_template
+    else:
+        raise ValueError(
+            f"{name_or_path} is unknown and is not a path to a readable template file."
+        )
 
 
 def encode_sft_example(example, tokenizer, max_seq_length):

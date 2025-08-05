@@ -6,7 +6,7 @@ from pathlib import Path
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from fms_fsdp.utils.dataloader_utils_sft import CHAT_TEMPLATES, encode_sft_example
+from fms_fsdp.utils.dataloader_utils_sft import encode_sft_example, get_chat_template
 
 if __name__ == "__main__":
     cpu_count = multiprocessing.cpu_count()
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
-    tokenizer.chat_template = CHAT_TEMPLATES[args.chat_template]
+    tokenizer.chat_template = get_chat_template(args.chat_template)
     print("LOAD DATA")
     data_path = Path(args.data_path)
     if data_path.is_file():

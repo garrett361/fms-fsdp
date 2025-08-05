@@ -23,9 +23,9 @@ from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils_sft import Checkpointer
 from fms_fsdp.utils.config_utils_sft import get_model_config, update_config
 from fms_fsdp.utils.dataloader_utils_sft import (
-    CHAT_TEMPLATES,
     InfiniteCPBatchingIter,
     PretokenizedCollator,
+    get_chat_template,
 )
 from fms_fsdp.utils.train_utils_sft import (
     get_policies,
@@ -190,7 +190,7 @@ def main(**kwargs):
         print("Constructing datasets...")
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
-    tokenizer.chat_template = CHAT_TEMPLATES[cfg.chat_template_name]
+    tokenizer.chat_template = get_chat_template(cfg.chat_template_name)
 
     if cfg.use_dummy_dataset:
         raise ValueError("This script does not suport dummy data.")

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 
 @dataclass
@@ -17,6 +17,7 @@ class train_config:
     seq_length: int = 4096
     vocab_size: int = 32000
     num_workers: int = 1
+    weight_by: Literal["example", "token", "pred_token"] = "example"
 
     # fsdp policies
     sharding_strategy: str = "hsdp"

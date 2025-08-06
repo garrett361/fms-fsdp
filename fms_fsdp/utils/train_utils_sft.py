@@ -99,9 +99,7 @@ def train(
     # 5: batch_size: for testing get_infinite_cp_batching_iter perf
     # 6: n_toks_padded: total sequence length (counting padding)
     ddp_stats = torch.zeros(7).to(local_rank)
-    dataset_lens_t = torch.tensor(
-        dataset_lens, dtype=torch.int64, device=f"cuda:{local_rank}"
-    )
+    dataset_lens_t = torch.tensor(dataset_lens).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -264,18 +262,24 @@ def train(
             # Reduce the DatasetStats attrs, if needed:
             if dp_mesh is not None:
                 dataset_epoch_idx = funcol.all_reduce(
-                    data_stats.epoch_idx, reduceOp="max", group=dp_mesh.get_group()
+                    data_stats.epoch_idx.to(local_rank),
+                    reduceOp="max",
+                    group=dp_mesh.get_group(),
                 )
                 dataset_tokens_seen = funcol.all_reduce(
-                    data_stats.tokens_seen, reduceOp="sum", group=dp_mesh.get_group()
+                    data_stats.tokens_seen.to(local_rank),
+                    reduceOp="sum",
+                    group=dp_mesh.get_group(),
                 )
                 dataset_pred_tokens_seen = funcol.all_reduce(
-                    data_stats.pred_tokens_seen,
+                    data_stats.pred_tokens_seen.to(local_rank),
                     reduceOp="sum",
                     group=dp_mesh.get_group(),
                 )
                 dataset_examples_seen = funcol.all_reduce(
-                    data_stats.examples_seen, reduceOp="sum", group=dp_mesh.get_group()
+                    data_stats.examples_seen.to(local_rank),
+                    reduceOp="sum",
+                    group=dp_mesh.get_group(),
                 )
                 dataset_epoch_idx.wait()
                 dataset_tokens_seen.wait()

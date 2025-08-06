@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from warnings import warn
 import pathlib
-from typing import Iterator, Optional, Union
+from typing import Iterator, Optional, Union, Literal
 
 import numpy as np
 import torch
@@ -491,10 +491,18 @@ class InfiniteCPBatchingIter:
         separator_id: int = -100,
         seed: int = 42,
         naive_padding_free: bool = False,
-        device: Optional[Union[str, torch.device]] = None,
+        weight_by: Literal["example", "token", "pred_token"] = "example",
     ) -> None:
+        if not all(w > 0 for w in weights):
+            raise ValueError(f"{weights=} must all be strictly positive")
+        if weight_by not in ["example", "token", "pred_token"]:
+            raise ValueError(
+                f"{weight_by=} must be one of 'example', 'token', or 'pred_token'"
+            )
         self.dataloader_list = dataloader_list
-        self.weights = weights
+        self.weights = torch.tensor(weights, dtype=torch.float32)
+        # Normalize:
+        self.weights /= self.weights.sum()
         self.max_tokens = max_tokens
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
@@ -502,32 +510,15 @@ class InfiniteCPBatchingIter:
         self.separator_id = separator_id
         self.seed = seed
         self.naive_padding_free = naive_padding_free
-        assert all(w > 0 for w in weights), f"{weights=}"
+        self.weight_by = weight_by
 
-        if device is None:
-            if torch.cuda.is_available():
-                # Assumption: torch.cuda.device has been called
-                device = "cuda"
         self._stats = DatasetStats(
-            epoch_idx=torch.zeros(
-                len(dataloader_list), dtype=torch.int64, device=device
-            ),
-            examples_seen=torch.zeros(
-                len(dataloader_list), dtype=torch.int64, device=device
-            ),
-            tokens_seen=torch.zeros(
-                len(dataloader_list), dtype=torch.int64, device=device
-            ),
-            pred_tokens_seen=torch.zeros(
-                len(dataloader_list), dtype=torch.int64, device=device
-            ),
+            epoch_idx=torch.zeros(len(dataloader_list), dtype=torch.int64),
+            examples_seen=torch.zeros(len(dataloader_list), dtype=torch.int64),
+            tokens_seen=torch.zeros(len(dataloader_list), dtype=torch.int64),
+            pred_tokens_seen=torch.zeros(len(dataloader_list), dtype=torch.int64),
         )
-        self._probs = np.array(self.weights, dtype=np.dtype("float64"))
-        self._probs /= self._probs.sum()
-        self._generator = np.random.default_rng(self.seed)
-        self._infinite_iters = [
-            (idx, get_infinite_iter(dl)) for idx, dl in enumerate(self.dataloader_list)
-        ]
+        self._infinite_iters = [get_infinite_iter(dl) for dl in self.dataloader_list]
         self._batch = []
 
         self._cp_collator = CPDataCollator(
@@ -543,10 +534,17 @@ class InfiniteCPBatchingIter:
 
     def __next__(self) -> tuple[DatasetStats, int, dict[str, torch.Tensor]]:
         while True:
-            # Select a dataloader per the given weights
-            iter_idx, rand_iter = self._generator.choice(
-                self._infinite_iters, p=self._probs
-            )
+            # Select a dataloader per the given weights.
+            if self.weight_by == "example":
+                iter_idx = torch.multinomial(self.weights, 1).item()
+            elif self.weight_by == "token":
+                # Choose the most under-represented dataset by total token.
+                weighted_tokens = self._stats.tokens_seen * self.weights
+                iter_idx = weighted_tokens.argmin().item()
+            elif self.weight_by == "pred_token":
+                weighted_pred_tokens = self._stats.pred_tokens_seen * self.weights
+                iter_idx = weighted_pred_tokens.argmin().item()
+            rand_iter = self._infinite_iters[iter_idx]
             epoch_idx, item = next(rand_iter)
             assert isinstance(item, list), f"{item=}"
             assert len(item) == 1, (

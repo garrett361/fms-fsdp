@@ -236,6 +236,7 @@ def main(**kwargs):
             separator_id=cfg.separator_id,
             seed=cfg.seed,
             naive_padding_free=cfg.naive_padding_free,
+            weight_by=cfg.weight_by
         )
     if rank == 0:
         print("Datasets constructed!")

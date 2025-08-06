@@ -286,10 +286,10 @@ def train(
                 dataset_pred_tokens_seen.wait()
                 dataset_examples_seen.wait()
             else:
-                dataset_epoch_idx = data_stats.epoch_idx
-                dataset_tokens_seen = data_stats.tokens_seen
-                dataset_pred_tokens_seen = data_stats.pred_tokens_seen
-                dataset_examples_seen = data_stats.examples_seen
+                dataset_epoch_idx = data_stats.epoch_idx.to(local_rank)
+                dataset_tokens_seen = data_stats.tokens_seen.to(local_rank)
+                dataset_pred_tokens_seen = data_stats.pred_tokens_seen.to(local_rank)
+                dataset_examples_seen = data_stats.examples_seen.to(local_rank)
 
             if rank == 0:
                 total_tokens_seen = int(tokens_seen + new_tokens_seen)

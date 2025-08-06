@@ -192,9 +192,6 @@ def main(**kwargs):
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     tokenizer.chat_template = get_chat_template(cfg.chat_template_name)
 
-    if cfg.use_dummy_dataset:
-        raise ValueError("This script does not suport dummy data.")
-
     with rank_zero_first(rank):
         # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
         # See tests/sft/tokenize_dataset.py

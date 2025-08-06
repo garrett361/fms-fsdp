@@ -10,7 +10,6 @@ class train_config:
     ckpt_save_path: str = "/fsx/output/ckpt"
 
     # dataset and dataloader
-    use_dummy_dataset: bool = False
     sanity_print_toks: bool = False
     tokenizer_path: str = "/fsx/tokenizer"
     datasets: str = "lang=en/dataset=commoncrawl,lang=en/dataset=webhose,lang=en/dataset=github_clean,lang=de/dataset=wikipedia,lang=es/dataset=wikipedia,lang=fr/dataset=wikipedia,lang=ja/dataset=wikipedia,lang=pt/dataset=wikipedia,lang=en/dataset=wikimedia,lang=en/dataset=uspto,lang=en/dataset=pubmedcentral,lang=en/dataset=arxiv,lang=en/dataset=stackexchange"

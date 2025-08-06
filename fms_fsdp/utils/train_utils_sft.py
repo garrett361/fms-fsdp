@@ -221,7 +221,11 @@ def train(
         if profiler:
             profiler.step()
 
-        if step_idx % cfg.report_interval == 0:
+        if (
+            step_idx == 1
+            or step_idx == cfg.num_steps
+            or step_idx % cfg.report_interval == 0
+        ):
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             # num fwd/bwd passes summed over all ranks
             n_fwd_bwd_passes = ddp_stats[2].item()

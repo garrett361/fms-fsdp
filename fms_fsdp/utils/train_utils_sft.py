@@ -377,24 +377,44 @@ def train(
 
                 if cfg.tracker:
                     vals_to_track = {
-                        "avg tokens per example": avg_tok_per_example,
-                        "avg pred tokens per example": avg_pred_tok_per_example,
-                        "batch size per gpu": avg_batch_size,
-                        "current num examples": n_examples,
-                        "current pred toks": n_pred_tok_sum,
-                        "current throughput (token per gpu per sec)": current_throughput,
-                        "current token seen with padding": n_tok_sum_padded,
-                        "current token seen": n_tok_sum,
-                        "gpu allocated memory": allocated_mem,
-                        "gpu reserved memory": reserved_mem,
+                        "data/avg toks per example": avg_tok_per_example,
+                        "data/avg pred toks per example": avg_pred_tok_per_example,
+                        "data/batch size per gpu": avg_batch_size,
+                        "data/current num examples": n_examples,
+                        "data/current pred toks": n_pred_tok_sum,
+                        "data/current toks seen with padding": n_tok_sum_padded,
+                        "data/current toks seen": n_tok_sum,
+                        "data/padding fraction": padding_fraction,
+                        "data/pred toks seen": total_pred_tokens_seen,
+                        "data/toks seen": total_tokens_seen,
+                        "perf/current throughput (toks per gpu per sec)": current_throughput,
+                        "perf/overall throughput (toks per gpu per sec)": overall_throughput,
+                        "perf/gpu allocated memory": allocated_mem,
+                        "perf/gpu reserved memory": reserved_mem,
                         "gradient norm": current_gnorm,
                         "learning rate": current_lr,
                         "loss": current_loss,
-                        "overall throughput (token per gpu per sec)": overall_throughput,
-                        "padding fraction": padding_fraction,
-                        "pred token seen": total_pred_tokens_seen,
-                        "token seen": total_tokens_seen,
                     }
+                    # Individual dataset stats
+                    for dset_idx, tok_seen in enumerate(dataset_tokens_seen.tolist()):
+                        vals_to_track[f"data/dataset_{dset_idx} toks seen"] = tok_seen
+                    for dset_idx, pred_tok_seen in enumerate(
+                        dataset_pred_tokens_seen.tolist()
+                    ):
+                        vals_to_track[f"data/dataset_{dset_idx} pred toks seen"] = (
+                            pred_tok_seen
+                        )
+                    for dset_idx, ex_seen in enumerate(dataset_examples_seen.tolist()):
+                        vals_to_track[f"data/dataset_{dset_idx} examples seen"] = (
+                            ex_seen
+                        )
+                    for dset_idx, frac_seen in enumerate(
+                        fraction_dataset_seen.tolist()
+                    ):
+                        vals_to_track[f"data/dataset_{dset_idx} fraction seen"] = (
+                            frac_seen
+                        )
+
                     if cfg.sft_loss_type == "sum":
                         vals_to_track["loss_per_pred_tok"] = train_loss_per_pred_tok
                         vals_to_track["loss_per_total_tok"] = train_loss_per_total_tok

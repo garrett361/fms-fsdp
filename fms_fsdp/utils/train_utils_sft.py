@@ -166,7 +166,8 @@ def train(
 
         if cfg.z_loss is not None:
             # NOTE: @goon - only applying z-loss to the tokens corresponding to non-trivial
-            # predictions. Might not be the right thing to do.
+            # predictions. Might not be the right thing to do, but otherwise the z-loss impact would
+            # be very sensitive to the pred_token/total_token ratio.
             pred_idxs = label != -100
             if pred_idxs.any():
                 z_loss_tensor = torch.logsumexp(output[pred_idxs], dim=-1).pow(2)

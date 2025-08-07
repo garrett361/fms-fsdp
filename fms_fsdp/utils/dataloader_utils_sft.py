@@ -539,11 +539,14 @@ class InfiniteCPBatchingIter:
                 iter_idx = torch.multinomial(self.weights, 1).item()
             elif self.weight_by == "token":
                 # Choose the most under-represented dataset by total token.
-                weighted_tokens = self._stats.tokens_seen * self.weights
-                iter_idx = weighted_tokens.argmin().item()
+                expected_tokens = self._stats.tokens_seen.sum() * self.weights
+                diff_tokens = self._stats.tokens_seen - expected_tokens
+                iter_idx = diff_tokens.argmin().item()
             elif self.weight_by == "pred_token":
-                weighted_pred_tokens = self._stats.pred_tokens_seen * self.weights
-                iter_idx = weighted_pred_tokens.argmin().item()
+                # Choose the most under-represented dataset by total pred token.
+                expected_pred_tokens = self._stats.pred_tokens_seen.sum() * self.weights
+                diff_pred_tokens = self._stats.pred_tokens_seen - expected_pred_tokens
+                iter_idx = diff_pred_tokens.argmin().item()
             rand_iter = self._infinite_iters[iter_idx]
             epoch_idx, item = next(rand_iter)
             assert isinstance(item, list), f"{item=}"

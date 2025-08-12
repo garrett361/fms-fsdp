@@ -85,8 +85,12 @@ def train(
     start = time.time()
     loop_start = time.time()
     train_loss = -1
-    for batch_idx, (input, label) in enumerate(train_loader, start=start_step + 1):
-        if batch_idx > cfg.num_steps:
+    for batch_idx, (input, label) in enumerate(
+        train_loader, start=start_step * cfg.grad_accum_steps + 1
+    ):
+        step_idx = (batch_idx + cfg.grad_accum_steps - 1) // cfg.grad_accum_steps
+        should_step = batch_idx % cfg.grad_accum_steps == 0
+        if step_idx > cfg.num_steps:
             break
         input = input.to(local_rank)
         label = label.to(local_rank)
@@ -111,13 +115,20 @@ def train(
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
         if cfg.z_loss > 0:
             loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
+
+        if cfg.grad_accum_steps != 1:
+            loss = loss / cfg.grad_accum_steps
+
+        ddp_stats[0] += loss.item()
+        if not should_step:
+            continue
+
         loss.backward()
 
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
         scheduler.step()
 
-        ddp_stats[0] += loss.item()
         ddp_stats[2] += 1
 
         if profiler:
@@ -125,8 +136,8 @@ def train(
 
         if (
             batch_idx == 1
-            or batch_idx % cfg.report_interval == 0
-            or batch_idx == cfg.num_steps
+            or step_idx % cfg.report_interval == 0
+            or step_idx == cfg.num_steps
         ):
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             train_loss = ddp_stats[0] / ddp_stats[2]
@@ -134,14 +145,19 @@ def train(
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             tok_per_gpu = cfg.batch_size * cfg.seq_length // cp_degree
-            new_tokens_seen = (batch_idx - start_step) * world_size * tok_per_gpu
+            new_tokens_seen = (
+                (step_idx - start_step)
+                * world_size
+                * tok_per_gpu
+                * cfg.grad_accum_steps
+            )
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
                 current_step_time = (time.time() - start) / cfg.report_interval
-                overall_step_time = elapsed_time / (batch_idx - start_step)
+                overall_step_time = elapsed_time / (step_idx - start_step)
                 current_throughput = int(tok_per_gpu / current_step_time)
                 overall_throughput = int(tok_per_gpu / overall_step_time)
                 reserved_mem = (
@@ -153,7 +169,7 @@ def train(
                     / 2**30
                 )
 
-                print("\nstep:", batch_idx)
+                print("\nstep:", step_idx)
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)
@@ -169,19 +185,19 @@ def train(
                     int(new_tokens_seen / elapsed_time * 3600 * 24),
                 )
                 print(f"Total tok/step: {world_size * tok_per_gpu}")
-                remaining_steps = cfg.num_steps - batch_idx + 1
+                remaining_steps = cfg.num_steps - step_idx + 1
                 remaining_secs = remaining_steps * current_step_time
                 print(f"Approx. time remaining: {timedelta(seconds=remaining_secs)}")
 
-                next_ckpt_batch_idx = (
-                    (batch_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval
+                next_ckpt_step_idx = (
+                    (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval
                 ) * cfg.checkpoint_interval
-                steps_until_ckpt = next_ckpt_batch_idx - batch_idx
+                steps_until_ckpt = next_ckpt_step_idx - step_idx
                 secs_until_ckpt = steps_until_ckpt * current_step_time
                 print(
                     f"Approx. time to next ckpt: {timedelta(seconds=secs_until_ckpt)}"
                 )
-                if cfg.tracker and batch_idx > start_step + 1:
+                if cfg.tracker and step_idx > start_step + 1:
                     vals_to_track = {
                         "learning rate": current_lr,
                         "loss": current_loss,
@@ -196,18 +212,18 @@ def train(
                         tracker_fn = wandb.log
                     elif cfg.tracker == "aim":
                         tracker_fn = run.track
-                    tracker_fn(vals_to_track, step=batch_idx)
+                    tracker_fn(vals_to_track, step=step_idx)
 
             start = time.time()
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
         if not cfg.skip_ckpt and (
-            batch_idx % cfg.checkpoint_interval == 0 or batch_idx == cfg.num_steps
+            step_idx % cfg.checkpoint_interval == 0 or step_idx == cfg.num_steps
         ):
             save(
                 checkpointer=checkpointer,
-                step_idx=batch_idx,
+                step_idx=step_idx,
                 model=model,
                 optimizer=optimizer,
                 tokens_seen=tokens_seen,

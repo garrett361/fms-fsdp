@@ -171,7 +171,7 @@ def get_data_loader(
         data,
         cfg.ckpt_load_path if cfg.resuming_dataset else cfg.ckpt_save_path,
         cfg.checkpoint_interval,
-        cfg.batch_size,
+        cfg.batch_size * cfg.grad_accum_steps,
         cfg.ckpt_save_path,
     )
     return torch.utils.data.DataLoader(

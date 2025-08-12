@@ -116,6 +116,8 @@ def train(
         if cfg.z_loss > 0:
             loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
 
+        del output
+
         if cfg.grad_accum_steps != 1:
             loss = loss / cfg.grad_accum_steps
 

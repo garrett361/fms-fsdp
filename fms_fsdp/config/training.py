@@ -35,7 +35,7 @@ class train_config:
     grad_clip_thresh: float = 1.0
     seed: int = 2023
     z_loss: Optional[float] = None
-    grad_acc_steps: int = 1
+    grad_accum_steps: int = 1
     weight_decay: float = 0.1
     adam_beta_0: float = 0.9
     adam_beta_1: float = 0.95

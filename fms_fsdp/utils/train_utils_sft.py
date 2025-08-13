@@ -106,11 +106,11 @@ def train(
     train_loss = -1
 
     for batch_idx, (data_stats, batch_size, batch) in enumerate(
-        train_loader, start=start_step * cfg.grad_acc_steps + 1
+        train_loader, start=start_step * cfg.grad_accum_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
-        step_idx = (batch_idx + cfg.grad_acc_steps - 1) // cfg.grad_acc_steps
-        should_step = batch_idx % cfg.grad_acc_steps == 0
+        step_idx = (batch_idx + cfg.grad_accum_steps - 1) // cfg.grad_accum_steps
+        should_step = batch_idx % cfg.grad_accum_steps == 0
         if step_idx > cfg.num_steps:
             if not cfg.skip_ckpt and (step_idx - 1) % cfg.checkpoint_interval != 0:
                 # Save before breaking, if a we didn't save last step
@@ -191,11 +191,11 @@ def train(
         # # (Note: These scaling factors largely drop out of Adam anyway. Globally re-scaling the loss
         # # via loss -> loss * X has the same effect as scaling eps -> eps / X.)
         # if cfg.sft_loss_type == "mean":
-        #     (loss / cfg.grad_acc_steps).backward()
+        #     (loss / cfg.grad_accum_steps).backward()
         # elif cfg.sft_loss_type == "sum":
         #     (loss * world_size).backward()
 
-        (loss / cfg.grad_acc_steps).backward()
+        (loss / cfg.grad_accum_steps).backward()
 
         # NOTE: @goon - when using a "mean" loss, the loss will be nan when if all labels are -100,
         # as is usually the case for early ranks. Count these as zeros for now. This messes up the

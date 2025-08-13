@@ -85,6 +85,7 @@ def train(
     start = time.time()
     loop_start = time.time()
     train_loss = -1
+    ce_loss = torch.nn.CrossEntropyLoss()
     for batch_idx, (input, label) in enumerate(
         train_loader, start=start_step * cfg.grad_accum_steps + 1
     ):
@@ -111,7 +112,6 @@ def train(
         optimizer.zero_grad()
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
-        ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
         if cfg.z_loss > 0:
             loss = loss + cfg.z_loss * torch.logsumexp(output, dim=-1).pow(2).mean()
@@ -121,11 +121,10 @@ def train(
         if cfg.grad_accum_steps != 1:
             loss = loss / cfg.grad_accum_steps
 
+        loss.backward()
         ddp_stats[0] += loss.item()
         if not should_step:
             continue
-
-        loss.backward()
 
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
         optimizer.step()
@@ -137,7 +136,7 @@ def train(
             profiler.step()
 
         if (
-            batch_idx == 1
+            step_idx == 1
             or step_idx % cfg.report_interval == 0
             or step_idx == cfg.num_steps
         ):

@@ -294,11 +294,13 @@ def main(**kwargs):
     warmup = lambda x: 1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2
     # linear decay for annealing
     if cfg.training_stage == "annealing":
-        warmup_interval = 1000
         schedule = (
-            lambda x: x / warmup_interval
-            if x < warmup_interval
-            else 1 - (x - warmup_interval) / (cfg.num_steps - warmup_interval)
+            lambda x: x / cfg.annealing_warmup_interval
+            if x < cfg.annealing_warmup_interval
+            else 1
+            - (1 - cfg.annealing_final_lr_ratio)
+            * (x - cfg.annealing_warmup_interval)
+            / (cfg.num_steps - cfg.annealing_warmup_interval)
         )
     elif cfg.training_stage == "cosine":
         # cosine decay

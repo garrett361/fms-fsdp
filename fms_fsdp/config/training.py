@@ -56,6 +56,8 @@ class train_config:
     grad_clip_thresh: float = 1.0
     seed: int = 2023
     z_loss: float = 1e-4
+    annealing_warmup_interval: int = 1000
+    annealing_final_lr_ratio: float = 0.01
 
     # continued training spec
     resuming_dataset: bool = False

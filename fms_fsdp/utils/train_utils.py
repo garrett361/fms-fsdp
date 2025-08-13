@@ -168,6 +168,7 @@ def train(
                 )
 
                 print("\nstep:", step_idx)
+                print(f"current time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
                 print("loss:", current_loss)
                 print("LR:", current_lr)
                 print("tokens seen:", total_tokens_seen)

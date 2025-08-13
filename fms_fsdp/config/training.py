@@ -12,8 +12,9 @@ class train_config:
     # dataset and dataloader
     sanity_print_toks: bool = False
     tokenizer_path: str = "/fsx/tokenizer"
-    datasets: str = "lang=en/dataset=commoncrawl,lang=en/dataset=webhose,lang=en/dataset=github_clean,lang=de/dataset=wikipedia,lang=es/dataset=wikipedia,lang=fr/dataset=wikipedia,lang=ja/dataset=wikipedia,lang=pt/dataset=wikipedia,lang=en/dataset=wikimedia,lang=en/dataset=uspto,lang=en/dataset=pubmedcentral,lang=en/dataset=arxiv,lang=en/dataset=stackexchange"
-    weights: str = "7725,500,550,28,17,22,25,8,100,500,175,250,100"
+    dataset_config_hashes: str = "" # Comma separated list of hashes
+    weights: str = "" # Comma separated weights for the datasets. Must match the number of hashes.
+    dataset_local_cache_dir: str = ""
     seq_length: int = 4096
     vocab_size: int = 32000
     num_workers: int = 1
@@ -79,3 +80,4 @@ class train_config:
 
     # debug
     skip_ckpt: bool = False
+    skip_optim_step: bool = False

@@ -217,7 +217,8 @@ def train(
         ddp_stats[1] += model.clip_grad_norm_(
             cfg.grad_clip_thresh if cfg.grad_clip_thresh > 0.0 else float("inf")
         ).item()
-        optimizer.step()
+        if not cfg.skip_optim_step:
+            optimizer.step()
         scheduler.step()
 
         if profiler:

@@ -7,10 +7,12 @@ import fire
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from datasets import load_from_disk
 from mamba_ssm.models.config_mamba import MambaConfig
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.modules.block import Block
+from open_instruct.dataset_transformation import (
+    get_cached_dataset_tulu,
+)
 from torch import distributed as dist
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -195,8 +197,31 @@ def main(**kwargs):
     with rank_zero_first(rank):
         # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
         # See tests/sft/tokenize_dataset.py
-        dataset_paths = [p.strip() for p in cfg.datasets.split(",")]
-        train_dataset_list = [load_from_disk(p) for p in dataset_paths]
+        dataset_config_hashes = [
+            h.strip() for h in cfg.dataset_config_hashes.split(",")
+        ]
+
+        train_dataset_list = []
+        for h in dataset_config_hashes:
+            # NOTE: @goon - None fields aren't using the proper types, but aren't used when loading
+            # from the cache.
+            dataset = get_cached_dataset_tulu(
+                dataset_mixer_list=None,
+                dataset_mixer_list_splits=None,
+                tc=None,
+                dataset_transform_fn=None,
+                transform_fn_args=None,
+                target_columns=None,
+                dataset_cache_mode="local",
+                dataset_config_hash=h,
+                hf_entity=None,
+                dataset_local_cache_dir=cfg.dataset_local_cache_dir,
+                dataset_skip_cache=False,
+            )
+            dataset = dataset.shuffle(seed=cfg.seed)
+            dataset.set_format(type="pt")
+            train_dataset_list.append(dataset)
+
         dataset_lens = [len(d) for d in train_dataset_list]
         if not rank:
             print(
@@ -236,7 +261,7 @@ def main(**kwargs):
             separator_id=cfg.separator_id,
             seed=cfg.seed,
             naive_padding_free=cfg.naive_padding_free,
-            weight_by=cfg.weight_by
+            weight_by=cfg.weight_by,
         )
     if rank == 0:
         print("Datasets constructed!")

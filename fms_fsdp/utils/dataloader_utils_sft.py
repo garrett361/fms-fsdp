@@ -393,6 +393,9 @@ class CPDataCollator:
 
 
 class ChatTokenizerCollatorCPCollator:
+    """
+    For tokenizing on the fly.
+    """
     def __init__(
         self,
         tokenizer,

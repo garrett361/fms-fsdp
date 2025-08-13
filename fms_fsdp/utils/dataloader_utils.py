@@ -138,13 +138,6 @@ def get_data_loader(
     )
     # Shuffle outputs in length 10k buffer. Consecutive lines appear 10k steps apart on average.
     data = PreloadBufferDataset(data, cfg.preload_buffer_size)
-    # Slice and rearrange docs to force long-context retrieval
-    if cfg.slice_rate > 0:
-        data = DocSliceDataset(
-            data,
-            cfg.eos_token,
-            slice_rate=cfg.slice_rate,
-        )
     # Apply FIM transformation if needed
     if fim_training:
         data = FIMDataset(
@@ -155,6 +148,13 @@ def get_data_loader(
             pre_token=cfg.fim_pre,
             mid_token=cfg.fim_mid,
             suf_token=cfg.fim_suf,
+        )
+    # Slice and rearrange docs to force long-context retrieval
+    if cfg.slice_rate > 0:
+        data = DocSliceDataset(
+            data,
+            cfg.eos_token,
+            slice_rate=cfg.slice_rate,
         )
     # Transform to tensors
     data = PreprocessDataset(data, torch.IntTensor)

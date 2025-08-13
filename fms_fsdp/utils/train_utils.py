@@ -127,8 +127,9 @@ def train(
             continue
 
         ddp_stats[1] += model.clip_grad_norm_(cfg.grad_clip_thresh).item()
-        optimizer.step()
-        scheduler.step()
+        if not cfg.skip_optim_step:
+            optimizer.step()
+            scheduler.step()
 
         ddp_stats[2] += 1
 

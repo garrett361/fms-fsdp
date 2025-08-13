@@ -103,5 +103,6 @@ class train_config:
 
     # debug
     skip_ckpt: bool = False
+    skip_optim_step: bool = False
     preload_buffer_size: int = 1000
     print_data_stats_interval: int = 0

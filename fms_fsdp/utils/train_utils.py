@@ -145,13 +145,10 @@ def train(
             g_norm = ddp_stats[1] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
-            tok_per_gpu = cfg.batch_size * cfg.seq_length // cp_degree
-            new_tokens_seen = (
-                (step_idx - start_step)
-                * world_size
-                * tok_per_gpu
-                * cfg.grad_accum_steps
+            tok_per_gpu = (
+                cfg.batch_size * cfg.seq_length * cfg.grad_accum_steps // cp_degree
             )
+            new_tokens_seen = (step_idx - start_step) * world_size * tok_per_gpu
             if rank == 0:
                 total_tokens_seen = tokens_seen + new_tokens_seen
                 current_loss = train_loss.item()

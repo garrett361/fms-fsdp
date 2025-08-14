@@ -290,17 +290,16 @@ def main(**kwargs):
             g["initial_lr"] = cfg.learning_rate
 
     # LR schedule
-    warmup_interval = min(2000, cfg.num_steps // 20)
-    warmup = lambda x: 1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2
+    warmup = lambda x: 1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2
     # linear decay for annealing
     if cfg.training_stage == "annealing":
         schedule = (
-            lambda x: x / cfg.annealing_warmup_interval
-            if x < cfg.annealing_warmup_interval
+            lambda x: x / cfg.warmup_interval
+            if x < cfg.warmup_interval
             else 1
             - (1 - cfg.annealing_final_lr_ratio)
-            * (x - cfg.annealing_warmup_interval)
-            / (cfg.num_steps - cfg.annealing_warmup_interval)
+            * (x - cfg.warmup_interval)
+            / (cfg.num_steps - cfg.warmup_interval)
         )
     elif cfg.training_stage == "cosine":
         # cosine decay
@@ -312,8 +311,7 @@ def main(**kwargs):
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
     elif cfg.training_stage == "constant":
-        warmup_interval = 2000
-        schedule = lambda x: (min(x, warmup_interval) / warmup_interval)
+        schedule = lambda x: (min(x, cfg.warmup_interval) / cfg.warmup_interval)
     elif cfg.training_stage == "linear_to_constant":
         linear_steps = 25000
         start_lr = 2e-4
@@ -326,12 +324,13 @@ def main(**kwargs):
             / cfg.learning_rate
         )
     elif cfg.training_stage == "annealing_with_specified_decay_steps":
-        warmup_interval = 2000
         total_decay_steps = 25000
         schedule = (
-            lambda x: (x - start_step) / warmup_interval
-            if x - start_step < warmup_interval
-            else max(0.0, 1 - (x - start_step - warmup_interval) / total_decay_steps)
+            lambda x: (x - start_step) / cfg.warmup_interval
+            if x - start_step < cfg.warmup_interval
+            else max(
+                0.0, 1 - (x - start_step - cfg.warmup_interval) / total_decay_steps
+            )
         )
     else:
         schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75

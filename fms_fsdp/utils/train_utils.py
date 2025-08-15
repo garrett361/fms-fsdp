@@ -86,7 +86,8 @@ def train(
     # 2) optim_steps
     # 3) logits abs mean
     # 4) logits max mean
-    ddp_stats = torch.zeros(5).to(local_rank)
+    # 5) logits std mean
+    ddp_stats = torch.zeros(6).to(local_rank)
 
     start = time.time()
     loop_start = time.time()
@@ -124,6 +125,7 @@ def train(
             # Divide by accum_steps to get proper average when dividing by ddp_stats[2] later
             ddp_stats[3] += output.abs().mean() / cfg.grad_accum_steps
             ddp_stats[4] += output.max(dim=-1).values.mean() / cfg.grad_accum_steps
+            ddp_stats[5] += output.std(dim=-1).mean() / cfg.grad_accum_steps
 
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
         if cfg.z_loss > 0:
@@ -159,6 +161,7 @@ def train(
             g_norm = ddp_stats[1] / ddp_stats[2]
             logits_abs_mean = ddp_stats[3] / ddp_stats[2]
             logits_max_mean = ddp_stats[4] / ddp_stats[2]
+            logits_std_mean = ddp_stats[5] / ddp_stats[2]
             elapsed_time = time.time() - loop_start
             world_size = int(os.environ["WORLD_SIZE"])
             tok_per_gpu = (
@@ -172,6 +175,7 @@ def train(
                 current_gnorm = g_norm.item()
                 current_logits_abs_mean = logits_abs_mean.item()
                 current_logits_max_mean = logits_max_mean.item()
+                current_logits_std_mean = logits_std_mean.item()
                 current_step_time = (time.time() - start) / cfg.report_interval
                 overall_step_time = elapsed_time / (step_idx - start_step)
                 current_throughput = int(tok_per_gpu / current_step_time)
@@ -193,6 +197,7 @@ def train(
                 print("gradient norm:", current_gnorm)
                 print("logits.abs().mean():", current_logits_abs_mean)
                 print("logits.max(dim=-1).value.mean():", current_logits_max_mean)
+                print("logits.std(dim=-1).value.mean():", current_logits_std_mean)
                 print("reserved memory (GiB):", reserved_mem)
                 print("allocated memory (GiB):", allocated_mem)
                 print("current step time:", current_step_time)
@@ -228,6 +233,7 @@ def train(
                         "gpu allocated memory GiB": allocated_mem,
                         "logits abs mean": current_logits_abs_mean,
                         "logits max mean": current_logits_max_mean,
+                        "logits std mean": current_logits_std_mean,
                     }
                     if cfg.tracker == "wandb":
                         tracker_fn = wandb.log

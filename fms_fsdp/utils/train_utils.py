@@ -118,6 +118,7 @@ def train(
         output = model(input)
         output = output.logits if hasattr(output, "logits") else output
         # Collect stats on logits size. abs().mean() is easiest to compute
+        # NOTE: @goon - this can be a substantial temp memory cost, since the logits are large
         with torch.no_grad():
             # Divide by accum_steps to get proper average when dividing by ddp_stats[2] later
             ddp_stats[3] += output.abs().mean() / cfg.grad_accum_steps

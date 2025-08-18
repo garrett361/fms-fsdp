@@ -82,7 +82,7 @@ def get_data_loader(
     if fim_training:
         assert cfg.bos_token is None, "No BOS in FIM training. Did you mean fim_pre?"
 
-    datasets, weights, cols = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name)
+    datasets, weights, cols, targs = parse_data_args(cfg.datasets, cfg.weights, cfg.col_name, cfg.target_doclen)
 
     # Base streaming dataset. Returns doc chunks in sequence.
     # Implements dataset sampling and rescalability.
@@ -106,7 +106,7 @@ def get_data_loader(
         cfg.eos_token,
         bos_token=cfg.bos_token,
         strip_tokens=set(droplist),
-        min_length=cfg.target_doclen,
+        min_length=None,
         seed=cfg.seed,
         filter_exp=cfg.filter_exp,
         max_consecutive_chunks=ceil(cfg.doc_breakpoint/1024),
@@ -126,6 +126,7 @@ def get_data_loader(
         cfg.eos_token,
         datasets=datasets,
         weights=weights,
+        target_doclens=targs,
         verbose=(dp_rank == 0),
     )
     # Wrap above dataset in packing logic to form constant-length lines.
@@ -182,7 +183,7 @@ def get_data_loader(
     )
 
 
-def parse_data_args(datas, weights, cols):
+def parse_data_args(datas, weights, cols, targs):
     # Convert csv inputs into corresponding lists of values
     def splitstrip(x):
         if isinstance(x, str):
@@ -197,4 +198,5 @@ def parse_data_args(datas, weights, cols):
     datas = splitstrip(datas)
     weights = [float(x) for x in splitstrip(weights)]
     cols = splitstrip(cols)
-    return datas, weights, cols
+    targs = splitstrip(targs)
+    return datas, weights, cols, targs

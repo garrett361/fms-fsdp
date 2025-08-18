@@ -1318,7 +1318,7 @@ class StreamingDocDataset(_StatefulDataset):
 
             if self.verbose:
                 logging.info(
-                    f"    Worker {self.rank} ingested {len(self.docset)} shard fragments from {dataset}"
+                    f"    Worker {self.rank} ingested {len(self.docset)} shard fragments from {dataset}, target doclen {self.min_length}"
                 )
 
             # Shuffle shard files - guaranteed inconsistent across workers
@@ -1550,6 +1550,7 @@ class ScalableShardDataset(_WrapperDataset):
         self.total_shards = n_logical_shards
         self.delimiter = delimiter_token
         self.verbose = verbose
+        self.min_length = None
 
         # Fields to be populated during setup / subdataset setup
         self.data: List[StreamingDocDataset] = []
@@ -1587,6 +1588,7 @@ class ScalableShardDataset(_WrapperDataset):
                 self.data[-1].local_worldsize = 1
                 self.data[-1].datapath = self.datapath
                 self.data[-1].verbose = self.rank == 0
+                self.data[-1].min_length = self.min_length
                 if self.verbose:
                     logging.info(
                         f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
@@ -1689,6 +1691,7 @@ class SamplingDataset(_WrapperDataset):
         datasets=None,
         weights=None,
         verbose=False,
+        target_doclens=None,
     ):
         super().__init__(dataset)
         self.datapath = datapath
@@ -1718,6 +1721,13 @@ class SamplingDataset(_WrapperDataset):
         self.weights = [1] * len(self.datasets) if weights is None else weights
         self.weights = [w / sum(self.weights) for w in self.weights]
 
+        if len(target_doclens) != len(self.weights):
+            if self.rank == 0:
+                print(f"Length mismatch in datasets vs target doclen. Using first entry {target_doclens[0]} for all datasets.")
+            self.min_length = [target_doclens[0]]*len(self.weights)
+        else:
+            self.min_length = target_doclens
+
         self.tokens_seen = [0] * len(self.datasets)
 
         self.current_iterator = -1
@@ -1734,6 +1744,7 @@ class SamplingDataset(_WrapperDataset):
                 self.data[-1].rank = self.rank
                 self.data[-1].worldsize = self.worldsize
                 self.data[-1].local_worldsize = self.local_worldsize
+                self.data[-1].min_length = self.min_length[i]
                 if self.verbose:
                     logging.info(
                         f"Worker {self.rank} assembled subdataset iterator for {d}, {i+1} of {len(self.datasets)}"

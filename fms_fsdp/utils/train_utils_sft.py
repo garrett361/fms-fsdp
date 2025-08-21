@@ -322,7 +322,7 @@ def train(
                 if cfg.sft_loss_type == "sum":
                     print("avg loss per pred tok:", train_loss_per_pred_tok)
                     print("avg loss per total tok:", train_loss_per_total_tok)
-                print(f"average batch size: {avg_batch_size}")
+                print(f"average global batch size: {avg_batch_size}")
                 print(f"average tokens per example: {avg_tok_per_example}")
                 print(f"average pred tokens per example: {avg_pred_tok_per_example}")
                 print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")

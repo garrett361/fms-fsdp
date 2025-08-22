@@ -1,6 +1,5 @@
 import math
 import os
-from contextlib import contextmanager
 from pathlib import Path
 
 import fire
@@ -36,16 +35,6 @@ from fms_fsdp.utils.train_utils_sft import (
     setup_environ_flags,
     train,
 )
-
-
-@contextmanager
-def rank_zero_first(rank):
-    if rank:
-        dist.barrier()
-
-    yield
-    if not rank:
-        dist.barrier()
 
 
 def parse_weights(x):
@@ -194,75 +183,73 @@ def main(**kwargs):
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     tokenizer.chat_template = get_chat_template(cfg.chat_template_name)
 
-    with rank_zero_first(rank):
-        # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
-        # See tests/sft/tokenize_dataset.py
-        dataset_config_hashes = [
-            h.strip() for h in cfg.dataset_config_hashes.split(",")
-        ]
+    # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
+    # See tests/sft/tokenize_dataset.py
+    dataset_config_hashes = [h.strip() for h in cfg.dataset_config_hashes.split(",")]
 
-        train_dataset_list = []
-        for h in dataset_config_hashes:
-            # NOTE: @goon - None fields aren't using the proper types, but aren't used when loading
-            # from the cache.
-            dataset = get_cached_dataset_tulu(
-                dataset_mixer_list=None,
-                dataset_mixer_list_splits=None,
-                tc=None,
-                dataset_transform_fn=None,
-                transform_fn_args=None,
-                target_columns=None,
-                dataset_cache_mode="local",
-                dataset_config_hash=h,
-                hf_entity=None,
-                dataset_local_cache_dir=cfg.dataset_local_cache_dir,
-                dataset_skip_cache=False,
-            )
-            dataset = dataset.shuffle(seed=cfg.seed)
-            dataset.set_format(type="pt")
-            train_dataset_list.append(dataset)
-
-        dataset_lens = [len(d) for d in train_dataset_list]
-        if not rank:
-            print(
-                f"Train datasets loaded with {sum(len(td) for td in train_dataset_list)} total examples"
-            )
-
-        samplers = [
-            DistributedSampler(
-                td,
-                num_replicas=dp_degree,
-                rank=dp_rank,
-                shuffle=True,
-                seed=cfg.seed,
-                drop_last=False,
-            )
-            for td in train_dataset_list
-        ]
-        train_loader_list = [
-            DataLoader(
-                td,
-                sampler=sampler,
-                collate_fn=PretokenizedCollator(),
-                batch_size=1,
-                num_workers=cfg.num_workers,
-                pin_memory=cfg.pin_memory,
-            )
-            for td, sampler in zip(train_dataset_list, samplers)
-        ]
-
-        train_loader = InfiniteCPBatchingIter(
-            train_loader_list,
-            weights=parse_weights(cfg.weights),
-            max_tokens=cfg.batch_size * cfg.seq_length,
-            cp_degree=cp_degree,
-            cp_rank=cp_rank,
-            pad_id=cfg.pad_id,
-            separator_id=cfg.separator_id,
-            seed=cfg.seed,
-            naive_padding_free=cfg.naive_padding_free,
-            weight_by=cfg.weight_by,
+    train_dataset_list = []
+    for h in dataset_config_hashes:
+        # NOTE: @goon - None fields aren't using the proper types, but aren't used when loading
+        # from the cache.
+        dataset = get_cached_dataset_tulu(
+            dataset_mixer_list=None,
+            dataset_mixer_list_splits=None,
+            tc=None,
+            dataset_transform_fn=None,
+            transform_fn_args=None,
+            target_columns=None,
+            dataset_cache_mode="local",
+            dataset_config_hash=h,
+            hf_entity=None,
+            dataset_local_cache_dir=cfg.dataset_local_cache_dir,
+            dataset_skip_cache=False,
+            keep_in_memory=False,
         )
+        dataset = dataset.shuffle(seed=cfg.seed)
+        dataset.set_format(type="pt")
+        train_dataset_list.append(dataset)
+
+    dataset_lens = [len(d) for d in train_dataset_list]
+    if not rank:
+        print(
+            f"Train datasets loaded with {sum(len(td) for td in train_dataset_list)} total examples"
+        )
+
+    samplers = [
+        DistributedSampler(
+            td,
+            num_replicas=dp_degree,
+            rank=dp_rank,
+            shuffle=True,
+            seed=cfg.seed,
+            drop_last=False,
+        )
+        for td in train_dataset_list
+    ]
+    train_loader_list = [
+        DataLoader(
+            td,
+            sampler=sampler,
+            collate_fn=PretokenizedCollator(),
+            batch_size=1,
+            num_workers=cfg.num_workers,
+            pin_memory=cfg.pin_memory,
+        )
+        for td, sampler in zip(train_dataset_list, samplers)
+    ]
+
+    train_loader = InfiniteCPBatchingIter(
+        train_loader_list,
+        weights=parse_weights(cfg.weights),
+        max_tokens=cfg.batch_size * cfg.seq_length,
+        cp_degree=cp_degree,
+        cp_rank=cp_rank,
+        pad_id=cfg.pad_id,
+        separator_id=cfg.separator_id,
+        seed=cfg.seed,
+        naive_padding_free=cfg.naive_padding_free,
+        weight_by=cfg.weight_by,
+    )
     if rank == 0:
         print("Datasets constructed!")
 

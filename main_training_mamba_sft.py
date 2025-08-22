@@ -182,6 +182,8 @@ def main(**kwargs):
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
     tokenizer.chat_template = get_chat_template(cfg.chat_template_name)
+    if rank == 0:
+        print(f"{tokenizer.chat_template=}")
 
     # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
     # See tests/sft/tokenize_dataset.py

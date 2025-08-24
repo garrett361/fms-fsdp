@@ -123,8 +123,10 @@ def train(
                     new_tokens_seen=new_tokens_seen,
                     pred_tokens_seen=pred_tokens_seen,
                     new_pred_tokens_seen=new_pred_tokens_seen,
-                    mamba_config=mamba_config,
                     tokenizer=tokenizer,
+                    hf_config=hf_config,
+                    rank=rank,
+                    is_compiled=cfg.use_torch_compile,
                 )
             break
         input = input.to(local_rank)
@@ -441,7 +443,7 @@ def train(
         if not cfg.skip_ckpt and step_idx % cfg.checkpoint_interval == 0:
             save(
                 checkpointer=checkpointer,
-                step_idx=batch_idx,
+                step_idx=step_idx,
                 model=model,
                 optimizer=optimizer,
                 tokens_seen=tokens_seen,

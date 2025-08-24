@@ -40,6 +40,7 @@ class train_config:
     adam_beta_0: float = 0.9
     adam_beta_1: float = 0.95
     max_out_tokens: bool = False
+    warmup_interval: int = 500
 
     # profiling
     use_profiler: bool = False

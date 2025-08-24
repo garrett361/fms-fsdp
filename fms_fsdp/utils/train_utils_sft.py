@@ -234,7 +234,8 @@ def train(
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             # num fwd/bwd passes summed over all ranks
             n_fwd_bwd_passes = ddp_stats[2].item()
-            # Each example is over-counted by cp_degree, so correct for that:
+            # Total num examples seen in reporting period. Each example is over-counted by
+            # cp_degree, so correct for that.
             n_examples = ddp_stats[5].item() / cp_degree
             n_optim_steps = cfg.report_interval * world_size
             g_norm = ddp_stats[1] / n_fwd_bwd_passes
@@ -262,7 +263,7 @@ def train(
                 train_loss_per_total_tok = ddp_stats[0].item() / n_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes
-            avg_batch_size = (ddp_stats[5] / n_fwd_bwd_passes).item()
+            avg_batch_size = n_examples / cfg.report_interval
             # tok_per_gpu: number of tokens seen by each GPU on average per optim step
             tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
             new_tokens_seen += int(n_tok_sum)
@@ -388,7 +389,7 @@ def train(
                     vals_to_track = {
                         "data/avg toks per example": avg_tok_per_example,
                         "data/avg pred toks per example": avg_pred_tok_per_example,
-                        "data/batch size per gpu": avg_batch_size,
+                        "data/avg global bsz": avg_batch_size,
                         "data/current num examples": n_examples,
                         "data/current pred toks": n_pred_tok_sum,
                         "data/current toks seen with padding": n_tok_sum_padded,

@@ -39,6 +39,7 @@ class train_config:
     weight_decay: float = 0.1
     adam_beta_0: float = 0.9
     adam_beta_1: float = 0.95
+    max_out_tokens: bool = False
 
     # profiling
     use_profiler: bool = False

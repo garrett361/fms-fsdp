@@ -243,7 +243,9 @@ def main(**kwargs):
     train_loader = InfiniteCPBatchingIter(
         train_loader_list,
         weights=parse_weights(cfg.weights),
-        max_tokens=cfg.batch_size * cfg.seq_length,
+        batch_size=cfg.batch_size,
+        seq_length=cfg.seq_length,
+        max_out_tokens=cfg.max_out_tokens,
         cp_degree=cp_degree,
         cp_rank=cp_rank,
         pad_id=cfg.pad_id,

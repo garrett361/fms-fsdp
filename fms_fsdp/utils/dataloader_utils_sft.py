@@ -396,6 +396,7 @@ class ChatTokenizerCollatorCPCollator:
     """
     For tokenizing on the fly.
     """
+
     def __init__(
         self,
         tokenizer,
@@ -474,20 +475,26 @@ class DatasetStats:
 
 class InfiniteCPBatchingIter:
     """
-    Inifinite data iterator which greedily packs full examples from `dataloader_list` up to the
-    `max_token` limit, drawing per-dataset according to `weights`, and the splits the examples for
-    context-parallel training. If `naive_padding_free=True`, the examples are all concatenated
-    together, otherwise they are batched and padded. The iterator return a tuple of:
+    Inifinite data iterator.
+
+    If max_out_tokens=True, this calss greedily packs full examples from `dataloader_list`, grouping
+    up to max_tokens = batch_size * seq_length tokens in a batch. Examples are drawn per-dataset
+    according to `weights`examples are split for context-parallel training. If
+    `naive_padding_free=True`, the examples are all concatenated together, otherwise they are
+    batched and padded. The iterator returns a tuple of:
     0) A DatatsetStats instance
     1) The number of examples packed in the batch
     2) The cp-processed batch, a dict[str, Tensor] with `input_ids`, and `labels` keys in HF style.
+       This iterator also performs the causal shifting of the labels.
     """
 
     def __init__(
         self,
         dataloader_list: list[DataLoader],
         weights: list[float],
-        max_tokens: int,
+        batch_size: int,
+        seq_length: int,
+        max_out_tokens: bool,
         cp_degree: int,
         cp_rank: int,
         pad_id: int = 0,
@@ -506,7 +513,10 @@ class InfiniteCPBatchingIter:
         self.weights = torch.tensor(weights, dtype=torch.float32)
         # Normalize:
         self.weights /= self.weights.sum()
-        self.max_tokens = max_tokens
+        self.batch_size = batch_size
+        self.seq_length = seq_length
+        self.max_out_tokens = max_out_tokens
+        self.max_tokens = batch_size * seq_length
         self.cp_degree = cp_degree
         self.cp_rank = cp_rank
         self.pad_id = pad_id
@@ -581,6 +591,9 @@ class InfiniteCPBatchingIter:
     def _should_yield_batch(self, n_tok_next_item: int) -> bool:
         if not self._batch:
             return False
+
+        if not self.max_out_tokens:
+            return len(self._batch) == self.batch_size
 
         if self.naive_padding_free:
             current_tok_in_batch = sum(b["input_ids"].numel() for b in self._batch)

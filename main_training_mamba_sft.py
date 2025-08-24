@@ -131,7 +131,7 @@ def main(**kwargs):
         dp_rank = rank
         dp_mesh = dist.device_mesh.init_device_mesh(
             "cuda",
-            world_size,
+            (world_size,),
             mesh_dim_names=("dp",),
         )
     dp_degree = world_size // cp_degree

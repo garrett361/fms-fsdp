@@ -1,0 +1,369 @@
+import math
+import os
+from pathlib import Path
+
+import fire
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from mamba_ssm.models.config_mamba import MambaConfig
+from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.modules.block import Block
+from mamba_ssm.modules.mamba2 import Mamba2
+from mamba_ssm.modules.mlp import GatedMLP
+from torch import distributed as dist
+from torch.distributed.device_mesh import DeviceMesh
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.wrap import CustomPolicy
+from torch.optim.lr_scheduler import LambdaLR
+from transformers import AutoConfig, AutoTokenizer
+
+from fms_fsdp import config
+from fms_fsdp.utils.checkpointing_utils import Checkpointer
+from fms_fsdp.utils.config_utils import get_model_config, update_config
+from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
+from fms_fsdp.utils.train_utils import (
+    get_policies,
+    get_profiler,
+    setup,
+    setup_environ_flags,
+    train,
+)
+
+
+def main(**kwargs):
+    # get configs
+    cfg = config.train_config()
+    update_config(cfg, **kwargs)
+
+    # ensure reproducibility
+    torch.cuda.manual_seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
+
+    # torchrun specific
+    local_rank = int(os.environ["LOCAL_RANK"])
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+
+    if cfg.sharding_strategy == "hsdp" and world_size == torch.cuda.device_count():
+        print("World size = GPU/Node: switching from hsdp -> fsdp")
+        cfg.sharding_strategy = "fsdp"
+
+    if rank == 0:
+        print(f"--> running with these configs {cfg}")
+
+    # some setups
+    setup()
+    torch.cuda.set_device(local_rank)
+    torch.cuda.empty_cache()
+    setup_environ_flags()
+    os.environ["TRITON_CACHE_DIR"] = os.path.join(
+        Path.home(), ".triton", "cache", str(local_rank)
+    )
+    dist.barrier()
+
+    # get policy. NOTE: @goon - overriding {wrapping_policy, param_init_fn} below
+    block = Block
+    (
+        mixed_precision_policy,
+        _,
+        sharding_strategy_policy,
+        apply_selective_ac,
+        _,  # NOTE: @goon - We'll override param_init_fn for mamba below
+    ) = get_policies(cfg, rank, block, mlp=GatedMLP)
+    if cfg.low_cpu_fsdp:
+        # NOTE: @goon - the params will be junk after using this. Only intended to be used in
+        # conjunction with loading proper weights from a checkpoint.
+        def param_init_fn(module):
+            module.to_empty(device=torch.cuda.current_device())
+    else:
+        param_init_fn = None
+
+    # Meshes for FSDP and CP. NOTE: @goon - Getting hangs and/or OOMs if I don't explicitly specify
+    # the FSDP mesh when using 4+ nodes with HSDP + in-node-CP.
+    def get_1D_world_mesh(world_size: int, prefix: str) -> DeviceMesh:
+        mesh = dist.device_mesh.init_device_mesh(
+            "cuda",
+            (world_size,),
+            mesh_dim_names=(prefix + "inner",),
+        )
+        return mesh
+
+    def get_2D_world_mesh(world_size: int, inner_size: int, prefix: str) -> DeviceMesh:
+        assert world_size % inner_size == 0
+        mesh = dist.device_mesh.init_device_mesh(
+            "cuda",
+            (world_size // inner_size, inner_size),
+            mesh_dim_names=(prefix + "outer", prefix + "inner"),
+        )
+        return mesh
+
+    # NOTE: @goon - for some reason, just creating a single 1D or 2D mesh and using slices of that
+    # as appropriate seems to give much less stable behavior than making separate CP and FSDP
+    # meshes.
+    if cfg.cp:
+        cp_degree = cfg.cp_degree or torch.cuda.device_count()
+        if cp_degree == world_size:
+            cp_mesh = get_1D_world_mesh(world_size, prefix="cp_")
+            dp_rank = 0
+        else:
+            cp_mesh_2d = get_2D_world_mesh(world_size, cp_degree, prefix="cp_")
+            dp_rank = cp_mesh_2d["cp_outer"].get_local_rank()
+            cp_mesh = cp_mesh_2d["cp_inner"]
+        cp_rank = cp_mesh.get_local_rank()
+    else:
+        cp_mesh = None
+        cp_degree = 1
+        cp_rank = 0
+        dp_degree = world_size
+        cp_rank = dp_rank = rank
+    dp_degree = world_size // cp_degree
+
+    if cfg.sharding_strategy == "fsdp":
+        fsdp_mesh = get_1D_world_mesh(world_size, prefix="fsdp_")
+    elif cfg.sharding_strategy == "hsdp":
+        fsdp_mesh = get_2D_world_mesh(
+            world_size, torch.cuda.device_count(), prefix="fsdp_"
+        )
+    else:
+        fsdp_mesh = None
+
+    if not rank:
+        print(f"{fsdp_mesh=}")
+
+    print(
+        f"Rank/Mesh Assignments:\n\t{rank=}\n\t{cp_rank=}\n\t{dp_rank=}\n\t{cp_mesh=}"
+    )
+
+    # get model
+    config_data = get_model_config(cfg.model_variant)
+    mamba_config = MambaConfig(**config_data)
+    if not rank:
+        print(f"Constructing {cfg.model_variant=} model.\n\t{mamba_config=}")
+
+    if cfg.low_cpu_fsdp:
+        with torch.device("meta"):
+            model = MambaLMHeadModel(
+                mamba_config,
+                cp_mesh=cp_mesh if cfg.cp else None,
+                cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
+                cp_mamba_recompute=cfg.cp_mamba_recompute if cfg.cp else None,
+                cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
+            )
+    else:
+        model = MambaLMHeadModel(
+            mamba_config,
+            cp_mesh=cp_mesh if cfg.cp else None,
+            cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
+            cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
+        )
+
+    # NOTE: @goon - granite 3.3 uses tied weight embeddings, so only wrap blocks
+    def lambda_fn(module: nn.Module):
+        return isinstance(module, (Block, nn.Embedding)) or module is model.lm_head
+
+    wrapping_policy = CustomPolicy(lambda_fn)
+
+    if rank == 0:
+        total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"\n--> model has {total_params / 1e6} Million params\n")
+
+    # get data loader
+    if rank == 0:
+        print("Constructing datasets...")
+
+    tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_path)
+    if not cfg.use_dummy_dataset:
+        train_loader = get_data_loader(
+            cfg,
+            dp_rank=dp_rank,
+            dp_degree=dp_degree,
+            cp_rank=cp_rank,
+            cp_degree=cp_degree,
+        )
+    else:
+        train_loader = get_dummy_loader(
+            cfg,
+            rank,
+            world_size,
+            cp_degree=cp_degree,
+        )
+    if rank == 0:
+        print("Datasets constructed!")
+
+    # FSDP
+    model = FSDP(
+        model,
+        device_mesh=fsdp_mesh,
+        auto_wrap_policy=wrapping_policy,
+        mixed_precision=mixed_precision_policy,
+        sharding_strategy=sharding_strategy_policy,
+        use_orig_params=True,
+        device_id=torch.cuda.current_device(),
+        limit_all_gathers=True,
+        param_init_fn=param_init_fn,
+    )
+    if rank == 0:
+        print(model)
+
+    # fsdp activation checkpointing
+    if cfg.fsdp_activation_checkpointing:
+        if rank == 0:
+            print("--> applying FSDP activation checkpointing...")
+        apply_selective_ac(model, p=cfg.selective_checkpointing)
+
+    # torch compile
+    if cfg.use_torch_compile:
+        if rank == 0:
+            print("--> enabling torch compile...")
+        # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
+        torch._dynamo.config.accumulated_cache_size_limit = 128
+        model = torch.compile(model)
+
+    if cfg.freeze_mamba_layers:
+        for name, module in model.named_modules():
+            if isinstance(module, Mamba2):
+                if not rank:
+                    print(f"Freezing module {name}")
+                for p in module.parameters():
+                    p.requires_grad = False
+
+    # Optimizer
+    # optimizer = optim.AdamW(
+    #     model.parameters(),
+    #     lr=cfg.learning_rate,
+    #     betas=(0.9, 0.95),
+    #     weight_decay=0.1,
+    # )
+    params_with_decay = []
+    params_without_decay = []
+    for name, param in model.named_parameters():
+        suff = name.split(".")[-1]
+        if "A_log" in suff or "D" in suff or "dt_bias" in suff:
+            params_without_decay.append(param)
+        else:
+            params_with_decay.append(param)
+    optimizer = optim.AdamW(
+        [
+            {
+                "params": params_with_decay,
+                "weight_decay": 0.1,
+            },
+            {
+                "params": params_without_decay,
+                "weight_decay": 0.0,
+            },
+        ],
+        betas=(0.9, 0.95),
+        lr=cfg.learning_rate,
+    )
+
+    # optionally load from checkpoint (when continue pretraining)
+    checkpointer = Checkpointer(
+        cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
+    )
+
+    if cfg.hf_cfg_path is not None:
+        hf_cfg_path = cfg.hf_cfg_path
+    elif (Path(cfg.ckpt_load_path) / "config.json").exists():
+        hf_cfg_path = cfg.ckpt_load_path
+    else:
+        raise ValueError(
+            "Please either provide a hf_cfg_path or point the ckpt_load_path to a HF ckpt dir"
+        )
+    hf_config = AutoConfig.from_pretrained(hf_cfg_path)
+    if getattr(hf_config, "embedding_multiplier", 1.0) != 1.0:
+        raise NotImplementedError
+    if getattr(hf_config, "residual_multiplier", 1.0) != 1.0:
+        raise NotImplementedError
+
+    model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
+        model,
+        optimizer,
+        None,
+        path=cfg.ckpt_load_path,
+        strict=True,
+    )
+    if not is_resuming:
+        start_step = 0
+        # Override loaded optim hyperparams with the current values
+        for g in optimizer.param_groups:
+            g["initial_lr"] = cfg.learning_rate
+
+    # LR schedule
+    warmup = lambda x: 1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2
+    # linear decay for annealing
+    if cfg.training_stage == "annealing":
+        schedule = (
+            lambda x: x / cfg.warmup_interval
+            if x < cfg.warmup_interval
+            else 1
+            - (1 - cfg.annealing_final_lr_ratio)
+            * (x - cfg.warmup_interval)
+            / (cfg.num_steps - cfg.warmup_interval)
+        )
+    elif cfg.training_stage == "cosine":
+        # cosine decay
+        schedule = lambda x: min(
+            warmup(x),
+            0.1
+            + 0.5
+            * (1 - 0.1)
+            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+        )
+    elif cfg.training_stage == "constant":
+        schedule = lambda x: (min(x, cfg.warmup_interval) / cfg.warmup_interval)
+    elif cfg.training_stage == "linear_to_constant":
+        linear_steps = 25000
+        start_lr = 2e-4
+        end_lr = 2e-4
+        schedule = (
+            lambda x: (
+                start_lr
+                + (end_lr - start_lr) * min(x - start_step, linear_steps) / linear_steps
+            )
+            / cfg.learning_rate
+        )
+    elif cfg.training_stage == "annealing_with_specified_decay_steps":
+        total_decay_steps = 25000
+        schedule = (
+            lambda x: (x - start_step) / cfg.warmup_interval
+            if x - start_step < cfg.warmup_interval
+            else max(
+                0.0, 1 - (x - start_step - cfg.warmup_interval) / total_decay_steps
+            )
+        )
+    else:
+        schedule = lambda x: 1.0 + (0.75 - 1.0) * (x / 32000) if x <= 32000 else 0.75
+
+    scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
+
+    # profiler
+    profiler = get_profiler(cfg, rank)
+
+    # Train
+    if rank == 0:
+        print(f"Training for {cfg.num_steps} steps")
+    train(
+        cfg,
+        model,
+        local_rank,
+        rank,
+        train_loader,
+        optimizer,
+        scheduler,
+        profiler,
+        checkpointer,
+        start_step,
+        tokens_seen,
+        cp_degree,
+        tokenizer,
+        hf_config,
+    )
+
+    dist.barrier()
+    dist.destroy_process_group()
+
+
+if __name__ == "__main__":
+    fire.Fire(main)

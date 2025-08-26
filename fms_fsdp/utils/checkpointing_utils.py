@@ -244,7 +244,7 @@ class Checkpointer:
                             "hf_pretrained",
                             model_path=hf_ckpt_dir,
                             distributed_strategy="do not distribute",  # Hack
-                        ).get_state_dict()
+                        ).state_dict()
                     else:
                         raise ValueError(
                             f"Unexpected {hf_cfg=} is not a a GraniteMoeHybridConfig or GraniteConfig instance"
@@ -478,7 +478,7 @@ def get_hf_state_dict_from_ssm_state_dict(
 
 def save_granite_moe_hybrid_hf_model(
     hf_config: GraniteMoeHybridConfig,
-    mamba_state_dict: dict[str, torch.Tensor],
+    fms_state_dict: dict[str, torch.Tensor],
     output_dir: str,
     tokenizer,
     precision: str = "fp32",
@@ -486,7 +486,7 @@ def save_granite_moe_hybrid_hf_model(
     hf_config.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     # FIXME: allow other parameters to pass in
-    hf_state_dict = get_hf_state_dict_from_ssm_state_dict(mamba_state_dict)
+    hf_state_dict = get_hf_state_dict_from_ssm_state_dict(fms_state_dict)
 
     # Save new model to pytorch_dump_path
     dtype = (

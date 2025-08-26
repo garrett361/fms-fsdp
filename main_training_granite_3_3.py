@@ -187,6 +187,11 @@ def main(**kwargs):
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
     )
+    # we need this post-fsdp call to avoid graph break with torch.compile, until we figure out a better solution.
+    model.base_model.rot_emb.compute_freqs_cis(
+        torch.device("cuda", torch.cuda.current_device()),
+        cfg.seq_length,
+    )
     if rank == 0:
         print(model)
 
@@ -248,10 +253,9 @@ def main(**kwargs):
             "Please either provide a hf_cfg_path or point the ckpt_load_path to a HF ckpt dir"
         )
     hf_config = AutoConfig.from_pretrained(hf_cfg_path)
-    if getattr(hf_config, "embedding_multiplier", 1.0) != 1.0:
-        raise NotImplementedError
-    if getattr(hf_config, "residual_multiplier", 1.0) != 1.0:
-        raise NotImplementedError
+    if not rank:
+        print(f"{hf_config=}")
+        print(f"{model.config=}")
 
     model, optimizer, _, start_step, tokens_seen, is_resuming = checkpointer.load(
         model,

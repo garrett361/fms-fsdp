@@ -2,6 +2,8 @@ import os
 from dataclasses import asdict
 from functools import partial
 
+import torch
+
 try:
     import packaging.version
 except ImportError:
@@ -99,6 +101,18 @@ def train(
     loop_start = time.time()
     train_loss = -1
     ce_loss = torch.nn.CrossEntropyLoss()
+
+    # Must pass position ids to FMS granite models when using CP
+    if isinstance(hf_config, GraniteConfig) and model.cp_mesh is not None:
+        cp_seq_len = cfg.seq_length // cp_degree
+        position_ids = torch.arange(
+            0, cp_seq_len, dtype=torch.long, device="cuda"
+        ).repeat(cfg.batch_size, 1)
+        offset = cp_seq_len * model.cp_mesh.get_local_rank()
+        position_ids.add_(offset)
+    else:
+        position_ids = None
+
     for batch_idx, (input, label) in enumerate(
         train_loader, start=start_step * cfg.grad_accum_steps + 1
     ):
@@ -123,7 +137,10 @@ def train(
                 print(f"[{rank=}, {batch_idx=}]:  {tokenizer.decode(toks)}")
 
         optimizer.zero_grad()
-        output = model(input)
+        if position_ids is not None:
+            output = model(input, position_ids=position_ids)
+        else:
+            output = model(input)
         output = output.logits if hasattr(output, "logits") else output
         # Collect stats on logits size.
         # NOTE: @goon - this can be a substantial temp memory cost, since the logits are large
@@ -255,7 +272,6 @@ def train(
             start = time.time()
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
-
         if not cfg.skip_ckpt and (
             step_idx % cfg.checkpoint_interval == 0 or step_idx == cfg.num_steps
         ):
@@ -387,7 +403,7 @@ def save(
         None,
         tokens_seen=tokens_seen + new_tokens_seen,
     )
-    model_state_dict_fms = checkpointer.get_full_state_dict(model)
+    fms_state_dict = checkpointer.get_full_state_dict(model)
 
     hf_save_time = time.time()
     hf_output_dir = os.path.join(
@@ -401,7 +417,7 @@ def save(
         if isinstance(hf_config, GraniteMoeHybridConfig):
             save_granite_moe_hybrid_hf_model(
                 hf_config=hf_config,
-                mamba_state_dict=model_state_dict_fms,
+                fms_state_dict=fms_state_dict,
                 output_dir=hf_output_dir,
                 tokenizer=tokenizer,
                 precision="fp32",
@@ -409,7 +425,7 @@ def save(
         elif isinstance(hf_config, GraniteConfig):
             save_granite_hf_model(
                 hf_config=hf_config,
-                mamba_state_dict=model_state_dict_fms,
+                fms_state_dict=fms_state_dict,
                 output_dir=hf_output_dir,
                 tokenizer=tokenizer,
                 precision="fp32",

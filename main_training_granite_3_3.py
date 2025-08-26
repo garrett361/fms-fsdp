@@ -6,11 +6,9 @@ import fire
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from mamba_ssm.models.config_mamba import MambaConfig
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
-from mamba_ssm.modules.block import Block
-from mamba_ssm.modules.mamba2 import Mamba2
-from mamba_ssm.modules.mlp import GatedMLP
+from fms.models import get_model
+from fms.models.granite import GraniteBlock
+from fms.modules.feedforward import GatedLinearUnit
 from torch import distributed as dist
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -20,7 +18,7 @@ from transformers import AutoConfig, AutoTokenizer
 
 from fms_fsdp import config
 from fms_fsdp.utils.checkpointing_utils import Checkpointer
-from fms_fsdp.utils.config_utils import get_model_config, update_config
+from fms_fsdp.utils.config_utils import update_config
 from fms_fsdp.utils.dataloader_utils import get_data_loader, get_dummy_loader
 from fms_fsdp.utils.train_utils import (
     get_policies,
@@ -63,14 +61,14 @@ def main(**kwargs):
     dist.barrier()
 
     # get policy. NOTE: @goon - overriding {wrapping_policy, param_init_fn} below
-    block = Block
+    block = GraniteBlock
     (
         mixed_precision_policy,
         _,
         sharding_strategy_policy,
         apply_selective_ac,
         _,  # NOTE: @goon - We'll override param_init_fn for mamba below
-    ) = get_policies(cfg, rank, block, mlp=GatedMLP)
+    ) = get_policies(cfg, rank, block, mlp=GatedLinearUnit)
     if cfg.low_cpu_fsdp:
         # NOTE: @goon - the params will be junk after using this. Only intended to be used in
         # conjunction with loading proper weights from a checkpoint.
@@ -135,32 +133,18 @@ def main(**kwargs):
         f"Rank/Mesh Assignments:\n\t{rank=}\n\t{cp_rank=}\n\t{dp_rank=}\n\t{cp_mesh=}"
     )
 
-    # get model
-    config_data = get_model_config(cfg.model_variant)
-    mamba_config = MambaConfig(**config_data)
-    if not rank:
-        print(f"Constructing {cfg.model_variant=} model.\n\t{mamba_config=}")
+    model = get_model(
+        "hf_pretrained",
+        model_path=cfg.hf_cfg_path,
+        cp_mesh=cp_mesh if cfg.cp else None,
+        distributed_strategy="do not distribute",  # Hack
+    )
+    if rank == 0:
+        print(f"{model=}")
 
-    if cfg.low_cpu_fsdp:
-        with torch.device("meta"):
-            model = MambaLMHeadModel(
-                mamba_config,
-                cp_mesh=cp_mesh if cfg.cp else None,
-                cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
-                cp_mamba_recompute=cfg.cp_mamba_recompute if cfg.cp else None,
-                cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
-            )
-    else:
-        model = MambaLMHeadModel(
-            mamba_config,
-            cp_mesh=cp_mesh if cfg.cp else None,
-            cp_mamba_impl=cfg.cp_mamba_impl if cfg.cp else None,
-            cp_attn_impl=cfg.cp_attn_impl if cfg.cp else None,
-        )
-
-    # NOTE: @goon - granite 3.3 uses tied weight embeddings, so only wrap blocks
+    # NOTE: @goon - Granite has tied weight embeddings, so only wrap the blocks
     def lambda_fn(module: nn.Module):
-        return isinstance(module, (Block, nn.Embedding)) or module is model.lm_head
+        return isinstance(module, block)
 
     wrapping_policy = CustomPolicy(lambda_fn)
 
@@ -219,14 +203,6 @@ def main(**kwargs):
         # the default accumulated_cache_size_limit=64 is not enough for 70b model, so we make it 128 here
         torch._dynamo.config.accumulated_cache_size_limit = 128
         model = torch.compile(model)
-
-    if cfg.freeze_mamba_layers:
-        for name, module in model.named_modules():
-            if isinstance(module, Mamba2):
-                if not rank:
-                    print(f"Freezing module {name}")
-                for p in module.parameters():
-                    p.requires_grad = False
 
     # Optimizer
     # optimizer = optim.AdamW(

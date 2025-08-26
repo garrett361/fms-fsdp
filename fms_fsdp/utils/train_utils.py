@@ -13,9 +13,14 @@ from datetime import timedelta
 import torch.cuda.nccl as nccl
 import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
+from transformers.models.granite import GraniteConfig
+from transformers.models.granitemoehybrid import GraniteMoeHybridConfig
 
 from fms_fsdp.policies import *
-from fms_fsdp.utils.checkpointing_utils import save_hf_model
+from fms_fsdp.utils.checkpointing_utils import (
+    save_granite_hf_model,
+    save_granite_moe_hybrid_hf_model,
+)
 
 
 def train(
@@ -393,13 +398,26 @@ def save(
     if rank != 0:
         dist.barrier()
     else:
-        save_hf_model(
-            hf_config=hf_config,
-            mamba_state_dict=model_state_dict_fms,
-            output_dir=hf_output_dir,
-            tokenizer=tokenizer,
-            precision="fp32",
-        )
+        if isinstance(hf_config, GraniteMoeHybridConfig):
+            save_granite_moe_hybrid_hf_model(
+                hf_config=hf_config,
+                mamba_state_dict=model_state_dict_fms,
+                output_dir=hf_output_dir,
+                tokenizer=tokenizer,
+                precision="fp32",
+            )
+        elif isinstance(hf_config, GraniteConfig):
+            save_granite_hf_model(
+                hf_config=hf_config,
+                mamba_state_dict=model_state_dict_fms,
+                output_dir=hf_output_dir,
+                tokenizer=tokenizer,
+                precision="fp32",
+            )
+        else:
+            raise ValueError(
+                f"Unexpected {hf_config=} is not a a GraniteMoeHybridConfig or GraniteConfig instance"
+            )
         checkpointer.report(
             f"HF checkpoint saved in {hf_output_dir}",
             hf_save_time=time.time() - hf_save_time,

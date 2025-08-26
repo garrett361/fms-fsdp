@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 
 import torch
+from fms.models import get_model
+from fms.models.granite import fms_to_hf_sd
 from torch.distributed._shard.checkpoint import (
     FileSystemReader,
     FileSystemWriter,
@@ -18,7 +20,8 @@ from torch.distributed.checkpoint.default_planner import (
 from torch.distributed.checkpoint.optimizer import load_sharded_optimizer_state_dict
 from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from transformers import AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM
+from transformers.models.granite import GraniteConfig
 from transformers.models.granitemoehybrid import GraniteMoeHybridConfig
 
 
@@ -230,11 +233,22 @@ class Checkpointer:
             if load_path_obj.is_file() or hf_ckpt_dir is not None:
                 if hf_ckpt_dir is not None:
                     self.report(f"Loading and converting HF ckpt from {hf_ckpt_dir}.")
-
-                    hf_model = AutoModelForCausalLM.from_pretrained(hf_ckpt_dir)
-                    checkpoint_data = get_ssm_state_dict_from_hf_model(hf_model)[
-                        "model_state"
-                    ]
+                    hf_cfg = AutoConfig.from_pretrained(hf_ckpt_dir)
+                    if isinstance(hf_cfg, GraniteMoeHybridConfig):
+                        hf_model = AutoModelForCausalLM.from_pretrained(hf_ckpt_dir)
+                        checkpoint_data = get_ssm_state_dict_from_hf_model(hf_model)[
+                            "model_state"
+                        ]
+                    elif isinstance(hf_cfg, GraniteConfig):
+                        checkpoint_data = get_model(
+                            "hf_pretrained",
+                            model_path=hf_ckpt_dir,
+                            distributed_strategy="do not distribute",  # Hack
+                        ).get_state_dict()
+                    else:
+                        raise ValueError(
+                            f"Unexpected {hf_cfg=} is not a a GraniteMoeHybridConfig or GraniteConfig instance"
+                        )
                 else:
                     checkpoint_data = torch.load(load_path, map_location="cpu")[
                         "model_state"
@@ -462,7 +476,7 @@ def get_hf_state_dict_from_ssm_state_dict(
     return state_dict
 
 
-def save_hf_model(
+def save_granite_moe_hybrid_hf_model(
     hf_config: GraniteMoeHybridConfig,
     mamba_state_dict: dict[str, torch.Tensor],
     output_dir: str,
@@ -472,7 +486,7 @@ def save_hf_model(
     hf_config.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     # FIXME: allow other parameters to pass in
-    mamba_state_dict_hf = get_hf_state_dict_from_ssm_state_dict(mamba_state_dict)
+    hf_state_dict = get_hf_state_dict_from_ssm_state_dict(mamba_state_dict)
 
     # Save new model to pytorch_dump_path
     dtype = (
@@ -481,6 +495,34 @@ def save_hf_model(
         else (torch.bfloat16 if precision == "bf16" else torch.float16)
     )
     hf_model = AutoModelForCausalLM.from_config(hf_config)
-    hf_model.load_state_dict(mamba_state_dict_hf, strict=True)
+    hf_model.load_state_dict(hf_state_dict, strict=True)
+    hf_model.to(dtype)
+    hf_model.save_pretrained(output_dir, safe_serialization=True)
+
+
+def save_granite_hf_model(
+    hf_config: GraniteConfig,
+    fms_state_dict: dict[str, torch.Tensor],
+    output_dir: str,
+    tokenizer,
+    precision: str = "fp32",
+) -> None:
+    hf_config.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    hf_state_dict = fms_to_hf_sd(
+        fms_state_dict,
+        n_layers=hf_config.num_hidden_layers,
+        n_heads=hf_config.num_attention_heads,
+        n_kv_heads=hf_config.num_key_value_heads,
+    )
+
+    # Save new model to pytorch_dump_path
+    dtype = (
+        torch.float32
+        if precision == "fp32"
+        else (torch.bfloat16 if precision == "bf16" else torch.float16)
+    )
+    hf_model = AutoModelForCausalLM.from_config(hf_config)
+    hf_model.load_state_dict(hf_state_dict, strict=True)
     hf_model.to(dtype)
     hf_model.save_pretrained(output_dir, safe_serialization=True)

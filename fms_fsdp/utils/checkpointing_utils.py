@@ -244,6 +244,7 @@ class Checkpointer:
                             "hf_pretrained",
                             model_path=hf_ckpt_dir,
                             distributed_strategy="do not distribute",  # Hack
+                            data_type=torch.float32
                         ).state_dict()
                     else:
                         raise ValueError(

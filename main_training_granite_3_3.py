@@ -138,6 +138,7 @@ def main(**kwargs):
         model_path=cfg.hf_cfg_path,
         cp_mesh=cp_mesh if cfg.cp else None,
         distributed_strategy="do not distribute",  # Hack
+        data_type=torch.float32
     )
     if rank == 0:
         print(f"{model=}")

@@ -202,7 +202,9 @@ def train(
                 current_logits_max_mean = logits_max_mean.item()
                 current_logits_std_mean = logits_std_mean.item()
                 current_logits_min_mean = logits_min_mean.item()
-                current_step_time = (time.time() - start) / cfg.report_interval
+                current_step_time = (time.time() - start) / (
+                    1 if step_idx == 1 else cfg.report_interval
+                )
                 overall_step_time = elapsed_time / (step_idx - start_step)
                 current_throughput = int(tok_per_gpu / current_step_time)
                 overall_throughput = int(tok_per_gpu / overall_step_time)

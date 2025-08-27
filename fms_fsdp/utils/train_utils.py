@@ -287,6 +287,7 @@ def train(
                 tokenizer=tokenizer,
                 hf_config=hf_config,
                 rank=rank,
+                is_compiled=cfg.use_torch_compile,
             )
 
     return train_loss
@@ -395,6 +396,7 @@ def save(
     tokenizer,
     hf_config,
     rank,
+    is_compiled,
 ) -> None:
     if not rank:
         print("Saving fms-fsdp checkpoint...")
@@ -405,7 +407,7 @@ def save(
         None,
         tokens_seen=tokens_seen + new_tokens_seen,
     )
-    fms_state_dict = checkpointer.get_full_state_dict(model)
+    fms_state_dict = checkpointer.get_full_state_dict(model, is_compiled=is_compiled)
 
     hf_save_time = time.time()
     hf_output_dir = os.path.join(

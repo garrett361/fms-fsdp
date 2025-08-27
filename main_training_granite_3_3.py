@@ -264,6 +264,7 @@ def main(**kwargs):
         None,
         path=cfg.ckpt_load_path,
         strict=True,
+        is_compiled=cfg.use_torch_compile
     )
     if not is_resuming:
         start_step = 0

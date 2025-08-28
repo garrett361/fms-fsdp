@@ -37,7 +37,7 @@ from fms_fsdp.utils.train_utils_sft import (
 )
 
 
-def parse_weights(x):
+def parse_args(x):
     if isinstance(x, str):
         return [item.strip() for item in x.split(",")]
     if isinstance(x, (list, tuple)):
@@ -187,7 +187,7 @@ def main(**kwargs):
 
     # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
     # See tests/sft/tokenize_dataset.py
-    dataset_config_hashes = [h.strip() for h in cfg.dataset_config_hashes.split(",")]
+    dataset_config_hashes = [h.strip() for h in parse_args(cfg.dataset_config_hashes)]
 
     train_dataset_list = []
     for h in dataset_config_hashes:
@@ -242,7 +242,7 @@ def main(**kwargs):
 
     train_loader = InfiniteCPBatchingIter(
         train_loader_list,
-        weights=parse_weights(cfg.weights),
+        weights=parse_args(cfg.weights),
         batch_size=cfg.batch_size,
         seq_length=cfg.seq_length,
         max_out_tokens=cfg.max_out_tokens,

@@ -188,9 +188,20 @@ def main(**kwargs):
     # Assumption: all datasets are pretokenized already and saved with HF's Dataset.save_to_disk
     # See tests/sft/tokenize_dataset.py
     dataset_config_hashes = [h.strip() for h in parse_args(cfg.dataset_config_hashes)]
+    dataset_local_cache_dir = [
+        d.strip() for d in parse_args(cfg.dataset_local_cache_dir)
+    ]
+    if len(dataset_config_hashes) != len(dataset_local_cache_dir):
+        if len(dataset_local_cache_dir) != 1:
+            raise ValueError(
+                f"Either {len(dataset_local_cache_dir)=} must equal {len(dataset_config_hashes)=} or 1"
+            )
+        dataset_local_cache_dir = len(dataset_config_hashes) * dataset_local_cache_dir
 
     train_dataset_list = []
-    for h in dataset_config_hashes:
+    for dset_hash, dset_cache_dir in zip(
+        dataset_config_hashes, dataset_local_cache_dir
+    ):
         # NOTE: @goon - None fields aren't using the proper types, but aren't used when loading
         # from the cache.
         dataset = get_cached_dataset_tulu(
@@ -201,9 +212,9 @@ def main(**kwargs):
             transform_fn_args=None,
             target_columns=None,
             dataset_cache_mode="local",
-            dataset_config_hash=h,
+            dataset_config_hash=dset_hash,
             hf_entity=None,
-            dataset_local_cache_dir=cfg.dataset_local_cache_dir,
+            dataset_local_cache_dir=dset_cache_dir,
             dataset_skip_cache=False,
             keep_in_memory=False,
         )

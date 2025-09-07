@@ -368,6 +368,8 @@ def main(**kwargs):
             * (x - cfg.warmup_interval)
             / (cfg.num_steps - cfg.warmup_interval),
         )
+    elif cfg.training_stage == "constant":
+        schedule = lambda x: (min(x, cfg.warmup_interval) / cfg.warmup_interval)
     else:
         # cosine decay
         schedule = lambda x: min(

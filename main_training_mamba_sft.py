@@ -370,7 +370,7 @@ def main(**kwargs):
         )
     elif cfg.training_stage == "constant":
         schedule = lambda x: (min(x, cfg.warmup_interval) / cfg.warmup_interval)
-    else:
+    elif cfg.training_stage == "cosine":
         # cosine decay
         schedule = lambda x: min(
             1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2,
@@ -379,6 +379,8 @@ def main(**kwargs):
             * (1 - 0.1)
             * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
         )
+    else:
+        raise ValueError(f"{cfg.training_stage=} not in (annealing, constant, cosine)")
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 

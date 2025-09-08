@@ -359,7 +359,6 @@ def main(**kwargs):
 
     # LR schedule
     # linear decay for annealing
-    assert cfg.training_stage == "annealing", "SFT expects an annealing scheduler"
     if cfg.training_stage == "annealing":
         schedule = lambda x: min(
             1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2,

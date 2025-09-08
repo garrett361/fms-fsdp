@@ -568,10 +568,10 @@ class InfiniteCPBatchingIter:
             )
             n_tok_next_item = item[0]["input_ids"].numel()
             n_pred_tok_next_item = (item[0]["labels"] != self.separator_id).sum()
-            if n_tok_next_item > self.max_tokens:
+            if n_tok_next_item > self.seq_length:
                 if not self.cp_rank:
                     warn(
-                        f"Skipping data example with {n_tok_next_item} tokens > {self.max_tokens=} ",
+                        f"Skipping data example with {n_tok_next_item} tokens > {self.seq_length=} ",
                         stacklevel=1,
                     )
                 continue

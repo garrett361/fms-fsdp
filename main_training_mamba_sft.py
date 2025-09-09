@@ -347,16 +347,6 @@ def main(**kwargs):
         for g in optimizer.param_groups:
             g["initial_lr"] = cfg.learning_rate
 
-    # Skip previous batches
-    if start_step > 0:
-        if not rank:
-            print("Skipping previous data after restart!")
-        n_batches_to_skip = cfg.grad_accum_steps * start_step
-        for _ in range(n_batches_to_skip):
-            next(train_loader)
-        if not rank:
-            print("Skipping done!")
-
     # LR schedule
     # linear decay for annealing
     if cfg.training_stage == "annealing":
@@ -383,6 +373,34 @@ def main(**kwargs):
 
     scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
 
+    # Data scheduler. Returns the current max seq_len (not like the LR scheduler, which returns
+    # a number between zero and 1)
+    if cfg.data_schedule == "constant":
+        data_schedule = lambda x: cfg.seq_length
+    elif cfg.data_schedule == "linear":
+        data_schedule = (
+            lambda x: (x - 1) * cfg.seq_length / (cfg.num_steps - 1)
+            + cfg.min_seq_length
+        )
+    elif cfg.data_schedule == "quadratic":
+        data_schedule = (
+            lambda x: (x - 1)**2 * cfg.seq_length / (cfg.num_steps - 1)**2
+            + cfg.min_seq_length
+        )
+    else:
+        raise ValueError(f"{cfg.data_schedule=} not in (constant, linear, quadratic)")
+
+    # Skip previous batches
+    if start_step > 0:
+        if not rank:
+            print("Skipping previous data after restart!")
+        n_batches_to_skip = cfg.grad_accum_steps * start_step
+        for batch_idx in range(1, n_batches_to_skip + 1):
+            step_idx = (batch_idx + cfg.grad_accum_steps - 1) // cfg.grad_accum_steps
+            train_loader.seq_length = data_schedule(step_idx)
+            next(train_loader)
+        if not rank:
+            print("Skipping done!")
     # profiler
     profiler = get_profiler(cfg, rank)
 
@@ -408,6 +426,7 @@ def main(**kwargs):
         pred_tokens_seen,
         hf_config,
         dataset_lens,
+        data_schedule,
     )
 
     dist.barrier()

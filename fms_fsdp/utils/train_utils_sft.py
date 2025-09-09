@@ -40,6 +40,7 @@ def train(
     pred_tokens_seen,
     hf_config,
     dataset_lens: list[int],
+    data_schedule
 ):
     if cfg.sft_loss_type not in ("sum", "mean"):
         raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
@@ -105,11 +106,13 @@ def train(
     loop_start = time.time()
     train_loss = -1
 
+    train_loader.seq_length = data_schedule(start_step)
     for batch_idx, (data_stats, batch_size, batch) in enumerate(
         train_loader, start=start_step * cfg.grad_accum_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
         step_idx = (batch_idx + cfg.grad_accum_steps - 1) // cfg.grad_accum_steps
+        train_loader.seq_length = data_schedule(step_idx)
         should_step = batch_idx % cfg.grad_accum_steps == 0
         if step_idx > cfg.num_steps:
             if not cfg.skip_ckpt and (step_idx - 1) % cfg.checkpoint_interval != 0:

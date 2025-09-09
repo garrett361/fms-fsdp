@@ -12,8 +12,10 @@ class train_config:
     # dataset and dataloader
     sanity_print_toks: bool = False
     tokenizer_path: str = "/fsx/tokenizer"
-    dataset_config_hashes: str = "" # Comma separated list of hashes
-    weights: str = "" # Comma separated weights for the datasets. Must match the number of hashes.
+    dataset_config_hashes: str = ""  # Comma separated list of hashes
+    weights: str = (
+        ""  # Comma separated weights for the datasets. Must match the number of hashes.
+    )
     dataset_local_cache_dir: str = ""
     seq_length: int = 4096
     vocab_size: int = 32000
@@ -30,7 +32,7 @@ class train_config:
     # training spec
     batch_size: int = 2
     num_steps: int = 1000000
-    training_stage: str = "initial"
+    training_stage: Literal["annealing", "constant", "cosine"] = "annealing"
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
     seed: int = 2023
@@ -41,6 +43,8 @@ class train_config:
     adam_beta_1: float = 0.95
     max_out_tokens: bool = False
     warmup_interval: int = 500
+    data_schedule: Literal["constant", "linear"] = "constant"
+    min_seq_length: int = 4096  # Used with 'linear' data_scheduler
 
     # profiling
     use_profiler: bool = False

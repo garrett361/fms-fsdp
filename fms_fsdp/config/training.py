@@ -72,7 +72,6 @@ class train_config:
     chat_template_name: str = "tulu"
     sft_loss_type: str = "sum"  # sum or mean. The `reduction` arg for F.cross_entropy
     final_lr_ratio: float = 0.1  # ratio of initial to final lr during sft
-    sft_warmup_fraction: float = 0.05  # Fraction of SFT steps to perform LR warmup on
     separator_id: int = -100
     pad_id: int = 0
     naive_padding_free: bool = False

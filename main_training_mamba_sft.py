@@ -69,9 +69,14 @@ def main(**kwargs):
     torch.cuda.set_device(local_rank)
     torch.cuda.empty_cache()
     setup_environ_flags()
-    os.environ["TRITON_CACHE_DIR"] = os.path.join(
-        Path.home(), ".triton", "cache", str(local_rank)
-    )
+    if triton_cache_dir := os.getenv("TRITON_CACHE_DIR"):
+        os.environ["TRITON_CACHE_DIR"] = os.path.join(
+            triton_cache_dir, "fms_fsdp", str(local_rank)
+        )
+    else:
+        os.environ["TRITON_CACHE_DIR"] = os.path.join(
+            Path.home(), ".cache", "triton", "fms_fsdp", str(local_rank)
+        )
     dist.barrier()
 
     # get policy. NOTE: @goon - overriding {wrapping_policy, param_init_fn} below
@@ -384,7 +389,7 @@ def main(**kwargs):
         )
     elif cfg.data_schedule == "quadratic":
         data_schedule = (
-            lambda x: (x - 1)**2 * cfg.seq_length / (cfg.num_steps - 1)**2
+            lambda x: (x - 1) ** 2 * cfg.seq_length / (cfg.num_steps - 1) ** 2
             + cfg.min_seq_length
         )
     else:

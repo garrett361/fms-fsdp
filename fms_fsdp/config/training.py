@@ -58,6 +58,9 @@ class train_config:
     z_loss: float = 1e-4
     warmup_interval: int = 1000
     annealing_final_lr_ratio: float = 0.01
+    weight_decay: float = 0.1
+    beta_0: float = 0.9
+    beta_1: float = 0.95
 
     # continued training spec
     resuming_dataset: bool = False

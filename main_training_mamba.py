@@ -246,14 +246,14 @@ def main(**kwargs):
         [
             {
                 "params": params_with_decay,
-                "weight_decay": 0.1,
+                "weight_decay": cfg.weight_decay,
             },
             {
                 "params": params_without_decay,
                 "weight_decay": 0.0,
             },
         ],
-        betas=(0.9, 0.95),
+        betas=(cfg.beta_0, cfg.beta_1),
         lr=cfg.learning_rate,
     )
 

@@ -100,16 +100,18 @@ def main(**kwargs):
 
     # Meshes for FSDP and CP. NOTE: @goon - Getting hangs and/or OOMs if I don't explicitly specify
     # the FSDP mesh when using 4+ nodes with HSDP + in-node-CP.
-    def get_1D_world_mesh(world_size: int) -> DeviceMesh:
-        mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
+    def get_1D_world_mesh(world_size: int, prefix: str) -> DeviceMesh:
+        mesh = dist.device_mesh.init_device_mesh(
+            "cuda", (world_size,), mesh_dim_names=("prefix",)
+        )
         return mesh
 
-    def get_2D_world_mesh(world_size: int, inner_size: int) -> DeviceMesh:
+    def get_2D_world_mesh(world_size: int, inner_size: int, prefix: str) -> DeviceMesh:
         assert world_size % inner_size == 0
         mesh = dist.device_mesh.init_device_mesh(
             "cuda",
             (world_size // inner_size, inner_size),
-            mesh_dim_names=("outer", "inner"),
+            mesh_dim_names=(f"{prefix}_outer", f"{prefix}_inner"),
         )
         return mesh
 
@@ -119,16 +121,16 @@ def main(**kwargs):
     if cfg.cp:
         cp_degree = cfg.cp_degree or torch.cuda.device_count()
         if cp_degree == world_size:
-            cp_mesh = get_1D_world_mesh(world_size)
+            cp_mesh = get_1D_world_mesh(world_size, prefix="cp")
             dp_mesh = None
             dp_rank = 0
             cp_rank = cp_mesh.get_local_rank()
         else:
-            two_d_mesh = get_2D_world_mesh(world_size, cp_degree)
-            cp_mesh = two_d_mesh["inner"]
-            dp_mesh = two_d_mesh["outer"]
-            dp_rank = two_d_mesh["outer"].get_local_rank()
-            cp_rank = two_d_mesh["inner"].get_local_rank()
+            two_d_mesh = get_2D_world_mesh(world_size, cp_degree, prefix="cp")
+            cp_mesh = two_d_mesh["cp_inner"]
+            dp_mesh = two_d_mesh["cp_outer"]
+            cp_rank = two_d_mesh["cp_inner"].get_local_rank()
+            dp_rank = two_d_mesh["cp_outer"].get_local_rank()
     else:
         cp_mesh = None
         cp_degree = 1
@@ -143,11 +145,30 @@ def main(**kwargs):
     print(f"Rank assignments: {rank=}, {dp_rank=}, {cp_rank=}")
 
     if cfg.sharding_strategy == "fsdp":
-        fsdp_mesh = get_1D_world_mesh(world_size)
+        fsdp_mesh = get_1D_world_mesh(world_size, prefix="fsdp")
     elif cfg.sharding_strategy == "hsdp":
-        fsdp_mesh = get_2D_world_mesh(world_size, torch.cuda.device_count())
+        fsdp_mesh = get_2D_world_mesh(
+            world_size, torch.cuda.device_count(), prefix="fsdp"
+        )
     else:
         fsdp_mesh = None
+
+    # Init meshes
+    if not rank:
+        print("Initializing meshes with barriers:")
+    for mesh in (cp_mesh, dp_mesh):
+        if mesh is not None:
+            dist.barrier(mesh.get_group())
+
+    if fsdp_mesh.ndim == 1:
+        dist.barrier(fsdp_mesh.get_group())
+    else:
+        dist.barrier(fsdp_mesh["fsdp_inner"].get_group())
+        dist.barrier(fsdp_mesh["fsdp_outer"].get_group())
+
+    torch.cuda.synchronize()
+    if not rank:
+        print("Done mesh init.")
 
     # get model
     config_data = get_model_config(cfg.model_variant)

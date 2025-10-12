@@ -566,7 +566,7 @@ class InfiniteCPBatchingIter:
                 # Choose the most under-represented dataset by epochs seen.
                 epochs_seen = self._stats.examples_seen / self.dataset_lens_t
                 # Normalize and compare to weights
-                epochs_seen_normalized = epochs / epochs_seen.sum()
+                epochs_seen_normalized = epochs_seen / epochs_seen.sum()
                 iter_idx = (epochs_seen_normalized - self.weights).argmin().item()
             else:
                 raise ValueError(f"Unexpected {weight_by=} value")

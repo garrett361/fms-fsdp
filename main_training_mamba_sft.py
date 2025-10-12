@@ -270,6 +270,8 @@ def main(**kwargs):
             td,
             sampler=sampler,
             collate_fn=PretokenizedCollator(),
+            # NOTE: @goon -  batch size is intentionally one. InfiniteCPBatchingIter handles forming
+            # batches of the appropriate size.
             batch_size=1,
             num_workers=cfg.num_workers,
             pin_memory=cfg.pin_memory,
@@ -285,6 +287,7 @@ def main(**kwargs):
         max_out_tokens=cfg.max_out_tokens,
         cp_degree=cp_degree,
         cp_rank=cp_rank,
+        dataset_lens=dataset_lens,
         pad_id=cfg.pad_id,
         separator_id=cfg.separator_id,
         seed=cfg.seed,

@@ -475,9 +475,9 @@ class DatasetStats:
 
 class InfiniteCPBatchingIter:
     """
-    Inifinite data iterator.
+    Infinite data iterator.
 
-    If max_out_tokens=True, this calss greedily packs full examples from `dataloader_list`, grouping
+    If max_out_tokens=True, this class greedily packs full examples from `dataloader_list`, grouping
     up to max_tokens = batch_size * seq_length tokens in a batch. Examples are drawn per-dataset
     according to `weights`examples are split for context-parallel training. If
     `naive_padding_free=True`, the examples are all concatenated together, otherwise they are
@@ -497,20 +497,22 @@ class InfiniteCPBatchingIter:
         max_out_tokens: bool,
         cp_degree: int,
         cp_rank: int,
+        dataset_lens: list[int],
         pad_id: int = 0,
         separator_id: int = -100,
         seed: int = 42,
         naive_padding_free: bool = False,
-        weight_by: Literal["example", "token", "pred_token"] = "example",
+        weight_by: Literal["example", "token", "pred_token", "epoch"] = "example",
     ) -> None:
         if not all(w > 0 for w in weights):
             raise ValueError(f"{weights=} must all be strictly positive")
-        if weight_by not in ["example", "token", "pred_token"]:
+        if weight_by not in ["example", "token", "pred_token", "epoch"]:
             raise ValueError(
-                f"{weight_by=} must be one of 'example', 'token', or 'pred_token'"
+                f"{weight_by=} must be one of 'example', 'token', 'pred_token', or 'epoch'"
             )
         self.dataloader_list = dataloader_list
         self.weights = torch.tensor(weights, dtype=torch.float32)
+        self.dataset_lens_t = torch.tensor(dataset_lens, dtype=torch.float32)
         # Normalize:
         self.weights /= self.weights.sum()
         self.batch_size = batch_size
@@ -560,6 +562,14 @@ class InfiniteCPBatchingIter:
                 expected_pred_tokens = self._stats.pred_tokens_seen.sum() * self.weights
                 diff_pred_tokens = self._stats.pred_tokens_seen - expected_pred_tokens
                 iter_idx = diff_pred_tokens.argmin().item()
+            elif self.weight_by == "epoch":
+                # Choose the most under-represented dataset by epochs seen.
+                epochs_seen = self._stats.examples_seen / self.dataset_lens_t
+                # Normalize and compare to weights
+                epochs_seen_normalized = epochs / epochs_seen.sum()
+                iter_idx = (epochs_seen_normalized - self.weights).argmin().item()
+            else:
+                raise ValueError(f"Unexpected {weight_by=} value")
             rand_iter = self._infinite_iters[iter_idx]
             epoch_idx, item = next(rand_iter)
             assert isinstance(item, list), f"{item=}"

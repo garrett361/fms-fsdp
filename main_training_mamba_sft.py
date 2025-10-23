@@ -215,7 +215,7 @@ def main(**kwargs):
     # See tests/sft/tokenize_dataset.py
     dataset_config_hashes = [h.strip() for h in parse_args(cfg.dataset_config_hashes)]
     dataset_local_cache_dir = [
-        d.strip() for d in parse_args(cfg.dataset_local_cache_dir)
+        str(d).strip() for d in parse_args(cfg.dataset_local_cache_dir)
     ]
     if len(dataset_config_hashes) != len(dataset_local_cache_dir):
         if len(dataset_local_cache_dir) != 1:

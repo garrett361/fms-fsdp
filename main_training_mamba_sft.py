@@ -278,6 +278,12 @@ def main(**kwargs):
         )
         for td, sampler in zip(train_dataset_list, samplers)
     ]
+    if cfg.naive_padding_free and cfg.max_out_tokens and cfg.batch_size != 1:
+        raise ValueError(
+            "Use batch_size=1 when naive_padding_free and max_out_tokens are True. "
+            "With these fields True, the dataloader will pull data until approximately seq_length "
+            "toks in each sequence, flattened and concatenated into a batch size of 1."
+        )
 
     train_loader = InfiniteCPBatchingIter(
         train_loader_list,

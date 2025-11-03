@@ -466,6 +466,7 @@ def train(
                         "gradient norm": current_gnorm,
                         "learning rate": current_lr,
                         "loss": current_loss,
+                        "frac_complete": frac_complete,
                     }
                     # Individual dataset stats
                     for dset_idx, tok_seen in enumerate(dataset_tokens_seen.tolist()):

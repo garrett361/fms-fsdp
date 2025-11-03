@@ -17,8 +17,64 @@ import torch.cuda.nccl as nccl
 import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 
+from fms_fsdp import config
 from fms_fsdp.policies import *
 from fms_fsdp.utils.checkpointing_utils_sft import save_hf_model
+from fms_fsdp.utils.dataloader_utils_sft import DatasetStats
+
+
+def parse_args(x):
+    if isinstance(x, str):
+        return [item.strip() for item in x.split(",")]
+    if isinstance(x, (list, tuple)):
+        return list(x)
+    if isinstance(x, (int, float, complex)):
+        return [x]
+    raise ValueError(f"arg input {x} cannot be parsed.")
+
+
+def should_stop_training(
+    step_idx: int, cfg: config.train_config, dataset_stats: DatasetStats
+) -> bool:
+    if cfg.num_steps is not None:
+        return step_idx > cfg.num_steps
+    if cfg.num_epochs is not None:
+        weights = parse_args(cfg.weights)
+        return sum(dataset_stats.epoch_idx) / sum(weights) > cfg.num_epochs
+    raise ValueError(
+        f"Exactly one of {cfg.num_steps=} and {cfg.num_epochs=} must be non-None"
+    )
+
+
+def approx_remaining_steps(
+    step_idx: int, cfg: config.train_config, dataset_stats: DatasetStats
+) -> int:
+    if cfg.num_steps is not None:
+        return cfg.num_steps - step_idx + 1
+    if cfg.num_epochs is not None:
+        weights = parse_args(cfg.weights)
+        approx_epochs_seen = sum(dataset_stats.epoch_idx) / sum(weights)
+        remaining_epochs = cfg.num_epochs - approx_epochs_seen
+        approx_steps_per_epoch = step_idx / approx_epochs_seen
+        approx_remaining_steps = int(remaining_epochs * approx_steps_per_epoch)
+        return approx_remaining_steps
+    raise ValueError(
+        f"Exactly one of {cfg.num_steps=} and {cfg.num_epochs=} must be non-None"
+    )
+
+
+def approx_frac_training_complete(
+    step_idx: int, cfg: config.train_config, dataset_stats: DatasetStats
+) -> float:
+    if cfg.num_steps is not None:
+        return step_idx / cfg.num_steps
+    if cfg.num_epochs is not None:
+        weights = parse_args(cfg.weights)
+        approx_epochs_seen = sum(dataset_stats.epoch_idx) / sum(weights)
+        return approx_epochs_seen / cfg.num_epochs
+    raise ValueError(
+        f"Exactly one of {cfg.num_steps=} and {cfg.num_epochs=} must be non-None"
+    )
 
 
 def train(
@@ -40,7 +96,7 @@ def train(
     pred_tokens_seen,
     hf_config,
     dataset_lens: list[int],
-    data_schedule
+    data_schedule,
 ):
     if cfg.sft_loss_type not in ("sum", "mean"):
         raise ValueError(f"{cfg.sft_loss_type=} not mean or sum")
@@ -107,14 +163,14 @@ def train(
     train_loss = -1
 
     train_loader.seq_length = data_schedule(start_step)
-    for batch_idx, (data_stats, batch_size, batch) in enumerate(
+    for batch_idx, (dataset_stats, batch_size, batch) in enumerate(
         train_loader, start=start_step * cfg.grad_accum_steps + 1
     ):
         input, label = batch["input_ids"], batch["labels"]
         step_idx = (batch_idx + cfg.grad_accum_steps - 1) // cfg.grad_accum_steps
         train_loader.seq_length = data_schedule(step_idx)
         should_step = batch_idx % cfg.grad_accum_steps == 0
-        if step_idx > cfg.num_steps:
+        if should_stop_training(step_idx, cfg, dataset_stats):
             if not cfg.skip_ckpt and (step_idx - 1) % cfg.checkpoint_interval != 0:
                 # Save before breaking, if a we didn't save last step
                 save(
@@ -231,7 +287,7 @@ def train(
 
         if (
             step_idx == 1
-            or step_idx == cfg.num_steps
+            or should_stop_training(step_idx, cfg, dataset_stats)
             or step_idx % cfg.report_interval == 0
         ):
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
@@ -275,22 +331,22 @@ def train(
             # Reduce the DatasetStats attrs, if needed:
             if dp_mesh is not None:
                 dataset_epoch_idx = funcol.all_reduce(
-                    data_stats.epoch_idx.to(local_rank),
+                    dataset_stats.epoch_idx.to(local_rank),
                     reduceOp="max",
                     group=dp_mesh.get_group(),
                 )
                 dataset_tokens_seen = funcol.all_reduce(
-                    data_stats.tokens_seen.to(local_rank),
+                    dataset_stats.tokens_seen.to(local_rank),
                     reduceOp="sum",
                     group=dp_mesh.get_group(),
                 )
                 dataset_pred_tokens_seen = funcol.all_reduce(
-                    data_stats.pred_tokens_seen.to(local_rank),
+                    dataset_stats.pred_tokens_seen.to(local_rank),
                     reduceOp="sum",
                     group=dp_mesh.get_group(),
                 )
                 dataset_examples_seen = funcol.all_reduce(
-                    data_stats.examples_seen.to(local_rank),
+                    dataset_stats.examples_seen.to(local_rank),
                     reduceOp="sum",
                     group=dp_mesh.get_group(),
                 )
@@ -299,10 +355,10 @@ def train(
                 dataset_pred_tokens_seen.wait()
                 dataset_examples_seen.wait()
             else:
-                dataset_epoch_idx = data_stats.epoch_idx.to(local_rank)
-                dataset_tokens_seen = data_stats.tokens_seen.to(local_rank)
-                dataset_pred_tokens_seen = data_stats.pred_tokens_seen.to(local_rank)
-                dataset_examples_seen = data_stats.examples_seen.to(local_rank)
+                dataset_epoch_idx = dataset_stats.epoch_idx.to(local_rank)
+                dataset_tokens_seen = dataset_stats.tokens_seen.to(local_rank)
+                dataset_pred_tokens_seen = dataset_stats.pred_tokens_seen.to(local_rank)
+                dataset_examples_seen = dataset_stats.examples_seen.to(local_rank)
 
             if rank == 0:
                 total_tokens_seen = int(tokens_seen + new_tokens_seen)
@@ -321,7 +377,7 @@ def train(
                     device=torch.cuda.current_device()
                 )
 
-                remaining_steps = cfg.num_steps - step_idx + 1
+                remaining_steps = approx_remaining_steps(step_idx, cfg, dataset_stats)
                 remaining_secs = remaining_steps * current_step_time
                 print("\nstep:", step_idx)
                 print("loss:", current_loss)
@@ -365,17 +421,20 @@ def train(
 
                 fraction_dataset_seen = dataset_examples_seen / dataset_lens_t
                 print(f"{fraction_dataset_seen=}")
-                print(
-                    f"Expected epochs per dataset: {fraction_dataset_seen * cfg.num_steps / step_idx}"
+                frac_complete = approx_frac_training_complete(
+                    step_idx, cfg, dataset_stats
                 )
                 print(
-                    f"Expected tok per dataset: {dataset_tokens_seen * cfg.num_steps / step_idx}"
+                    f"Expected epochs per dataset: {fraction_dataset_seen / frac_complete}"
                 )
                 print(
-                    f"Expected pred tok per dataset: {dataset_pred_tokens_seen * cfg.num_steps / step_idx}"
+                    f"Expected tok per dataset: {dataset_tokens_seen / frac_complete}"
                 )
                 print(
-                    f"Expected examples per dataset: {dataset_examples_seen * cfg.num_steps / step_idx}"
+                    f"Expected pred tok per dataset: {dataset_pred_tokens_seen / frac_complete}"
+                )
+                print(
+                    f"Expected examples per dataset: {dataset_examples_seen / frac_complete}"
                 )
 
                 next_ckpt_step_idx = (
@@ -444,7 +503,11 @@ def train(
             ddp_stats.zero_()
         torch.cuda.reset_peak_memory_stats(device=torch.cuda.current_device())
 
-        if not cfg.skip_ckpt and step_idx % cfg.checkpoint_interval == 0:
+        if (
+            not cfg.skip_ckpt
+            and cfg.checkpoint_interval != -1
+            and step_idx % cfg.checkpoint_interval == 0
+        ):
             save(
                 checkpointer=checkpointer,
                 step_idx=step_idx,

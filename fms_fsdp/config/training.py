@@ -31,7 +31,8 @@ class train_config:
 
     # training spec
     batch_size: int = 2
-    num_steps: int = 1000000
+    num_steps: Optional[int] = None
+    num_epochs: Optional[int] = None
     training_stage: Literal["annealing", "constant", "cosine"] = "annealing"
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0

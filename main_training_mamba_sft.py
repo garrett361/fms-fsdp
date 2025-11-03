@@ -31,26 +31,29 @@ from fms_fsdp.utils.dataloader_utils_sft import (
 from fms_fsdp.utils.train_utils_sft import (
     get_policies,
     get_profiler,
+    parse_args,
     setup,
     setup_environ_flags,
     train,
 )
 
 
-def parse_args(x):
-    if isinstance(x, str):
-        return [item.strip() for item in x.split(",")]
-    if isinstance(x, (list, tuple)):
-        return list(x)
-    if isinstance(x, (int, float, complex)):
-        return [x]
-    raise ValueError(f"arg input {x} cannot be parsed.")
+def check_config(cfg: config.train_config) -> None:
+    if sum(f is None for f in (cfg.num_steps, cfg.num_epochs)) != 1:
+        raise ValueError(
+            f"Exactly one of {cfg.num_steps=} and {cfg.num_epochs=} must be non-None"
+        )
+    if cfg.num_epochs is not None and cfg.weight_by != "epoch":
+        raise ValueError(
+            f"{cfg.num_epochs=} can only be specified if {cfg.weight_by=} is 'epoch'"
+        )
 
 
 def main(**kwargs):
     # get configs
     cfg = config.train_config()
     update_config(cfg, **kwargs)
+    check_config(cfg)
 
     # ensure reproducibility
     torch.cuda.manual_seed(cfg.seed)

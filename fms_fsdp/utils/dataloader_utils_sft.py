@@ -467,10 +467,11 @@ def get_infinite_iter(dataloader: DataLoader):
 
 @dataclass
 class DatasetStats:
-    epoch_idx: list[int] = field(default_factory=list)
-    examples_seen: list[int] = field(default_factory=list)
-    tokens_seen: list[int] = field(default_factory=list)
-    pred_tokens_seen: list[int] = field(default_factory=list)
+    epoch_idx: torch.LongTensor = field(default_factory=list)
+    examples_seen: torch.LongTensor = field(default_factory=list)
+    tokens_seen: torch.LongTensor = field(default_factory=list)
+    pred_tokens_seen: torch.LongTensor = field(default_factory=list)
+    dataset_lens: torch.LongTensor = field(default_factory=list)
 
 
 class InfiniteCPBatchingIter:
@@ -532,6 +533,7 @@ class InfiniteCPBatchingIter:
             examples_seen=torch.zeros(len(dataloader_list), dtype=torch.int64),
             tokens_seen=torch.zeros(len(dataloader_list), dtype=torch.int64),
             pred_tokens_seen=torch.zeros(len(dataloader_list), dtype=torch.int64),
+            dataset_lens=torch.tensor(dataset_lens, dtype=torch.int64),
         )
         self._infinite_iters = [get_infinite_iter(dl) for dl in self.dataloader_list]
         self._batch = []

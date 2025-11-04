@@ -32,28 +32,72 @@ def parse_args(x):
         return [x]
     raise ValueError(f"arg input {x} cannot be parsed.")
 
+# TODO: @goon - cache this value
+def num_epochs_completed(
+    cfg: config.train_config,
+    dataset_stats: DatasetStats,
+    local_rank: int,
+    dp_mesh,
+) -> float:
+    """
+    Working def for number of completed epochs:
+    * All-reduce sum the number of examples seen for each dataset.
+    * Divide by number of expected examples per epoch per dataset, accounting for weights
+    * Take the minimum over datasets, so that we don't cut short.
+    """
+
+    weights_t = torch.tensor(parse_args(cfg.weights), dtype=torch.float32).to(
+        local_rank
+    )
+    # Normalize weights so that the largest weight is 1, so that these weights multiplied by the
+    # dataset length give the natural definition for the number of examples per epoch per dataset.
+    weights_t /= weights_t.max()
+    examples_per_epoch = dataset_stats.dataset_lens.to(local_rank) * weights_t
+    if dp_mesh is not None:
+        examples_seen_t = funcol.all_reduce(
+            dataset_stats.examples_seen.to(local_rank),
+            reduceOp="sum",
+            group=dp_mesh.get_group(),
+        )
+        examples_seen_t.wait()
+    else:
+        examples_seen_t = dataset_stats.examples_seen.to(local_rank)
+    epochs_completed = (examples_seen_t / examples_per_epoch).min().item()
+    return epochs_completed
+
 
 def should_stop_training(
-    step_idx: int, cfg: config.train_config, dataset_stats: DatasetStats
+    step_idx: int,
+    cfg: config.train_config,
+    dataset_stats: DatasetStats,
+    local_rank: int,
+    dp_mesh,
 ) -> bool:
     if cfg.num_steps is not None:
         return step_idx > cfg.num_steps
     if cfg.num_epochs is not None:
-        weights = parse_args(cfg.weights)
-        return sum(dataset_stats.epoch_idx) / sum(weights) > cfg.num_epochs
+        return (
+            num_epochs_completed(cfg, dataset_stats, local_rank, dp_mesh)
+            > cfg.num_epochs
+        )
     raise ValueError(
         f"Exactly one of {cfg.num_steps=} and {cfg.num_epochs=} must be non-None"
     )
 
 
 def approx_remaining_steps(
-    step_idx: int, cfg: config.train_config, dataset_stats: DatasetStats
+    step_idx: int,
+    cfg: config.train_config,
+    dataset_stats: DatasetStats,
+    local_rank: int,
+    dp_mesh,
 ) -> int:
     if cfg.num_steps is not None:
         return cfg.num_steps - step_idx + 1
     if cfg.num_epochs is not None:
-        weights = parse_args(cfg.weights)
-        approx_epochs_seen = sum(dataset_stats.epoch_idx) / sum(weights)
+        approx_epochs_seen = num_epochs_completed(
+            cfg, dataset_stats, local_rank, dp_mesh
+        )
         remaining_epochs = cfg.num_epochs - approx_epochs_seen
         approx_steps_per_epoch = step_idx / approx_epochs_seen
         approx_remaining_steps = int(remaining_epochs * approx_steps_per_epoch)
@@ -63,14 +107,37 @@ def approx_remaining_steps(
     )
 
 
+def approx_total_train_steps(
+    step_idx: int,
+    cfg: config.train_config,
+    dataset_stats: DatasetStats,
+    local_rank: int,
+    dp_mesh,
+) -> int:
+    if cfg.num_steps is not None:
+        return cfg.num_steps
+    if cfg.num_epochs is not None:
+        return step_idx + approx_remaining_steps(
+            step_idx, cfg, dataset_stats, local_rank, dp_mesh
+        )
+    raise ValueError(
+        f"Exactly one of {cfg.num_steps=} and {cfg.num_epochs=} must be non-None"
+    )
+
+
 def approx_frac_training_complete(
-    step_idx: int, cfg: config.train_config, dataset_stats: DatasetStats
+    step_idx: int,
+    cfg: config.train_config,
+    dataset_stats: DatasetStats,
+    local_rank: int,
+    dp_mesh,
 ) -> float:
     if cfg.num_steps is not None:
         return step_idx / cfg.num_steps
     if cfg.num_epochs is not None:
-        weights = parse_args(cfg.weights)
-        approx_epochs_seen = sum(dataset_stats.epoch_idx) / sum(weights)
+        approx_epochs_seen = num_epochs_completed(
+            cfg, dataset_stats, local_rank, dp_mesh
+        )
         return approx_epochs_seen / cfg.num_epochs
     raise ValueError(
         f"Exactly one of {cfg.num_steps=} and {cfg.num_epochs=} must be non-None"
@@ -170,8 +237,25 @@ def train(
         step_idx = (batch_idx + cfg.grad_accum_steps - 1) // cfg.grad_accum_steps
         train_loader.seq_length = data_schedule(step_idx)
         should_step = batch_idx % cfg.grad_accum_steps == 0
-        if should_stop_training(step_idx, cfg, dataset_stats):
-            if not cfg.skip_ckpt and (step_idx - 1) % cfg.checkpoint_interval != 0:
+
+        stop_training = should_stop_training(
+            step_idx, cfg, dataset_stats, local_rank, dp_mesh
+        )
+        frac_complete = approx_frac_training_complete(
+            step_idx, cfg, dataset_stats, local_rank, dp_mesh
+        )
+        remaining_steps = approx_remaining_steps(
+            step_idx, cfg, dataset_stats, local_rank, dp_mesh
+        )
+        approx_num_steps = approx_total_train_steps(
+            step_idx, cfg, dataset_stats, local_rank, dp_mesh
+        )
+
+        if stop_training:
+            if not cfg.skip_ckpt and (
+                cfg.checkpoint_interval == -1
+                or (step_idx - 1) % cfg.checkpoint_interval != 0
+            ):
                 # Save before breaking, if a we didn't save last step
                 save(
                     checkpointer=checkpointer,
@@ -280,16 +364,12 @@ def train(
         ).item()
         if not cfg.skip_optim_step:
             optimizer.step()
-        scheduler.step()
+        scheduler.step(num_steps=approx_num_steps)
 
         if profiler:
             profiler.step()
 
-        if (
-            step_idx == 1
-            or should_stop_training(step_idx, cfg, dataset_stats)
-            or step_idx % cfg.report_interval == 0
-        ):
+        if step_idx == 1 or stop_training or step_idx % cfg.report_interval == 0:
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             # num fwd/bwd passes summed over all ranks
             n_fwd_bwd_passes = ddp_stats[2].item()
@@ -377,7 +457,6 @@ def train(
                     device=torch.cuda.current_device()
                 )
 
-                remaining_steps = approx_remaining_steps(step_idx, cfg, dataset_stats)
                 remaining_secs = remaining_steps * current_step_time
                 print("\nstep:", step_idx)
                 print("loss:", current_loss)
@@ -421,9 +500,6 @@ def train(
 
                 fraction_dataset_seen = dataset_examples_seen / dataset_lens_t
                 print(f"{fraction_dataset_seen=}")
-                frac_complete = approx_frac_training_complete(
-                    step_idx, cfg, dataset_stats
-                )
                 print(
                     f"Expected epochs per dataset: {fraction_dataset_seen / frac_complete}"
                 )
@@ -436,11 +512,14 @@ def train(
                 print(
                     f"Expected examples per dataset: {dataset_examples_seen / frac_complete}"
                 )
-
-                next_ckpt_step_idx = (
-                    (step_idx + cfg.checkpoint_interval - 1) // cfg.checkpoint_interval
-                ) * cfg.checkpoint_interval
-                steps_until_ckpt = next_ckpt_step_idx - step_idx
+                if cfg.checkpoint_interval == -1:
+                    steps_until_ckpt = remaining_steps
+                else:
+                    next_ckpt_step_idx = (
+                        (step_idx + cfg.checkpoint_interval - 1)
+                        // cfg.checkpoint_interval
+                    ) * cfg.checkpoint_interval
+                    steps_until_ckpt = next_ckpt_step_idx - step_idx
                 secs_until_ckpt = steps_until_ckpt * current_step_time
                 print(
                     f"Approx. time to next ckpt: {timedelta(seconds=secs_until_ckpt)}"

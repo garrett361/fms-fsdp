@@ -1,6 +1,7 @@
 import math
 import os
 from pathlib import Path
+from typing import Optional
 
 import fire
 import torch
@@ -47,6 +48,24 @@ def check_config(cfg: config.train_config) -> None:
         raise ValueError(
             f"{cfg.num_epochs=} can only be specified if {cfg.weight_by=} is 'epoch'"
         )
+
+
+class LambdaLRCustom(LambdaLR):
+    """
+    Customized lr scheduler which lets the scheduler lambda take on two args.
+    """
+
+    def step(self, epoch: Optional[int] = None, num_steps: int = 10000) -> None:
+        # HACK: @goon - the num_steps default is a placeholder needed so that the initial step
+        # during init doesn't error. Only affects the very first step.
+        self.num_steps = num_steps
+        super().step(epoch=epoch)
+
+    def get_lr(self) -> list[float | torch.Tensor]:
+        return [
+            base_lr * lmbda(self.last_epoch, self.num_steps)
+            for lmbda, base_lr in zip(self.lr_lambdas, self.base_lrs)
+        ]
 
 
 def main(**kwargs):
@@ -388,33 +407,39 @@ def main(**kwargs):
     # LR schedule
     # linear decay for annealing
     if cfg.training_stage == "annealing":
-        schedule = lambda x: min(
+        schedule = lambda x, num_steps: min(
             1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2,
             1
             - (1 - cfg.final_lr_ratio)
             * (x - cfg.warmup_interval)
-            / (cfg.num_steps - cfg.warmup_interval),
+            / (num_steps - cfg.warmup_interval),
         )
     elif cfg.training_stage == "constant":
-        schedule = lambda x: (min(x, cfg.warmup_interval) / cfg.warmup_interval)
+        schedule = lambda x, num_steps: (
+            min(x, cfg.warmup_interval) / cfg.warmup_interval
+        )
     elif cfg.training_stage == "cosine":
         # cosine decay
-        schedule = lambda x: min(
+        schedule = lambda x, num_steps: min(
             1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2,
             0.1
-            + 0.5
-            * (1 - 0.1)
-            * (1 + math.cos(min(x, cfg.num_steps) / cfg.num_steps * math.pi)),
+            + 0.5 * (1 - 0.1) * (1 + math.cos(min(x, num_steps) / num_steps * math.pi)),
         )
     else:
         raise ValueError(f"{cfg.training_stage=} not in (annealing, constant, cosine)")
 
-    scheduler = LambdaLR(optimizer, lambda x: schedule(x + start_step))
+    scheduler = LambdaLRCustom(
+        optimizer, lambda x, num_steps: schedule(x + start_step, num_steps)
+    )
 
     # Data scheduler. Returns the current max seq_len (not like the LR scheduler, which returns
     # a number between zero and 1)
     if cfg.data_schedule == "constant":
         data_schedule = lambda x: cfg.seq_length
+    elif cfg.num_steps is None:
+        raise ValueError(
+            f"The experimental data scheduler requires {cfg.num_steps=} to be set."
+        )
     elif cfg.data_schedule == "linear":
         data_schedule = (
             lambda x: (x - 1) * cfg.seq_length / (cfg.num_steps - 1)

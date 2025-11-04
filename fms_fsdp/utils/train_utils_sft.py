@@ -32,6 +32,7 @@ def parse_args(x):
         return [x]
     raise ValueError(f"arg input {x} cannot be parsed.")
 
+
 # TODO: @goon - cache this value
 def num_epochs_completed(
     cfg: config.train_config,
@@ -43,7 +44,7 @@ def num_epochs_completed(
     Working def for number of completed epochs:
     * All-reduce sum the number of examples seen for each dataset.
     * Divide by number of expected examples per epoch per dataset, accounting for weights
-    * Take the minimum over datasets, so that we don't cut short.
+    * Take the minimum (but non-zero value) over datasets, so that we don't cut short.
     """
 
     weights_t = torch.tensor(parse_args(cfg.weights), dtype=torch.float32).to(
@@ -62,7 +63,12 @@ def num_epochs_completed(
         examples_seen_t.wait()
     else:
         examples_seen_t = dataset_stats.examples_seen.to(local_rank)
-    epochs_completed = (examples_seen_t / examples_per_epoch).min().item()
+    epochs_completed_per_dataset = examples_seen_t / examples_per_epoch
+    # Get the minimum of the non-zero entries. Avoiding the non-zero cases to avoid later divisions
+    # by zero. This can only happen super early in training, for typical cases.
+    epochs_completed = (
+        epochs_completed_per_dataset[epochs_completed_per_dataset > 0].min().item()
+    )
     return epochs_completed
 
 

@@ -282,7 +282,7 @@ def train(
         label = label.to(local_rank)
 
         # Print out examples to sanity check:
-        if cfg.sanity_print_toks or batch_idx == 1:
+        if cfg.sanity_print_toks:
             input_toks_list = input.cpu().tolist()
             for example_idx, toks in enumerate(input_toks_list):
                 print(

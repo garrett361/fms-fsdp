@@ -571,7 +571,7 @@ class InfiniteCPBatchingIter:
                 epochs_seen_normalized = epochs_seen / epochs_seen.sum()
                 iter_idx = (epochs_seen_normalized - self.weights).argmin().item()
             else:
-                raise ValueError(f"Unexpected {weight_by=} value")
+                raise ValueError(f"Unexpected {self.weight_by=} value")
             rand_iter = self._infinite_iters[iter_idx]
             epoch_idx, item = next(rand_iter)
             assert isinstance(item, list), f"{item=}"

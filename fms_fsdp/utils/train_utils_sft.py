@@ -1,6 +1,7 @@
 import os
 from dataclasses import asdict
 from functools import partial
+from warnings import warn
 
 import torch
 import torch.distributed._functional_collectives as funcol
@@ -365,11 +366,19 @@ def train(
 
         # If grad_clip_thresh < 0, set the threshold to infinity so that we don't actually clip, but
         # still collect norm stats
-        ddp_stats[1] += model.clip_grad_norm_(
+        grad_norm = model.clip_grad_norm_(
             cfg.grad_clip_thresh if cfg.grad_clip_thresh > 0.0 else float("inf")
-        ).item()
+        )
+        ddp_stats[1] += grad_norm.item()
         if not cfg.skip_optim_step:
-            optimizer.step()
+            if not torch.isnan(grad_norm):
+                optimizer.step()
+            else:
+                warn(
+                    f"Skipping optim {step_idx=} on {rank=} due to nan grad norm.",
+                    stacklevel=1,
+                )
+        del grad_norm
         scheduler.step(num_steps=approx_num_steps)
 
         if profiler:

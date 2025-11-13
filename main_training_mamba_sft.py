@@ -406,22 +406,46 @@ def main(**kwargs):
 
     # LR schedule
     # linear decay for annealing
+    def get_warmup_steps(warmup_interval: float, num_steps: int) -> int:
+        """
+        Treat 0.0 <= warmup_interval <= 1.0 as a fraction of the total train steps, and other cases
+        as absolute steps
+        """
+        if warmup_interval < 0:
+            raise ValueError(f"{warmup_interval=} must be non-negative.")
+        if warmup_interval >= 1.0:
+            return int(warmup_interval)
+        return int(warmup_interval * num_steps)
+
     if cfg.training_stage == "annealing":
         schedule = lambda x, num_steps: min(
-            1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2,
+            1
+            - (
+                1
+                - min(x, get_warmup_steps(cfg.warmup_interval, num_steps))
+                / get_warmup_steps(cfg.warmup_interval, num_steps)
+            )
+            ** 2,
             1
             - (1 - cfg.final_lr_ratio)
-            * (x - cfg.warmup_interval)
-            / (num_steps - cfg.warmup_interval),
+            * (x - get_warmup_steps(cfg.warmup_interval, num_steps))
+            / (num_steps - get_warmup_steps(cfg.warmup_interval, num_steps)),
         )
     elif cfg.training_stage == "constant":
         schedule = lambda x, num_steps: (
-            min(x, cfg.warmup_interval) / cfg.warmup_interval
+            min(x, get_warmup_steps(cfg.warmup_interval, num_steps))
+            / get_warmup_steps(cfg.warmup_interval, num_steps)
         )
     elif cfg.training_stage == "cosine":
         # cosine decay
         schedule = lambda x, num_steps: min(
-            1 - (1 - min(x, cfg.warmup_interval) / cfg.warmup_interval) ** 2,
+            1
+            - (
+                1
+                - min(x, get_warmup_steps(cfg.warmup_interval, num_steps))
+                / get_warmup_steps(cfg.warmup_interval, num_steps)
+            )
+            ** 2,
             0.1
             + 0.5 * (1 - 0.1) * (1 + math.cos(min(x, num_steps) / num_steps * math.pi)),
         )

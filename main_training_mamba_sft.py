@@ -493,7 +493,10 @@ def main(**kwargs):
 
     # Train
     if rank == 0:
-        print(f"Training for {cfg.num_steps} steps")
+        if cfg.num_steps is not None:
+            print(f"Training for {cfg.num_steps} steps")
+        if cfg.num_epochs is not None:
+            print(f"Training for {cfg.num_epochs} epochs")
     train(
         cfg,
         mamba_config,

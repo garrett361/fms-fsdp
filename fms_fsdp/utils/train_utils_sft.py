@@ -51,9 +51,6 @@ def num_epochs_completed(
     weights_t = torch.tensor(parse_args(cfg.weights), dtype=torch.float32).to(
         local_rank
     )
-    # Normalize weights so that the largest weight is 1, so that these weights multiplied by the
-    # dataset length give the natural definition for the number of examples per epoch per dataset.
-    weights_t /= weights_t.max()
     examples_per_epoch = dataset_stats.dataset_lens.to(local_rank) * weights_t
     if dp_mesh is not None:
         examples_seen_t = funcol.all_reduce(

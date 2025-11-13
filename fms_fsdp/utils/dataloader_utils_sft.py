@@ -438,11 +438,9 @@ class InfiniteCPBatchingIter:
                 diff_pred_tokens = self._stats.pred_tokens_seen - expected_pred_tokens
                 iter_idx = diff_pred_tokens.argmin().item()
             elif self.weight_by == "epoch":
-                # Choose the most under-represented dataset by epochs seen.
-                epochs_seen = self._stats.examples_seen / self.dataset_lens_t
-                # Normalize and compare to weights
-                epochs_seen_normalized = epochs_seen / epochs_seen.sum()
-                iter_idx = (epochs_seen_normalized - self.weights).argmin().item()
+                # Same logic as "example", converting epoch weights to examples counts
+                example_weight = self.weights * self.dataset_lens_t
+                iter_idx = torch.multinomial(example_weight, 1).item()
             else:
                 raise ValueError(f"Unexpected {self.weight_by=} value")
             rand_iter = self._infinite_iters[iter_idx]

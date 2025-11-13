@@ -382,13 +382,14 @@ def train(
             profiler.step()
 
         if step_idx == 1 or stop_training or step_idx % cfg.report_interval == 0:
+            n_optim_steps_this_interval = ddp_stats[2].item() / cfg.grad_accum_steps
             dist.all_reduce(ddp_stats, op=dist.ReduceOp.SUM)
             # num fwd/bwd passes summed over all ranks
             n_fwd_bwd_passes = ddp_stats[2].item()
             # Total num examples seen in reporting period. Each example is over-counted by
             # cp_degree, so correct for that.
             n_examples = ddp_stats[5].item() / cp_degree
-            n_optim_steps = cfg.report_interval * world_size
+            n_optim_steps = n_optim_steps_this_interval * world_size
             g_norm = ddp_stats[1] / n_fwd_bwd_passes
 
             elapsed_time = time.time() - loop_start
@@ -414,9 +415,9 @@ def train(
                 train_loss_per_total_tok = ddp_stats[0].item() / n_tok_sum
             elif cfg.sft_loss_type == "mean":
                 train_loss = ddp_stats[0] / n_fwd_bwd_passes
-            avg_batch_size = n_examples / cfg.report_interval
+            avg_batch_size = n_examples / n_optim_steps_this_interval
             # tok_per_gpu: number of tokens seen by each GPU on average per optim step
-            tok_per_gpu = int(n_tok_sum / world_size / cfg.report_interval)
+            tok_per_gpu = int(n_tok_sum / world_size / n_optim_steps_this_interval)
             new_tokens_seen += int(n_tok_sum)
             new_pred_tokens_seen += int(n_pred_tok_sum)
 
@@ -458,7 +459,7 @@ def train(
                 current_loss = train_loss.item()
                 current_lr = scheduler.get_last_lr()[0]
                 current_gnorm = g_norm.item()
-                current_step_time = (time.time() - start) / cfg.report_interval
+                current_step_time = (time.time() - start) / n_optim_steps_this_interval
                 overall_step_time = elapsed_time / (step_idx - start_step)
                 current_throughput = int(tok_per_gpu / current_step_time)
                 overall_throughput = int(tok_per_gpu / overall_step_time)

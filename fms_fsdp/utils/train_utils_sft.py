@@ -732,7 +732,7 @@ def save(
     dcp_parent_dir = Path(checkpointer.ckp_path)
     hf_parent_dir = dcp_parent_dir.parent / "hf"
 
-    old_dcp_ckpt_dirs = list(dcp_parent_dir.glob("step_*/"))
+    old_dcp_ckpt_dirs = list(dcp_parent_dir.glob("step_*_ckp/"))
     old_hf_ckpt_dirs = list(hf_parent_dir.glob("step_*/"))
     oldest_dcp_dir = (
         None

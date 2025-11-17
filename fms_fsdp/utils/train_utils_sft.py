@@ -765,7 +765,7 @@ def save(
     )
 
     hf_save_time = time.time()
-    hf_output_dir = hf_parent_dir /  ("step_" + str(step_idx))
+    hf_output_dir = hf_parent_dir / ("step_" + str(step_idx))
     if not rank:
         print("Saving HF checkpoint...")
     if rank != 0:
@@ -784,8 +784,8 @@ def save(
         )
         if len(old_dcp_ckpt_dirs) >= max_checkpoints:
             print(f"Removing DCP checkpoint {oldest_dcp_dir=}")
-            # shutil.rmtree(oldest_dcp_dir)
+            shutil.rmtree(oldest_dcp_dir)
         if len(old_hf_ckpt_dirs) >= max_checkpoints:
             print(f"Removing HF checkpoint {oldest_hf_dir=}")
-            # shutil.rmtree(oldest_hf_dir)
+            shutil.rmtree(oldest_hf_dir)
         dist.barrier()

@@ -1,6 +1,7 @@
 import os
 from dataclasses import asdict
 from functools import partial
+from pathlib import Path
 from warnings import warn
 
 import torch
@@ -274,6 +275,7 @@ def train(
                     hf_config=hf_config,
                     rank=rank,
                     is_compiled=cfg.use_torch_compile,
+                    max_checkpoints=cfg.max_checkpoints,
                 )
             break
         input = input.to(local_rank)
@@ -614,6 +616,7 @@ def train(
                 hf_config=hf_config,
                 rank=rank,
                 is_compiled=cfg.use_torch_compile,
+                max_checkpoints=cfg.max_checkpoints,
             )
 
     return train_loss
@@ -723,6 +726,7 @@ def save(
     hf_config,
     rank,
     is_compiled: bool = False,
+    max_checkpoints: int = 1000,
 ) -> None:
     if not rank:
         print("Saving fms-fsdp checkpoint...")
@@ -739,14 +743,17 @@ def save(
     )
 
     hf_save_time = time.time()
-    hf_output_dir = os.path.join(
-        checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx)
-    )
+    hf_output_dir = Path(checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx))
     if not rank:
         print("Saving HF checkpoint...")
     if rank != 0:
         dist.barrier()
     else:
+        old_hf_ckpt_dirs = sorted(
+            [d for d in hf_output_dir.parent.glob("step_*/") if d.name[5:].isdigit()],
+            key=lambda d: int(d.name[5:]),
+        )
+        print(f"{old_hf_ckpt_dirs=}")
         save_hf_model(
             hf_config=hf_config,
             fms_state_dict=model_state_dict_fms,

@@ -732,6 +732,7 @@ def save_hf_model(
     output_dir: str,
     tokenizer,
     precision: str = "fp32",
+    max_checkpoints: int = 1000,
 ) -> None:
     hf_config.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)

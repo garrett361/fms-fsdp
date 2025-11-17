@@ -364,7 +364,7 @@ def main(**kwargs):
 
     # optionally load from checkpoint (when continue pretraining)
     checkpointer = Checkpointer(
-        cfg.ckpt_save_path, 1000, cfg.sharding_strategy, rank, local_rank
+        cfg.ckpt_save_path, cfg.max_checkpoints, cfg.sharding_strategy, rank, local_rank
     )
 
     if cfg.hf_cfg_path is not None:

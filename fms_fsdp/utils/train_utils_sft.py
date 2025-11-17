@@ -744,11 +744,6 @@ def save(
         if not old_hf_ckpt_dirs
         else min(old_hf_ckpt_dirs, key=lambda p: p.stat().st_ctime)
     )
-    if not rank:
-        print(f"{old_dcp_ckpt_dirs=}")
-        print(f"{old_hf_ckpt_dirs=}")
-        print(f"{oldest_dcp_dir=}")
-        print(f"{oldest_hf_dir=}")
 
     if not rank:
         print("Saving fms-fsdp checkpoint...")

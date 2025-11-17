@@ -133,6 +133,8 @@ class Checkpointer:
             ckp_to_remove = Path(
                 get_oldest(self.ckp_path, qualifier=lambda x: "tmp" in x)
             )
+            self.report(f"Deleting DCP checkpoint {ckp_to_remove=}")
+
             if os.path.isfile(ckp_to_remove):
                 ckp_to_remove.unlink()
             else:
@@ -729,10 +731,9 @@ def get_fms_state_dict_from_hf_model(
 def save_hf_model(
     hf_config: BambaConfig | GraniteMoeHybridConfig,
     fms_state_dict: dict[str, torch.Tensor],
-    output_dir: str,
+    output_dir: Path,
     tokenizer,
     precision: str = "fp32",
-    max_checkpoints: int = 1000,
 ) -> None:
     hf_config.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)

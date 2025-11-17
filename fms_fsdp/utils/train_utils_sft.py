@@ -765,7 +765,7 @@ def save(
     )
 
     hf_save_time = time.time()
-    hf_output_dir = hf_parent_dir +  ("step_" + str(step_idx))
+    hf_output_dir = hf_parent_dir /  ("step_" + str(step_idx))
     if not rank:
         print("Saving HF checkpoint...")
     if rank != 0:

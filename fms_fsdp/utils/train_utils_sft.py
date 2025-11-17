@@ -1,4 +1,5 @@
 import os
+import shutil
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -728,6 +729,27 @@ def save(
     is_compiled: bool = False,
     max_checkpoints: int = 1000,
 ) -> None:
+    dcp_parent_dir = Path(checkpointer.ckp_path)
+    hf_parent_dir = dcp_parent_dir.parent / "hf"
+
+    old_dcp_ckpt_dirs = list(dcp_parent_dir.glob("step_*/"))
+    old_hf_ckpt_dirs = list(hf_parent_dir.glob("step_*/"))
+    oldest_dcp_dir = (
+        None
+        if not old_dcp_ckpt_dirs
+        else min(old_dcp_ckpt_dirs, key=lambda p: p.stat().st_ctime)
+    )
+    oldest_hf_dir = (
+        None
+        if not old_hf_ckpt_dirs
+        else min(old_hf_ckpt_dirs, key=lambda p: p.stat().st_ctime)
+    )
+    if not rank:
+        print(f"{old_dcp_ckpt_dirs=}")
+        print(f"{old_hf_ckpt_dirs=}")
+        print(f"{oldest_dcp_dir=}")
+        print(f"{oldest_hf_dir=}")
+
     if not rank:
         print("Saving fms-fsdp checkpoint...")
     checkpointer.save(
@@ -743,17 +765,12 @@ def save(
     )
 
     hf_save_time = time.time()
-    hf_output_dir = Path(checkpointer.ckp_path[:-12], "hf", "step_" + str(step_idx))
+    hf_output_dir = hf_parent_dir +  ("step_" + str(step_idx))
     if not rank:
         print("Saving HF checkpoint...")
     if rank != 0:
         dist.barrier()
     else:
-        old_hf_ckpt_dirs = sorted(
-            [d for d in hf_output_dir.parent.glob("step_*/") if d.name[5:].isdigit()],
-            key=lambda d: int(d.name[5:]),
-        )
-        print(f"{old_hf_ckpt_dirs=}")
         save_hf_model(
             hf_config=hf_config,
             fms_state_dict=model_state_dict_fms,
@@ -765,4 +782,10 @@ def save(
             f"HF checkpoint saved in {hf_output_dir}",
             hf_save_time=time.time() - hf_save_time,
         )
+        if len(old_dcp_ckpt_dirs) >= max_checkpoints:
+            print(f"Removing DCP checkpoint {oldest_dcp_dir=}")
+            # shutil.rmtree(oldest_dcp_dir)
+        if len(old_hf_ckpt_dirs) >= max_checkpoints:
+            print(f"Removing HF checkpoint {oldest_hf_dir=}")
+            # shutil.rmtree(oldest_hf_dir)
         dist.barrier()

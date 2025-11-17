@@ -133,7 +133,6 @@ class Checkpointer:
             ckp_to_remove = Path(
                 get_oldest(self.ckp_path, qualifier=lambda x: "tmp" in x)
             )
-            self.report(f"Deleting DCP checkpoint {ckp_to_remove=}")
 
             if os.path.isfile(ckp_to_remove):
                 ckp_to_remove.unlink()

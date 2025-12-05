@@ -7,6 +7,7 @@ from warnings import warn
 
 import torch
 import torch.distributed._functional_collectives as funcol
+import torch.distributions as distributions
 
 try:
     import packaging.version
@@ -228,7 +229,8 @@ def train(
     # 4: n_pred_toks: number of actual tokens which are predicted
     # 5: batch_size: for testing get_infinite_cp_batching_iter perf
     # 6: n_toks_padded: total sequence length (counting padding)
-    ddp_stats = torch.zeros(7).to(local_rank)
+    # 7: entropy, summed over pred toks for simplicity
+    ddp_stats = torch.zeros(8).to(local_rank)
     dataset_lens_t = torch.tensor(dataset_lens).to(local_rank)
 
     start = time.time()
@@ -313,8 +315,15 @@ def train(
                     )
                     del gold_labels
                     del preds
+        flat_output = output.view(-1, output.size(-1))
+        flat_label = label.reshape(-1).long()
+        with torch.no_grad():
+            flat_output_not_masked = flat_output[flat_label != -100].detach()
+            entropy_pred_tok_sum = (
+                distributions.Categorical(logits=flat_output_not_masked).entropy().sum()
+            )
 
-        loss = ce_loss(output.view(-1, output.size(-1)), label.reshape(-1).long())
+        loss = ce_loss(flat_output, flat_label)
 
         if cfg.z_loss is not None:
             # NOTE: @goon - only applying z-loss to the tokens corresponding to non-trivial
@@ -331,6 +340,9 @@ def train(
 
         # Avoid logits memory leak
         del output
+        del flat_output
+        del flat_output_not_masked
+        del flat_label
 
         # # NOTE: @goon - the below is what is strictly needed for correctness, but it's not what
         # # open-instruct does. So, instead of doing the right thing, we just follow open OI to
@@ -361,6 +373,7 @@ def train(
         ddp_stats[4] += (label != -100).sum().item()  # n_pred_toks
         ddp_stats[5] += batch_size  # batch_size
         ddp_stats[6] += input.numel()  # n_tok_sum_padded
+        ddp_stats[7] += entropy_pred_tok_sum
         if not should_step:
             continue
 
@@ -400,6 +413,8 @@ def train(
             n_tok_sum_padded = ddp_stats[6].item()
             padding_fraction = (n_tok_sum_padded - n_tok_sum) / n_tok_sum_padded
             n_pred_tok_sum = ddp_stats[4].item()
+
+            entropy_per_pred_tok = ddp_stats[7].item() / n_pred_tok_sum
 
             if cfg.sft_loss_type == "sum":
                 # This is the closest analogue of the usual mean grad norm for sum losses
@@ -482,6 +497,7 @@ def train(
                 print(f"average global batch size: {avg_batch_size}")
                 print(f"average tokens per example: {avg_tok_per_example}")
                 print(f"average pred tokens per example: {avg_pred_tok_per_example}")
+                print(f"average entropy per pred token: {entropy_per_pred_tok}")
                 print(f"allocated memory: {allocated_mem / 2**30:.2f} GiB")
                 print("current examples:", n_examples)
                 print("current pred toks:", n_pred_tok_sum)
@@ -562,6 +578,7 @@ def train(
                         "learning rate": current_lr,
                         "loss": current_loss,
                         "frac_complete": frac_complete,
+                        "entropy per pred tok": entropy_per_pred_tok,
                     }
                     # Individual dataset stats
                     for dset_idx, tok_seen in enumerate(dataset_tokens_seen.tolist()):

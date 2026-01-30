@@ -1,6 +1,7 @@
 import torch
 from fms.modules.attention import MultiHeadAttention
-from fms.modules.embedding import WordEmbedding
+# TODO: @goon - WordEmbedding no longer defined, actually fix up this code. Just commenting out for now.
+# from fms.modules.embedding import WordEmbedding
 from fms.modules.feedforward import GatedLinearUnit
 from fms.modules.layernorm import LayerNormParameterized
 
@@ -9,7 +10,7 @@ from fms.modules.layernorm import LayerNormParameterized
 def param_init_function(module):
     if (
         isinstance(module, MultiHeadAttention)
-        or isinstance(module, WordEmbedding)
+        # or isinstance(module, WordEmbedding)
         or isinstance(module, GatedLinearUnit)
         or isinstance(module, LayerNormParameterized)
     ):
